@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 1e8d1471554abb24a8459f4b089e6aba
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 11400000
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 283698
+  packageName: Simple Rule Tiles
+  packageVersion: 1.1
+  assetPath: Assets/SimpleRuleTiles/Stone/StoneTileMap_28.asset
+  uploadId: 666033

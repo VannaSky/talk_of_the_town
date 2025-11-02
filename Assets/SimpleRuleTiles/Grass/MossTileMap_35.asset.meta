@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 762d50eae99ff444e9426c00d2f1932d
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 11400000
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 283698
+  packageName: Simple Rule Tiles
+  packageVersion: 1.1
+  assetPath: Assets/SimpleRuleTiles/Grass/MossTileMap_35.asset
+  uploadId: 666033

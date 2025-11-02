@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: cdddd9f90afc6a443a7df96c33883945
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 11400000
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 283698
+  packageName: Simple Rule Tiles
+  packageVersion: 1.1
+  assetPath: Assets/SimpleRuleTiles/Ice/IceTileMap_4.asset
+  uploadId: 666033

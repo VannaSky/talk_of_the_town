@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 40626e3753d1298459c5f3de1512b105
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 11400000
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 283698
+  packageName: Simple Rule Tiles
+  packageVersion: 1.1
+  assetPath: Assets/SimpleRuleTiles/Fire/FireTileMap_12.asset
+  uploadId: 666033

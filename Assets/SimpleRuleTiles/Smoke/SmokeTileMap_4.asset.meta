@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: fa7772f0e445a434f9783ead3f93a859
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 11400000
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 283698
+  packageName: Simple Rule Tiles
+  packageVersion: 1.1
+  assetPath: Assets/SimpleRuleTiles/Smoke/SmokeTileMap_4.asset
+  uploadId: 666033

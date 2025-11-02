@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 9167a4cec37b18e4f841e0bfbc0aeccf
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 11400000
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 283698
+  packageName: Simple Rule Tiles
+  packageVersion: 1.1
+  assetPath: Assets/SimpleRuleTiles/Grass/GrassTileMap_5.asset
+  uploadId: 666033

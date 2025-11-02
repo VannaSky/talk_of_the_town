@@ -1,0 +1,14 @@
+fileFormatVersion: 2
+guid: f1a85869b60356e43acf540f6d239d10
+PrefabImporter:
+  externalObjects: {}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 283698
+  packageName: Simple Rule Tiles
+  packageVersion: 1.1
+  assetPath: Assets/SimpleRuleTiles/Stone/StonePalette.prefab
+  uploadId: 666033

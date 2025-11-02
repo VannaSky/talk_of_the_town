@@ -1,0 +1,14 @@
+fileFormatVersion: 2
+guid: 5fea2ecd06a48984e87ba9d428ac449a
+PrefabImporter:
+  externalObjects: {}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 283698
+  packageName: Simple Rule Tiles
+  packageVersion: 1.1
+  assetPath: Assets/SimpleRuleTiles/Grass/GrassPalette.prefab
+  uploadId: 666033

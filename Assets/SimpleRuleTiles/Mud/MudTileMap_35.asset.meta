@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 5b51b49acb6069245b8a1ad866bfd389
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 11400000
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 283698
+  packageName: Simple Rule Tiles
+  packageVersion: 1.1
+  assetPath: Assets/SimpleRuleTiles/Mud/MudTileMap_35.asset
+  uploadId: 666033

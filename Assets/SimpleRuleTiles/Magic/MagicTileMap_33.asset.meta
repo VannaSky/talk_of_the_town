@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 4af226b31d42f1a4498ee156841007bb
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 11400000
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 283698
+  packageName: Simple Rule Tiles
+  packageVersion: 1.1
+  assetPath: Assets/SimpleRuleTiles/Magic/MagicTileMap_33.asset
+  uploadId: 666033

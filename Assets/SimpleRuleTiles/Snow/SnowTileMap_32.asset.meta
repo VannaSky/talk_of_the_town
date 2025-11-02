@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 4ddb1768d96a4934fb8d93e1552ec5a7
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 11400000
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 283698
+  packageName: Simple Rule Tiles
+  packageVersion: 1.1
+  assetPath: Assets/SimpleRuleTiles/Snow/SnowTileMap_32.asset
+  uploadId: 666033

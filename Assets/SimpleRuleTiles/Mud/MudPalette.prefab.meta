@@ -1,0 +1,14 @@
+fileFormatVersion: 2
+guid: 4013d4ef27851c04b8bc5b2f7eec87df
+PrefabImporter:
+  externalObjects: {}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 283698
+  packageName: Simple Rule Tiles
+  packageVersion: 1.1
+  assetPath: Assets/SimpleRuleTiles/Mud/MudPalette.prefab
+  uploadId: 666033

@@ -1,0 +1,14 @@
+fileFormatVersion: 2
+guid: b70e7c9a694e2614d8f11935b19afb05
+PrefabImporter:
+  externalObjects: {}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 283698
+  packageName: Simple Rule Tiles
+  packageVersion: 1.1
+  assetPath: Assets/SimpleRuleTiles/Ice/IcePalette.prefab
+  uploadId: 666033

@@ -1,0 +1,14 @@
+fileFormatVersion: 2
+guid: 6a57586a7b45460408645026a55a9573
+PrefabImporter:
+  externalObjects: {}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 283698
+  packageName: Simple Rule Tiles
+  packageVersion: 1.1
+  assetPath: Assets/SimpleRuleTiles/Magic/MagicPalette.prefab
+  uploadId: 666033

@@ -1,0 +1,18 @@
+fileFormatVersion: 2
+guid: 2e921f1f2dbb42842b57b55d6d5cd37e
+MonoImporter:
+  externalObjects: {}
+  serializedVersion: 2
+  defaultReferences: []
+  executionOrder: 0
+  icon: {instanceID: 0}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 283698
+  packageName: Simple Rule Tiles
+  packageVersion: 1.1
+  assetPath: Assets/SimpleRuleTiles/DemoScene/Navigation.cs
+  uploadId: 666033
