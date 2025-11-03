@@ -9,5 +9,8 @@ public abstract class JobLogic
     public abstract bool Execute(JobHandler jobHandler);
     public virtual void OnJobStart(JobHandler jobHandler) { }
     public virtual void OnJobEnd(JobHandler jobHandler) { }
-    public abstract string GetCurrentStatus();
+    public string GetCurrentStatus()
+    {
+        return currentStatus;
+    }
 }

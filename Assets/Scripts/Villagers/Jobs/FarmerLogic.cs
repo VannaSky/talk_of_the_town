@@ -29,9 +29,4 @@ public class FarmerLogic : JobLogic
 
         return false;
     }
-
-    public override string GetCurrentStatus()
-    {
-        return currentStatus;
-    }
 }

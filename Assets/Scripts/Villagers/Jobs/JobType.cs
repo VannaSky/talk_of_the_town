@@ -6,6 +6,6 @@ public class JobType : ScriptableObject
     public string JobName;
     public Sprite JobIcon;
 
-    [SerializeReference]
+    [SerializeReference, SubclassSelector]
     public JobLogic JobLogic;
 }

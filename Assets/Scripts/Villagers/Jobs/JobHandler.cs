@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System;
 using UnityEditor;
 
+[RequireComponent(typeof(VillagerMover))]
 public class JobHandler : MonoBehaviour
 {
     [Serializable]
@@ -21,8 +22,13 @@ public class JobHandler : MonoBehaviour
     [SerializeField]
     private List<JobLevelData> allJobLevels = new();
 
+    [HideInInspector]
+    public VillagerMover villagerMover;
+
     private void Awake()
     {
+        villagerMover = GetComponent<VillagerMover>();
+
         foreach (var jobData in allJobLevels)
         {
             jobLevels[jobData.JobType] = jobData;
@@ -33,7 +39,12 @@ public class JobHandler : MonoBehaviour
     {
         currentJob = newJob;
 
-        if (!jobLevels.ContainsKey(newJob))
+        if (currentJob != null && currentJob.JobLogic != null)
+        {
+            currentJob.JobLogic.OnJobStart(this);
+        }
+
+        if (newJob != null && !jobLevels.ContainsKey(newJob))
         {
             JobLevelData newLevelData = new()
             {
