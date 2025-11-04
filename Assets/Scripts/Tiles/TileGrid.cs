@@ -20,5 +20,12 @@ namespace Tiles
             var dirs = new[] { Vector2Int.up, Vector2Int.down, Vector2Int.left, Vector2Int.right };
             foreach (var d in dirs) if (_tiles.TryGetValue(pos + d, out var n)) yield return n;
         }
+        
+        public void RebuildIndex()
+        {
+            _tiles.Clear();
+            foreach (var t in GetComponentsInChildren<Tile>(includeInactive: false))
+                _tiles[t.GridPos] = t;
+        }
     }
 }

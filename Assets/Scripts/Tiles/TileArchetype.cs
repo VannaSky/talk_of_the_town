@@ -1,21 +1,23 @@
-using UnityEngine;
 using System.Collections.Generic;
-using Tiles;
+using UnityEngine;
 
-[CreateAssetMenu(menuName="Game/Tile Archetype")]
-public sealed class TileArchetype : ScriptableObject
+namespace Tiles
 {
-    [SerializeField] TileStyle style;
-    [SerializeField] bool walkable = true;
-    [SerializeField] float baseMoveCost = 1f;
-    [SerializeField] List<ResourceType> allowedResources;
-    [SerializeField] List<BuildingType> allowedBuildings;
-    [SerializeField] GameObject visualPrefab; // optional per-style prefab
+    [CreateAssetMenu(menuName="Game/Tile Archetype")]
+    public sealed class TileArchetype : ScriptableObject
+    {
+        [SerializeField] TileStyle style;
+        [SerializeField] bool walkable = true;
+        [SerializeField] float baseMoveCost = 1f;
+        [SerializeField] List<ResourceType> allowedResources;
+        [SerializeField] List<BuildingType> allowedBuildings;
+        [SerializeField] GameObject visualPrefab; // optional per-style prefab
 
-    public TileStyle Style => style;
-    public bool Walkable => walkable;
-    public float BaseMoveCost => baseMoveCost;
-    public IReadOnlyList<ResourceType> AllowedResources => allowedResources;
-    public IReadOnlyList<BuildingType> AllowedBuildings => allowedBuildings;
-    public GameObject VisualPrefab => visualPrefab;
+        public TileStyle Style => style;
+        public bool Walkable => walkable;
+        public float BaseMoveCost => baseMoveCost;
+        public IReadOnlyList<ResourceType> AllowedResources => allowedResources;
+        public IReadOnlyList<BuildingType> AllowedBuildings => allowedBuildings;
+        public GameObject VisualPrefab => visualPrefab;
+    }
 }

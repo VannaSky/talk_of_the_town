@@ -1,131 +1,217 @@
-using TWC;
 using UnityEngine;
-
-// TileWorldCreator namespace
+using TWC;
+using System.Collections.Generic;
 
 namespace Tiles
 {
     public sealed class TWCBridge : MonoBehaviour
     {
         [Header("Refs")]
-        [SerializeField] TileWorldCreator tileWorldCreator; // TWC root component
-        [SerializeField] TileGrid tileGrid;                 // your grid (already placed in scene)
+        [SerializeField] TileWorldCreator tileWorldCreator;
+        [SerializeField] TileGrid tileGrid;
+        [SerializeField] TileGridSpawner spawner;            // optional but recommended
+        [SerializeField] TileArchetypeLibrary library;
 
-        [Header("Blueprint layer names (must match TWC)")]
-        [SerializeField] string grassLayer   = "Grass";
-        [SerializeField] string waterLayer   = "Water";
-        [SerializeField] string mountainLayer= "Mountain";
-        [SerializeField] string woodLayer    = "Wood";
-        [SerializeField] string rockLayer    = "Rock";
+        [Header("Blueprint layer names")]
+        [SerializeField] string islandLayer   = "Island";
+        [SerializeField] string grassLayer    = "Grass";
+        [SerializeField] string forestLayer   = "Forest";
+        [SerializeField] string mountainLayer = "Mountain";
+        [SerializeField] string waterLayer    = "Water";
 
-        [Header("Grid mapping")]
-        [Tooltip("World cell size, only needed if you create Tiles procedurally. If your grid already exists by (x,y) indices, ignore.")]
+        [Header("Overlays (Object Build Layers)")]
+        [SerializeField] string woodLayer     = "Wood";      // optional blueprint name (often null)
+        [SerializeField] string stoneLayer    = "Stone";     // optional blueprint name (often null)
+
+        [Header("Overlay Fallback (scan built objects)")]
+        [SerializeField] bool useBuildLayerFallback = true;
+        [Tooltip("Parent transforms under which TWC instantiates Wood/Stone objects (enable 'group under parent' in TWC).")]
+        [SerializeField] Transform woodBuildRoot;
+        [SerializeField] Transform stoneBuildRoot;
+        [Tooltip("Must match your grid spacing in world units (X/Z).")]
         [SerializeField] float cellSize = 1f;
+        [Tooltip("World-space origin of cell (0,0).")]
+        [SerializeField] Vector3 origin = Vector3.zero;
+
+        [Header("Run options")]
+        [SerializeField] bool autoRunOnStart = true;
+        [SerializeField] bool spawnTilesBeforeSync = true;   // create tiles if missing
+        
+        void Awake()
+        {
+            // Sensible defaults from your screenshot
+            if (cellSize <= 0f) cellSize = 2f;
+            if (origin == default && tileWorldCreator != null)
+                origin = tileWorldCreator.transform.position;
+        }
+        
+        void Start()
+        {
+            if (autoRunOnStart) GenerateBuildAndSync();
+        }
 
         void OnEnable()
         {
-            if (tileWorldCreator != null)
+            if (tileWorldCreator == null)
             {
-                tileWorldCreator.OnBlueprintLayersComplete += OnBlueprintDone;
-                tileWorldCreator.OnBuildLayersComplete     += OnBuildDone;
+                Debug.LogError("[TWCBridge] TileWorldCreator is not assigned.");
+                return;
             }
+            tileWorldCreator.OnBlueprintLayersComplete += OnBlueprintLayersComplete;
+            tileWorldCreator.OnBuildLayersComplete     += OnBuildLayersComplete;
+            Debug.Log("[TWCBridge] Subscribed to TWC events.");
         }
 
         void OnDisable()
         {
-            if (tileWorldCreator != null)
-            {
-                tileWorldCreator.OnBlueprintLayersComplete -= OnBlueprintDone;
-                tileWorldCreator.OnBuildLayersComplete     -= OnBuildDone;
-            }
+            if (tileWorldCreator == null) return;
+            tileWorldCreator.OnBlueprintLayersComplete -= OnBlueprintLayersComplete;
+            tileWorldCreator.OnBuildLayersComplete     -= OnBuildLayersComplete;
+            Debug.Log("[TWCBridge] Unsubscribed from TWC events.");
         }
 
-        // Public entry point if you want a one-button bootstrap
-        [ContextMenu("Generate & Build & Sync")]
+        [ContextMenu("Generate → Build → Sync")]
         public void GenerateBuildAndSync()
         {
-            if (tileWorldCreator == null) { Debug.LogError("No TileWorldCreator set"); return; }
-            tileWorldCreator.ExecuteAllBlueprintLayers();        // async-ish; OnBlueprintDone will fire
-            // When blueprints complete we’ll call ExecuteAllBuildLayers(false) in OnBlueprintDone
-            // and then sync in OnBuildDone.
+            if (tileWorldCreator == null) { Debug.LogError("[TWCBridge] No TWC set"); return; }
+            Debug.Log("[TWCBridge] ExecuteAllBlueprintLayers()");
+            tileWorldCreator.ExecuteAllBlueprintLayers();
         }
 
-        void OnBlueprintDone(TileWorldCreator _)
+        // -------- Event handlers --------
+        void OnBlueprintLayersComplete(TileWorldCreator _)
         {
-            // Kick the actual build; you can set true to force a rebuild
+            Debug.Log("[TWCBridge] OnBlueprintLayersComplete → ExecuteAllBuildLayers(false)");
             tileWorldCreator.ExecuteAllBuildLayers(false);
         }
 
-        void OnBuildDone(TileWorldCreator _)
+        void OnBuildLayersComplete(TileWorldCreator _)
         {
-            // Now read blueprint outputs and push into your runtime grid
+            Debug.Log("[TWCBridge] OnBuildLayersComplete");
+            if (spawnTilesBeforeSync && spawner != null)
+            {
+                Debug.Log("[TWCBridge] Spawning/Rebuilding tiles from blueprint maps…");
+                spawner.SpawnOrRebuild();
+                tileGrid.RebuildIndex();  // <<< make sure dictionary is fresh
+            }
             SyncFromBlueprints();
-            Debug.Log("TWC → TileGrid sync complete.");
+            Debug.Log("[TWCBridge] TWC → TileGrid sync complete.");
         }
 
+        // -------- Core sync --------
         void SyncFromBlueprints()
         {
-            if (tileGrid == null) { Debug.LogError("No TileGrid set"); return; }
+            if (tileGrid == null) { Debug.LogError("[TWCBridge] No TileGrid set"); return; }
+            if (library == null)  { Debug.LogWarning("[TWCBridge] No TileArchetypeLibrary set (Tiles must already have one)."); }
 
-            // 1) Pull raw maps from TWC (true = tile present)
-            var grassMap    = SafeMap(grassLayer);
-            var waterMap    = SafeMap(waterLayer);
-            var mountainMap = SafeMap(mountainLayer);
-            var woodMap     = SafeMap(woodLayer);
-            var rockMap     = SafeMap(rockLayer);
+            var island   = Map(islandLayer);
+            var mountain = Map(mountainLayer);
+            var forest   = Map(forestLayer);
+            var grass    = Map(grassLayer);
+            var water    = Map(waterLayer);
+            var refMap = island ?? mountain ?? forest ?? grass ?? water;
 
-            if (grassMap == null && waterMap == null && mountainMap == null)
-            { Debug.LogWarning("No base maps found."); return; }
 
-            // Use the largest available as reference (width = x, height = y)
-            var reference = mountainMap ?? waterMap ?? grassMap;
-            int width  = reference.GetLength(0);
-            int height = reference.GetLength(1);
-
-            // 2) Base style priority: Mountain > Water > Grass
-            for (int x = 0; x < width; x++)
-            for (int y = 0; y < height; y++)
+            if (refMap == null)
             {
-                var pos = new Vector2Int(x, y);
-                if (!tileGrid.TryGet(pos, out var tile)) continue;
-
-                if (mountainMap != null && mountainMap[x, y]) { SetStyle(tile, TileStyle.Mountain); }
-                else if (waterMap != null && waterMap[x, y])  { SetStyle(tile, TileStyle.Water); }
-                else if (grassMap != null && grassMap[x, y])  { SetStyle(tile, TileStyle.Grass); }
-                // else: leave as-is (void tile)
+                Debug.LogWarning("[TWCBridge] No blueprint maps found (check layer names and that blueprints executed).");
+                return;
             }
 
-            // 3) Overlays → resources (on top of base)
-            for (int x = 0; x < width; x++)
-            for (int y = 0; y < height; y++)
-            {
-                var pos = new Vector2Int(x, y);
-                if (!tileGrid.TryGet(pos, out var tile)) continue;
+            int w = refMap.GetLength(0), h = refMap.GetLength(1);
+            int styled = 0, resSet = 0, tilesSeen = 0;
 
-                // Clear first (optional)
+            // Base: Mountain > Forest > Grass > Water
+            for (int x = 0; x < w; x++)
+            for (int y = 0; y < h; y++)
+            {
+                var p = new Vector2Int(x, y);
+                if (!tileGrid.TryGet(p, out var tile)) continue;
+                tilesSeen++;
+
+                if (tile.Library == null && library != null) tile.SetLibrary(library);
+
+                // Outside island => always Water
+                if (island != null && !island[x, y]) { tile.SetStyle(TileStyle.Water); styled++; continue; }
+
+                // Inside island: Mountain > Forest > Grass
+                if (mountain != null && mountain[x, y])      { tile.SetStyle(TileStyle.Mountain); styled++; continue; }
+                if (forest   != null && forest[x, y])        { tile.SetStyle(TileStyle.Forest);   styled++; continue; }
+                if (grass    != null && grass[x, y])         { tile.SetStyle(TileStyle.Grass);    styled++; continue; }
+
+                // Unlabeled *inside island* => treat as Water (lakes/rivers not explicitly tagged)
+                tile.SetStyle(TileStyle.Water); styled++;
+            }
+
+            // ---- OVERLAYS ----
+            // Do NOT ask blueprint for objects unless explicitly enabled.
+            HashSet<Vector2Int> woodCells  = null;
+            HashSet<Vector2Int> stoneCells = null;
+
+            if (useBuildLayerFallback)
+            {
+                woodCells  = CellsFromBuildRoot(woodBuildRoot);
+                stoneCells = CellsFromBuildRoot(stoneBuildRoot);
+            }
+
+            for (int x = 0; x < w; x++)
+            for (int y = 0; y < h; y++)
+            {
+                var p = new Vector2Int(x, y);
+                if (!tileGrid.TryGet(p, out var tile)) continue;
+
                 tile.TrySetResource(null);
 
-                if (woodMap != null && woodMap[x, y])
-                    tile.TrySetResource(new ResourceInstance(ResourceType.Wood, amount: 1));
+                bool woodHere  = woodCells  != null && woodCells.Contains(p);
+                bool stoneHere = stoneCells != null && stoneCells.Contains(p);
 
-                if (rockMap != null && rockMap[x, y])
-                    tile.TrySetResource(new ResourceInstance(ResourceType.Stone, amount: 1)); // your enum
+                if (woodHere  && tile.Archetype != null && tile.Archetype.Style == TileStyle.Forest)
+                    tile.TrySetResource(new ResourceInstance(ResourceType.Wood, 1));
+
+                if (stoneHere && tile.Archetype != null && tile.Archetype.Style == TileStyle.Mountain)
+                    tile.TrySetResource(new ResourceInstance(ResourceType.Stone, 1));
+            }
+
+            Debug.Log($"[TWCBridge] Tiles seen: {tilesSeen}, styled: {styled}, resources set: {resSet}");
+        }
+
+        // -------- Helpers --------
+        bool[,] Map(string name)
+        {
+            if (string.IsNullOrEmpty(name) || tileWorldCreator == null) return null;
+            try
+            {
+                var m = tileWorldCreator.GetMapOutputFromBlueprintLayer(name);
+                if (m == null) Debug.LogWarning($"[TWCBridge] Map '{name}' returned null.");
+                else Debug.Log($"[TWCBridge] Map '{name}' size: {m.GetLength(0)}x{m.GetLength(1)}");
+                return m;
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogWarning($"[TWCBridge] GetMapOutputFromBlueprintLayer('{name}') failed: {e.Message}");
+                return null;
             }
         }
 
-        bool[,] SafeMap(string layerName)
+        HashSet<Vector2Int> CellsFromBuildRoot(Transform root)
         {
-            if (string.IsNullOrEmpty(layerName)) return null;
-            try { return tileWorldCreator.GetMapOutputFromBlueprintLayer(layerName); }
-            catch { return null; }
-        }
+            var set = new HashSet<Vector2Int>();
+            if (root == null) return set;
 
-        void SetStyle(Tile tile, TileStyle style)
-        {
-            // If your Tile exposes a setter or style-swapping archetype, call it here.
-            // Example if you add this to Tile:
-            // tile.SetStyle(style);
-            // For now, assume archetype carries style and visuals already match from TWC build.
+            // Traverse all descendants (built objects may be nested)
+            var all = root.GetComponentsInChildren<Transform>(includeInactive: true);
+            for (int i = 0; i < all.Length; i++)
+            {
+                var t = all[i];
+                if (t == root) continue;
+
+                var local = t.position - origin;
+                int x = Mathf.RoundToInt(local.x / Mathf.Max(0.0001f, cellSize));
+                int y = Mathf.RoundToInt(local.z / Mathf.Max(0.0001f, cellSize));
+                set.Add(new Vector2Int(x, y));
+            }
+            Debug.Log($"[TWCBridge] Build-root '{root.name}' → {set.Count} overlay cells.");
+            return set;
         }
     }
 }
