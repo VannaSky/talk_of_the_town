@@ -35,6 +35,7 @@ namespace Tiles
 
         [Header("Run options")]
         [SerializeField] bool autoRunOnStart = true;
+        [SerializeField] bool regenerateTWCMap = true;
         [SerializeField] bool spawnTilesBeforeSync = true;   // create tiles if missing
         
         void Awake()
@@ -74,8 +75,48 @@ namespace Tiles
         public void GenerateBuildAndSync()
         {
             if (tileWorldCreator == null) { Debug.LogError("[TWCBridge] No TWC set"); return; }
-            Debug.Log("[TWCBridge] ExecuteAllBlueprintLayers()");
-            tileWorldCreator.ExecuteAllBlueprintLayers();
+    
+            if (regenerateTWCMap)
+            {
+                Debug.Log("[TWCBridge] ExecuteAllBlueprintLayers()");
+                tileWorldCreator.ExecuteAllBlueprintLayers();
+                // Events will trigger BuildLayers → Sync
+            }
+            else
+            {
+                Debug.Log("[TWCBridge] Using existing TWC map, skipping regeneration");
+        
+                // Important: Verify blueprint data is actually available
+                if (!VerifyBlueprintData())
+                {
+                    Debug.LogError("[TWCBridge] Blueprint data not available! Generate the map manually first or enable regenerateTWCMap.");
+                    return;
+                }
+        
+                // Skip directly to syncing from existing blueprint data
+                if (spawnTilesBeforeSync && spawner != null)
+                {
+                    spawner.SpawnOrRebuild();
+                    tileGrid.RebuildIndex();
+                }
+                SyncFromBlueprints();
+                Debug.Log("[TWCBridge] TWC → TileGrid sync complete (no map regen).");
+            }
+        }
+
+        bool VerifyBlueprintData()
+        {
+            var testMap = Map(islandLayer) ?? Map(grassLayer) ?? Map(forestLayer) ?? 
+                Map(mountainLayer) ?? Map(waterLayer);
+    
+            if (testMap == null)
+            {
+                Debug.LogWarning("[TWCBridge] No blueprint map data found!");
+                return false;
+            }
+    
+            Debug.Log($"[TWCBridge] Blueprint data verified: {testMap.GetLength(0)}x{testMap.GetLength(1)}");
+            return true;
         }
 
         // -------- Event handlers --------

@@ -72,7 +72,7 @@ namespace Tiles
             if (ReferenceEquals(next, archetype)) { OnChanged?.Invoke(this); return; }
 
             archetype = next;                     // ← actual assignment
-            Debug.Log($"[Tile] {name} style → {archetype?.name}");
+            // Debug.Log($"[Tile] {name} style → {archetype?.name}");
             
             OnChanged?.Invoke(this);
         }
