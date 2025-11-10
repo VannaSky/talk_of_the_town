@@ -1,6 +1,7 @@
 using UnityEngine;
 using TWC;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace Tiles
 {
@@ -9,43 +10,39 @@ namespace Tiles
         [Header("Refs")]
         [SerializeField] TileWorldCreator tileWorldCreator;
         [SerializeField] TileGrid tileGrid;
-        [SerializeField] TileGridSpawner spawner;            // optional but recommended
+        [SerializeField] TileGridSpawner spawner;
         [SerializeField] TileArchetypeLibrary library;
+        [SerializeField] TWCLayerMapper layerMapper;
 
-        [Header("Blueprint layer names")]
-        [SerializeField] string islandLayer   = "Island";
-        [SerializeField] string grassLayer    = "Grass";
-        [SerializeField] string forestLayer   = "Forest";
-        [SerializeField] string mountainLayer = "Mountain";
-        [SerializeField] string waterLayer    = "Water";
-
-        [Header("Overlays (Object Build Layers)")]
-        [SerializeField] string woodLayer     = "Wood";      // optional blueprint name (often null)
-        [SerializeField] string stoneLayer    = "Stone";     // optional blueprint name (often null)
-
-        [Header("Overlay Fallback (scan built objects)")]
+        [Header("Overlay Detection")]
         [SerializeField] bool useBuildLayerFallback = true;
-        [Tooltip("Parent transforms under which TWC instantiates Wood/Stone objects (enable 'group under parent' in TWC).")]
-        [SerializeField] Transform woodBuildRoot;
-        [SerializeField] Transform stoneBuildRoot;
+        [Tooltip("Parent transforms under which TWC instantiates overlay objects (enable 'group under parent' in TWC).")]
+        [SerializeField] List<OverlayBuildRoot> overlayBuildRoots = new List<OverlayBuildRoot>();
+        
+        [System.Serializable]
+        public class OverlayBuildRoot
+        {
+            public Transform root;
+            public ResourceType resourceType;
+        }
+
         [Tooltip("Must match your grid spacing in world units (X/Z).")]
-        [SerializeField] float cellSize = 1f;
+        [SerializeField] float cellSize = 2f;
         [Tooltip("World-space origin of cell (0,0).")]
         [SerializeField] Vector3 origin = Vector3.zero;
 
         [Header("Run options")]
         [SerializeField] bool autoRunOnStart = true;
         [SerializeField] bool regenerateTWCMap = true;
-        [SerializeField] bool spawnTilesBeforeSync = true;   // create tiles if missing
-        
+        [SerializeField] bool spawnTilesBeforeSync = true;
+
         void Awake()
         {
-            // Sensible defaults from your screenshot
             if (cellSize <= 0f) cellSize = 2f;
             if (origin == default && tileWorldCreator != null)
                 origin = tileWorldCreator.transform.position;
         }
-        
+
         void Start()
         {
             if (autoRunOnStart) GenerateBuildAndSync();
@@ -59,7 +56,7 @@ namespace Tiles
                 return;
             }
             tileWorldCreator.OnBlueprintLayersComplete += OnBlueprintLayersComplete;
-            tileWorldCreator.OnBuildLayersComplete     += OnBuildLayersComplete;
+            tileWorldCreator.OnBuildLayersComplete += OnBuildLayersComplete;
             Debug.Log("[TWCBridge] Subscribed to TWC events.");
         }
 
@@ -67,15 +64,19 @@ namespace Tiles
         {
             if (tileWorldCreator == null) return;
             tileWorldCreator.OnBlueprintLayersComplete -= OnBlueprintLayersComplete;
-            tileWorldCreator.OnBuildLayersComplete     -= OnBuildLayersComplete;
+            tileWorldCreator.OnBuildLayersComplete -= OnBuildLayersComplete;
             Debug.Log("[TWCBridge] Unsubscribed from TWC events.");
         }
 
         [ContextMenu("Generate → Build → Sync")]
         public void GenerateBuildAndSync()
         {
-            if (tileWorldCreator == null) { Debug.LogError("[TWCBridge] No TWC set"); return; }
-    
+            if (tileWorldCreator == null)
+            {
+                Debug.LogError("[TWCBridge] No TWC set");
+                return;
+            }
+
             if (regenerateTWCMap)
             {
                 Debug.Log("[TWCBridge] ExecuteAllBlueprintLayers()");
@@ -85,19 +86,18 @@ namespace Tiles
             else
             {
                 Debug.Log("[TWCBridge] Using existing TWC map, skipping regeneration");
-        
-                // Important: Verify blueprint data is actually available
+
+                // Verify blueprint data is available
                 if (!VerifyBlueprintData())
                 {
                     Debug.LogError("[TWCBridge] Blueprint data not available! Generate the map manually first or enable regenerateTWCMap.");
                     return;
                 }
-        
+
                 // Skip directly to syncing from existing blueprint data
                 if (spawnTilesBeforeSync && spawner != null)
                 {
                     spawner.SpawnOrRebuild();
-                    tileGrid.RebuildIndex();
                 }
                 SyncFromBlueprints();
                 Debug.Log("[TWCBridge] TWC → TileGrid sync complete (no map regen).");
@@ -106,20 +106,28 @@ namespace Tiles
 
         bool VerifyBlueprintData()
         {
-            var testMap = Map(islandLayer) ?? Map(grassLayer) ?? Map(forestLayer) ?? 
-                Map(mountainLayer) ?? Map(waterLayer);
-    
-            if (testMap == null)
+            var activeLayers = GetActiveBlueprintLayers();
+            if (activeLayers.Count == 0)
             {
-                Debug.LogWarning("[TWCBridge] No blueprint map data found!");
+                Debug.LogWarning("[TWCBridge] No active blueprint layers found!");
                 return false;
             }
-    
-            Debug.Log($"[TWCBridge] Blueprint data verified: {testMap.GetLength(0)}x{testMap.GetLength(1)}");
-            return true;
+
+            // Try to get at least one valid map
+            foreach (var layerName in activeLayers)
+            {
+                var testMap = GetMap(layerName);
+                if (testMap != null)
+                {
+                    Debug.Log($"[TWCBridge] Blueprint data verified: {testMap.GetLength(0)}x{testMap.GetLength(1)} from layer '{layerName}'");
+                    return true;
+                }
+            }
+
+            Debug.LogWarning("[TWCBridge] No valid blueprint map data found!");
+            return false;
         }
 
-        // -------- Event handlers --------
         void OnBlueprintLayersComplete(TileWorldCreator _)
         {
             Debug.Log("[TWCBridge] OnBlueprintLayersComplete → ExecuteAllBuildLayers(false)");
@@ -133,36 +141,61 @@ namespace Tiles
             {
                 Debug.Log("[TWCBridge] Spawning/Rebuilding tiles from blueprint maps…");
                 spawner.SpawnOrRebuild();
-                tileGrid.RebuildIndex();  // <<< make sure dictionary is fresh
             }
             SyncFromBlueprints();
             Debug.Log("[TWCBridge] TWC → TileGrid sync complete.");
         }
 
-        // -------- Core sync --------
         void SyncFromBlueprints()
         {
-            if (tileGrid == null) { Debug.LogError("[TWCBridge] No TileGrid set"); return; }
-            if (library == null)  { Debug.LogWarning("[TWCBridge] No TileArchetypeLibrary set (Tiles must already have one)."); }
+            if (tileGrid == null)
+            {
+                Debug.LogError("[TWCBridge] No TileGrid set");
+                return;
+            }
 
-            var island   = Map(islandLayer);
-            var mountain = Map(mountainLayer);
-            var forest   = Map(forestLayer);
-            var grass    = Map(grassLayer);
-            var water    = Map(waterLayer);
-            var refMap = island ?? mountain ?? forest ?? grass ?? water;
+            if (layerMapper == null)
+            {
+                Debug.LogError("[TWCBridge] No TWCLayerMapper set. Cannot sync without mapping configuration.");
+                return;
+            }
 
+            var activeLayers = GetActiveBlueprintLayers();
+            if (activeLayers.Count == 0)
+            {
+                Debug.LogWarning("[TWCBridge] No active blueprint layers found.");
+                return;
+            }
+
+            // Load all maps
+            var maps = new Dictionary<string, bool[,]>();
+            bool[,] refMap = null;
+
+            foreach (var layerName in activeLayers)
+            {
+                var map = GetMap(layerName);
+                if (map != null)
+                {
+                    maps[layerName] = map;
+                    if (refMap == null) refMap = map;
+                }
+            }
 
             if (refMap == null)
             {
-                Debug.LogWarning("[TWCBridge] No blueprint maps found (check layer names and that blueprints executed).");
+                Debug.LogWarning("[TWCBridge] No valid blueprint maps found.");
                 return;
             }
 
             int w = refMap.GetLength(0), h = refMap.GetLength(1);
             int styled = 0, resSet = 0, tilesSeen = 0;
 
-            // Base: Mountain > Forest > Grass > Water
+            // Get all mappings sorted by priority
+            var allMappings = layerMapper.GetAllMappingsSortedByPriority().ToList();
+
+            Debug.Log($"[TWCBridge] Syncing {activeLayers.Count} layers to {w}x{h} grid using {allMappings.Count} mappings");
+
+            // Apply base terrain styles
             for (int x = 0; x < w; x++)
             for (int y = 0; y < h; y++)
             {
@@ -170,61 +203,127 @@ namespace Tiles
                 if (!tileGrid.TryGet(p, out var tile)) continue;
                 tilesSeen++;
 
-                if (tile.Library == null && library != null) tile.SetLibrary(library);
+                if (tile.Library == null && library != null)
+                    tile.SetLibrary(library);
 
-                // Outside island => always Water
-                if (island != null && !island[x, y]) { tile.SetStyle(TileStyle.Water); styled++; continue; }
+                // Find highest priority matching layer
+                TWCLayerMapper.LayerMapping bestMatch = null;
+                int highestPriority = int.MinValue;
 
-                // Inside island: Mountain > Forest > Grass
-                if (mountain != null && mountain[x, y])      { tile.SetStyle(TileStyle.Mountain); styled++; continue; }
-                if (forest   != null && forest[x, y])        { tile.SetStyle(TileStyle.Forest);   styled++; continue; }
-                if (grass    != null && grass[x, y])         { tile.SetStyle(TileStyle.Grass);    styled++; continue; }
+                foreach (var mapping in allMappings)
+                {
+                    if (maps.TryGetValue(mapping.twcLayerName, out var map) && map[x, y])
+                    {
+                        if (mapping.priority > highestPriority)
+                        {
+                            highestPriority = mapping.priority;
+                            bestMatch = mapping;
+                        }
+                    }
+                }
 
-                // Unlabeled *inside island* => treat as Water (lakes/rivers not explicitly tagged)
-                tile.SetStyle(TileStyle.Water); styled++;
+                if (bestMatch != null)
+                {
+                    tile.SetStyle(bestMatch.tileStyle);
+                    styled++;
+                }
             }
 
-            // ---- OVERLAYS ----
-            // Do NOT ask blueprint for objects unless explicitly enabled.
-            HashSet<Vector2Int> woodCells  = null;
-            HashSet<Vector2Int> stoneCells = null;
-
+            // Apply overlays (resources)
             if (useBuildLayerFallback)
             {
-                woodCells  = CellsFromBuildRoot(woodBuildRoot);
-                stoneCells = CellsFromBuildRoot(stoneBuildRoot);
+                resSet = ApplyOverlaysFromBuildRoots(w, h);
             }
 
+            Debug.Log($"[TWCBridge] Tiles seen: {tilesSeen}, styled: {styled}, resources set: {resSet}");
+        }
+
+        int ApplyOverlaysFromBuildRoots(int w, int h)
+        {
+            if (overlayBuildRoots.Count == 0)
+                return 0;
+
+            // Collect overlay cells from build roots
+            var overlayCells = new Dictionary<ResourceType, HashSet<Vector2Int>>();
+
+            foreach (var buildRoot in overlayBuildRoots)
+            {
+                if (buildRoot.root == null) continue;
+
+                var cells = CellsFromBuildRoot(buildRoot.root);
+                if (!overlayCells.ContainsKey(buildRoot.resourceType))
+                    overlayCells[buildRoot.resourceType] = new HashSet<Vector2Int>();
+
+                foreach (var cell in cells)
+                    overlayCells[buildRoot.resourceType].Add(cell);
+            }
+
+            // Apply resources to tiles
+            int resSet = 0;
             for (int x = 0; x < w; x++)
             for (int y = 0; y < h; y++)
             {
                 var p = new Vector2Int(x, y);
                 if (!tileGrid.TryGet(p, out var tile)) continue;
 
-                tile.TrySetResource(null);
+                tile.TrySetResource(null); // Clear first
 
-                bool woodHere  = woodCells  != null && woodCells.Contains(p);
-                bool stoneHere = stoneCells != null && stoneCells.Contains(p);
+                // Check each resource type
+                foreach (var kvp in overlayCells)
+                {
+                    if (kvp.Value.Contains(p))
+                    {
+                        // Verify tile style is compatible
+                        bool canPlace = false;
 
-                if (woodHere  && tile.Archetype != null && tile.Archetype.Style == TileStyle.Forest)
-                    tile.TrySetResource(new ResourceInstance(ResourceType.Wood, 1));
+                        switch (kvp.Key)
+                        {
+                            case ResourceType.Wood:
+                                canPlace = tile.Archetype?.Style == TileStyle.Forest;
+                                break;
+                            case ResourceType.Stone:
+                                canPlace = tile.Archetype?.Style == TileStyle.Mountain;
+                                break;
+                        }
 
-                if (stoneHere && tile.Archetype != null && tile.Archetype.Style == TileStyle.Mountain)
-                    tile.TrySetResource(new ResourceInstance(ResourceType.Stone, 1));
+                        if (canPlace)
+                        {
+                            tile.TrySetResource(new ResourceInstance(kvp.Key, 1));
+                            resSet++;
+                            break; // Only one resource per tile
+                        }
+                    }
+                }
             }
 
-            Debug.Log($"[TWCBridge] Tiles seen: {tilesSeen}, styled: {styled}, resources set: {resSet}");
+            return resSet;
         }
 
-        // -------- Helpers --------
-        bool[,] Map(string name)
+        List<string> GetActiveBlueprintLayers()
         {
-            if (string.IsNullOrEmpty(name) || tileWorldCreator == null) return null;
+            var layers = new List<string>();
+            if (tileWorldCreator?.twcAsset?.mapBlueprintLayers == null)
+                return layers;
+
+            foreach (var layer in tileWorldCreator.twcAsset.mapBlueprintLayers)
+            {
+                if (layer.active && !string.IsNullOrEmpty(layer.layerName))
+                    layers.Add(layer.layerName);
+            }
+
+            return layers;
+        }
+
+        bool[,] GetMap(string name)
+        {
+            if (string.IsNullOrEmpty(name) || tileWorldCreator == null)
+                return null;
+
             try
             {
                 var m = tileWorldCreator.GetMapOutputFromBlueprintLayer(name);
-                if (m == null) Debug.LogWarning($"[TWCBridge] Map '{name}' returned null.");
-                else Debug.Log($"[TWCBridge] Map '{name}' size: {m.GetLength(0)}x{m.GetLength(1)}");
+                if (m == null)
+                    Debug.LogWarning($"[TWCBridge] Map '{name}' returned null.");
                 return m;
             }
             catch (System.Exception e)
@@ -239,7 +338,6 @@ namespace Tiles
             var set = new HashSet<Vector2Int>();
             if (root == null) return set;
 
-            // Traverse all descendants (built objects may be nested)
             var all = root.GetComponentsInChildren<Transform>(includeInactive: true);
             for (int i = 0; i < all.Length; i++)
             {
@@ -251,8 +349,61 @@ namespace Tiles
                 int y = Mathf.RoundToInt(local.z / Mathf.Max(0.0001f, cellSize));
                 set.Add(new Vector2Int(x, y));
             }
+
             Debug.Log($"[TWCBridge] Build-root '{root.name}' → {set.Count} overlay cells.");
             return set;
+        }
+
+        [ContextMenu("Debug: List Active Layers")]
+        void DebugListActiveLayers()
+        {
+            var layers = GetActiveBlueprintLayers();
+            Debug.Log($"[TWCBridge] Active Blueprint Layers ({layers.Count}):");
+            foreach (var layer in layers)
+                Debug.Log($"  - {layer}");
+        }
+
+        [ContextMenu("Debug: Validate Mapper Configuration")]
+        void DebugValidateMapper()
+        {
+            if (layerMapper == null)
+            {
+                Debug.LogError("[TWCBridge] No LayerMapper assigned!");
+                return;
+            }
+
+            var activeLayers = GetActiveBlueprintLayers();
+            var mappedLayers = new HashSet<string>();
+
+            layerMapper.RebuildCache();
+            foreach (var mapping in layerMapper.mappings)
+                mappedLayers.Add(mapping.twcLayerName);
+
+            Debug.Log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+            Debug.Log("  LAYER MAPPER VALIDATION");
+            Debug.Log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+
+            Debug.Log($"\nMapped Layers ({mappedLayers.Count}):");
+            foreach (var layer in mappedLayers)
+                Debug.Log($"  ✓ {layer}");
+
+            var unmappedLayers = activeLayers.Where(l => !mappedLayers.Contains(l)).ToList();
+            if (unmappedLayers.Count > 0)
+            {
+                Debug.LogWarning($"\nUnmapped Active Layers ({unmappedLayers.Count}):");
+                foreach (var layer in unmappedLayers)
+                    Debug.LogWarning($"  ✗ {layer} (no mapping configured!)");
+            }
+
+            var inactiveMappings = mappedLayers.Where(l => !activeLayers.Contains(l)).ToList();
+            if (inactiveMappings.Count > 0)
+            {
+                Debug.Log($"\nMapped But Inactive Layers ({inactiveMappings.Count}):");
+                foreach (var layer in inactiveMappings)
+                    Debug.Log($"  ○ {layer}");
+            }
+
+            Debug.Log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
         }
     }
 }
