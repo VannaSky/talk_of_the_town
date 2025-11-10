@@ -1,6 +1,6 @@
 using UnityEngine;
 
-[CreateAssetMenu(fileName = "JobType", menuName = "Jobs/Job Type")]
+[CreateAssetMenu(fileName = "JobType", menuName = "Game/Job Type")]
 public class JobType : ScriptableObject
 {
     public string JobName;
