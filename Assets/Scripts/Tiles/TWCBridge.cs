@@ -2,6 +2,8 @@ using UnityEngine;
 using TWC;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
+using Unity.AI.Navigation;
 
 namespace Tiles
 {
@@ -13,6 +15,7 @@ namespace Tiles
         [SerializeField] TileGridSpawner spawner;
         [SerializeField] TileArchetypeLibrary library;
         [SerializeField] TWCLayerMapper layerMapper;
+        [SerializeField] NavMeshSurface navMeshSurface;
 
         [Header("Overlay Detection")]
         [SerializeField] bool useBuildLayerFallback = true;
@@ -35,12 +38,21 @@ namespace Tiles
         [SerializeField] bool autoRunOnStart = true;
         [SerializeField] bool regenerateTWCMap = true;
         [SerializeField] bool spawnTilesBeforeSync = true;
+        [SerializeField] bool rebakeNavMesh = true;
+        [SerializeField] float navMeshBakeDelay = 0.5f; // Time to wait before baking
 
         void Awake()
         {
             if (cellSize <= 0f) cellSize = 2f;
             if (origin == default && tileWorldCreator != null)
                 origin = tileWorldCreator.transform.position;
+            
+            // Ensure NavMeshSurface uses Physics Colliders, not Render Meshes
+            if (navMeshSurface != null)
+            {
+                navMeshSurface.useGeometry = UnityEngine.AI.NavMeshCollectGeometry.PhysicsColliders;
+                Debug.Log("[TWCBridge] NavMeshSurface configured to use Physics Colliders");
+            }
         }
 
         void Start()
@@ -81,25 +93,26 @@ namespace Tiles
             {
                 Debug.Log("[TWCBridge] ExecuteAllBlueprintLayers()");
                 tileWorldCreator.ExecuteAllBlueprintLayers();
-                // Events will trigger BuildLayers → Sync
+                // Events will trigger BuildLayers → Sync → NavMesh
             }
             else
             {
                 Debug.Log("[TWCBridge] Using existing TWC map, skipping regeneration");
 
-                // Verify blueprint data is available
                 if (!VerifyBlueprintData())
                 {
                     Debug.LogError("[TWCBridge] Blueprint data not available! Generate the map manually first or enable regenerateTWCMap.");
                     return;
                 }
 
-                // Skip directly to syncing from existing blueprint data
                 if (spawnTilesBeforeSync && spawner != null)
                 {
                     spawner.SpawnOrRebuild();
                 }
                 SyncFromBlueprints();
+#pragma warning disable CS4014
+                RebakeNavMeshAsync(); // Fire and forget
+#pragma warning restore CS4014
                 Debug.Log("[TWCBridge] TWC → TileGrid sync complete (no map regen).");
             }
         }
@@ -113,7 +126,6 @@ namespace Tiles
                 return false;
             }
 
-            // Try to get at least one valid map
             foreach (var layerName in activeLayers)
             {
                 var testMap = GetMap(layerName);
@@ -128,13 +140,13 @@ namespace Tiles
             return false;
         }
 
-        void OnBlueprintLayersComplete(TileWorldCreator _)
+        void OnBlueprintLayersComplete(TileWorldCreator twc)
         {
             Debug.Log("[TWCBridge] OnBlueprintLayersComplete → ExecuteAllBuildLayers(false)");
             tileWorldCreator.ExecuteAllBuildLayers(false);
         }
 
-        void OnBuildLayersComplete(TileWorldCreator _)
+        void OnBuildLayersComplete(TileWorldCreator twc)
         {
             Debug.Log("[TWCBridge] OnBuildLayersComplete");
             if (spawnTilesBeforeSync && spawner != null)
@@ -143,7 +155,29 @@ namespace Tiles
                 spawner.SpawnOrRebuild();
             }
             SyncFromBlueprints();
+#pragma warning disable CS4014 // Async call not awaited
+            RebakeNavMeshAsync(); // Fire and forget
+#pragma warning restore CS4014
             Debug.Log("[TWCBridge] TWC → TileGrid sync complete.");
+        }
+
+        async Task RebakeNavMeshAsync()
+        {
+            if (!rebakeNavMesh || navMeshSurface == null)
+                return;
+
+            Debug.Log($"[TWCBridge] Waiting {navMeshBakeDelay}s for physics to settle before NavMesh bake...");
+            
+            // Wait for specified delay (gives physics and colliders time to settle)
+            await Task.Delay((int)(navMeshBakeDelay * 1000));
+
+            // Ensure we're still in play mode
+            if (!Application.isPlaying || this == null)
+                return;
+
+            Debug.Log("[TWCBridge] Baking NavMesh...");
+            navMeshSurface.BuildNavMesh();
+            Debug.Log("[TWCBridge] NavMesh baked successfully.");
         }
 
         void SyncFromBlueprints()
@@ -190,7 +224,6 @@ namespace Tiles
             int w = refMap.GetLength(0), h = refMap.GetLength(1);
             int styled = 0, resSet = 0, tilesSeen = 0;
 
-            // Get all mappings sorted by priority
             var allMappings = layerMapper.GetAllMappingsSortedByPriority().ToList();
 
             Debug.Log($"[TWCBridge] Syncing {activeLayers.Count} layers to {w}x{h} grid using {allMappings.Count} mappings");
@@ -243,7 +276,6 @@ namespace Tiles
             if (overlayBuildRoots.Count == 0)
                 return 0;
 
-            // Collect overlay cells from build roots
             var overlayCells = new Dictionary<ResourceType, HashSet<Vector2Int>>();
 
             foreach (var buildRoot in overlayBuildRoots)
@@ -258,7 +290,6 @@ namespace Tiles
                     overlayCells[buildRoot.resourceType].Add(cell);
             }
 
-            // Apply resources to tiles
             int resSet = 0;
             for (int x = 0; x < w; x++)
             for (int y = 0; y < h; y++)
@@ -266,14 +297,12 @@ namespace Tiles
                 var p = new Vector2Int(x, y);
                 if (!tileGrid.TryGet(p, out var tile)) continue;
 
-                tile.TrySetResource(null); // Clear first
+                tile.TrySetResource(null);
 
-                // Check each resource type
                 foreach (var kvp in overlayCells)
                 {
                     if (kvp.Value.Contains(p))
                     {
-                        // Verify tile style is compatible
                         bool canPlace = false;
 
                         switch (kvp.Key)
@@ -290,7 +319,7 @@ namespace Tiles
                         {
                             tile.TrySetResource(new ResourceInstance(kvp.Key, 1));
                             resSet++;
-                            break; // Only one resource per tile
+                            break;
                         }
                     }
                 }
