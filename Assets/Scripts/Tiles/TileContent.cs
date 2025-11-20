@@ -1,5 +1,6 @@
 using Tiles;
 
+
 public sealed class ResourceInstance
 {
     public ResourceType Type { get; }
@@ -11,12 +12,12 @@ public sealed class ResourceInstance
     { Type = type; Amount = amount; AddedMoveCost = addedCost; AllowsWalkThrough = walkThrough; }
 }
 
-public sealed class BuildingInstance
+public sealed class ConstructionInstance
 {
-    public BuildingType Type { get; }
+    public ConstructionType Type { get; }
     public float AddedMoveCost { get; }
     public bool BlocksWalk { get; }
 
-    public BuildingInstance(BuildingType type, float addedCost = 0f, bool blocks = true)
+    public ConstructionInstance(ConstructionType type, float addedCost = 0f, bool blocks = true)
     { Type = type; AddedMoveCost = addedCost; BlocksWalk = blocks; }
 }

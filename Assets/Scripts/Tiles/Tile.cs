@@ -23,28 +23,28 @@ namespace Tiles
         public void SetLibrary(TileArchetypeLibrary lib) => library = lib;
 
         public ResourceInstance Resource { get; private set; }
-        public BuildingInstance Building { get; private set; }
+        public ConstructionInstance Construction { get; private set; }
         public Person Occupant { get; private set; }
 
         public bool HasResource => Resource != null;
-        public bool HasBuilding => Building != null;
+        public bool HasBuilding => Construction != null;
         public bool IsOccupied  => Occupant != null;
 
         public bool IsWalkable =>
             archetype != null && archetype.Walkable &&
-            (Building == null || !Building.BlocksWalk) &&
+            (Construction == null || !Construction.BlocksWalk) &&
             (Resource == null || Resource.AllowsWalkThrough) &&
             !IsOccupied;
 
         public float MoveCost =>
             (archetype?.BaseMoveCost ?? 0f) +
             (Resource?.AddedMoveCost ?? 0f) +
-            (Building?.AddedMoveCost ?? 0f);
+            (Construction?.AddedMoveCost ?? 0f);
 
         public event Action<Tile> OnChanged;
         public event Action<Person> OnOccupantChanged;
         public event Action<ResourceInstance> OnResourceChanged;
-        public event Action<BuildingInstance> OnBuildingChanged;
+        public event Action<ConstructionInstance> OnBuildingChanged;
 
         /// <summary>Runtime init from the spawner.</summary>
         public void Init(Vector2Int pos, TileArchetypeLibrary lib = null)
@@ -104,10 +104,10 @@ namespace Tiles
             return true;
         }
 
-        public bool TrySetBuilding(BuildingInstance bld)
+        public bool TrySetBuilding(ConstructionInstance bld)
         {
             if (bld != null && !AllowsBuilding(bld.Type)) return false;
-            Building = bld;
+            Construction = bld;
             OnBuildingChanged?.Invoke(bld);
             OnChanged?.Invoke(this);
             return true;
@@ -116,8 +116,8 @@ namespace Tiles
         public bool AllowsResource(ResourceType type) =>
             archetype != null && (type == ResourceType.None || archetype.AllowedResources.Contains(type));
 
-        public bool AllowsBuilding(BuildingType type) =>
-            archetype != null && (type == BuildingType.None || archetype.AllowedBuildings.Contains(type));
+        public bool AllowsBuilding(ConstructionType type) =>
+            archetype != null && (type == ConstructionType.None || archetype.AllowedConstructions.Contains(type));
 
 #if UNITY_EDITOR
         void OnValidate()
