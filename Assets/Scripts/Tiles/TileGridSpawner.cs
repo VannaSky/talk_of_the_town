@@ -28,6 +28,21 @@ namespace Tiles
         void LogInfo(string msg)    => GameLog.LogInfo(LogCategory, msg, this);
         void LogVerbose(string msg) => GameLog.LogVerbose(LogCategory, msg, this);
 
+#if UNITY_EDITOR
+        [ContextMenu("Transfer TWC Objects to Tiles (Manual)")]
+        void ManualTransfer()
+        {
+            if (gridRoot == null)
+            {
+                LogError("GridRoot not assigned!");
+                return;
+            }
+            
+            gridRoot.RebuildIndex();
+            TransferTWCObjectsToTiles();
+        }
+#endif
+
         public void SpawnOrRebuild()
         {
             if (twc == null || twc.twcAsset == null)
@@ -110,6 +125,9 @@ namespace Tiles
 
             gridRoot.RebuildIndex();
             PrintTileTypeCounts(tileTypeCounts);
+            
+            // Transfer TWC objects to tiles
+            TransferTWCObjectsToTiles();
         }
 
         List<string> GetActiveBlueprintLayers()
@@ -188,6 +206,275 @@ namespace Tiles
                 LogWarning($"SafeMap: Exception while reading layer '{layer}'.");
                 return null;
             }
+        }
+        
+        void TransferTWCObjectsToTiles()
+        {
+            LogInfo("Transferring TWC objects to tiles...");
+            
+            // TWC stores objects in cluster containers - search entire hierarchy
+            var twcObjects = FindTWCObjects();
+            
+            if (twcObjects.Count == 0)
+            {
+                LogWarning("No TWC objects found to transfer! Check if layers exist.");
+                return;
+            }
+            
+            int transferred = 0;
+            int notFound = 0;
+            
+            // Track resource groups per tile
+            Dictionary<Tile, Dictionary<string, Transform>> tileResourceGroups = new Dictionary<Tile, Dictionary<string, Transform>>();
+            
+            foreach (var obj in twcObjects)
+            {
+                // Find closest tile instead of rounding
+                Tile closestTile = FindClosestTile(obj.transform.position);
+                
+                if (closestTile != null)
+                {
+                    // Determine resource type and get/create the appropriate group
+                    string groupName = GetResourceGroupName(obj);
+                    Transform groupContainer = GetOrCreateResourceGroup(closestTile, groupName, tileResourceGroups);
+                    
+                    // Reparent to the group container while maintaining world position
+                    obj.transform.SetParent(groupContainer, true);
+                    
+                    // Store as visual reference if it's a resource
+                    if (IsResourceObject(obj))
+                    {
+                        closestTile.SetResourceVisual(obj);
+                    }
+                    
+                    transferred++;
+                    
+                    if (transferred <= 5) // Log first few for verification
+                    {
+                        LogVerbose($"Transferred '{obj.name}' to tile {closestTile.GridPos} under group '{groupName}'");
+                    }
+                }
+                else
+                {
+                    notFound++;
+                    if (notFound <= 3)
+                    {
+                        LogWarning($"No tile found for object '{obj.name}' at world {obj.transform.position}");
+                    }
+                }
+            }
+            
+            LogInfo($"Transfer complete: {transferred} objects moved to resource groups, {notFound} not found on grid");
+        }
+        
+        Tile FindClosestTile(Vector3 worldPos)
+        {
+            // Calculate the grid position this world position is closest to
+            Vector2Int gridPos = WorldToGrid(worldPos);
+            
+            // Try the calculated tile first
+            if (gridRoot.TryGet(gridPos, out Tile tile))
+            {
+                // Compare distance to tile CENTER, not corner
+                Vector3 tileCenter = GetTileCenter(tile);
+                float distSq = (tileCenter - worldPos).sqrMagnitude;
+                float maxDistSq = (cellSize * 0.7f) * (cellSize * 0.7f); // 70% of cell size
+                
+                if (distSq <= maxDistSq)
+                {
+                    return tile;
+                }
+            }
+            
+            // If not close enough, search immediate neighbors
+            Tile closestTile = null;
+            float closestDistSq = float.MaxValue;
+            
+            for (int dx = -1; dx <= 1; dx++)
+            {
+                for (int dy = -1; dy <= 1; dy++)
+                {
+                    Vector2Int neighborPos = gridPos + new Vector2Int(dx, dy);
+                    if (gridRoot.TryGet(neighborPos, out Tile neighbor))
+                    {
+                        Vector3 neighborCenter = GetTileCenter(neighbor);
+                        float distSq = (neighborCenter - worldPos).sqrMagnitude;
+                        
+                        if (distSq < closestDistSq)
+                        {
+                            closestDistSq = distSq;
+                            closestTile = neighbor;
+                        }
+                    }
+                }
+            }
+            
+            // Return closest tile if it's within reasonable distance
+            float maxSearchDistSq = (cellSize * 1.0f) * (cellSize * 1.0f);
+            if (closestTile != null && closestDistSq <= maxSearchDistSq)
+            {
+                return closestTile;
+            }
+            
+            return null;
+        }
+        
+        string GetResourceGroupName(GameObject obj)
+        {
+            string name = obj.name.ToLower();
+            
+            if (name.Contains("tree")) return "Trees";
+            if (name.Contains("rock") || name.Contains("stone")) return "Stones";
+            if (name.Contains("seed") || name.Contains("field") || name.Contains("crop") || name.Contains("farm")) return "Seeds";
+            
+            // Default fallback
+            return "Resources";
+        }
+        
+        Transform GetOrCreateResourceGroup(Tile tile, string groupName, Dictionary<Tile, Dictionary<string, Transform>> tileResourceGroups)
+        {
+            // Get or create the dictionary for this tile
+            if (!tileResourceGroups.TryGetValue(tile, out var groups))
+            {
+                groups = new Dictionary<string, Transform>();
+                tileResourceGroups[tile] = groups;
+            }
+            
+            // Get or create the specific group container
+            if (!groups.TryGetValue(groupName, out var groupTransform))
+            {
+                var groupObj = new GameObject(groupName);
+                groupTransform = groupObj.transform;
+                groupTransform.SetParent(tile.transform, false);
+                groupTransform.localPosition = Vector3.zero;
+                groups[groupName] = groupTransform;
+            }
+            
+            return groupTransform;
+        }
+        
+        List<GameObject> FindTWCObjects()
+        {
+            var objects = new List<GameObject>();
+            
+            // TWC creates a separate GameObject in the scene (not as a child!)
+            // Common names: "TileWorldCreator_Map", "TWC_World", "TWC_Objects"
+            Transform mapContainer = null;
+            
+            // Try common TWC container names
+            string[] possibleNames = {
+                "TileWorldCreator_Map",
+                "TWC_World",
+                "TWC_Objects",
+                twc.twcAsset.worldName // Use the actual worldName from asset
+            };
+            
+            foreach (var name in possibleNames)
+            {
+                var found = GameObject.Find(name);
+                if (found != null)
+                {
+                    mapContainer = found.transform;
+                    LogInfo($"Found TWC map container: '{name}'");
+                    break;
+                }
+            }
+            
+            if (mapContainer == null)
+            {
+                LogError($"Cannot find TWC map container! Tried: {string.Join(", ", possibleNames)}");
+                LogInfo("Make sure TWC has generated the map first.");
+                return objects;
+            }
+            
+            // Now find layers inside the map container
+            var foundLayers = new List<Transform>();
+            
+            foreach (Transform child in mapContainer)
+            {
+                if (child.name.Contains("layer") || child.name.Contains("Layer"))
+                {
+                    foundLayers.Add(child);
+                    LogInfo($"Found layer: '{child.name}' with {child.childCount} children");
+                }
+            }
+            
+            if (foundLayers.Count == 0)
+            {
+                LogWarning($"No layers found in map container '{mapContainer.name}'!");
+                return objects;
+            }
+            
+            LogInfo($"Found {foundLayers.Count} layers total");
+            
+            // Extract objects from each layer
+            foreach (var layer in foundLayers)
+            {
+                // Skip Grass_layer and Water_layer
+                string layerNameLower = layer.name.ToLower();
+                if (layerNameLower.Contains("grass") || layerNameLower.Contains("water"))
+                {
+                    LogVerbose($"Skipping layer: '{layer.name}'");
+                    continue;
+                }
+                
+                int objectsInLayer = 0;
+                
+                foreach (Transform layerChild in layer)
+                {
+                    if (layerChild.name.Contains("Cluster"))
+                    {
+                        // Objects are inside clusters
+                        foreach (Transform obj in layerChild)
+                        {
+                            // Only add objects that have visual children or are visual themselves
+                            if (obj.childCount > 0 || obj.GetComponent<MeshRenderer>() != null)
+                            {
+                                objects.Add(obj.gameObject);
+                                objectsInLayer++;
+                            }
+                        }
+                    }
+                    else if (layerChild.GetComponent<MeshRenderer>() != null)
+                    {
+                        // Some objects might be directly in layer
+                        objects.Add(layerChild.gameObject);
+                        objectsInLayer++;
+                    }
+                }
+                
+                LogInfo($"Layer '{layer.name}': found {objectsInLayer} objects");
+            }
+            
+            LogInfo($"Total: {objects.Count} TWC objects to transfer");
+            return objects;
+        }
+        
+        Vector2Int WorldToGrid(Vector3 worldPos)
+        {
+            // Tiles are positioned at their corner (lower-left), not center
+            // Use floor instead of round to get the correct tile
+            int x = Mathf.FloorToInt((worldPos.x - origin.x) / cellSize);
+            int z = Mathf.FloorToInt((worldPos.z - origin.z) / cellSize);
+            return new Vector2Int(x, z);
+        }
+        
+        Vector3 GetTileCenter(Tile tile)
+        {
+            // Tile is at corner, center is offset by half cellSize
+            Vector3 corner = tile.transform.position;
+            return new Vector3(
+                corner.x + cellSize / 2f,
+                corner.y,
+                corner.z + cellSize / 2f
+            );
+        }
+        
+        bool IsResourceObject(GameObject obj)
+        {
+            // Identify resource objects by name patterns
+            string name = obj.name.ToLower();
+            return name.Contains("tree") || name.Contains("rock") || name.Contains("stone") || name.Contains("ore") || name.Contains("field") || name.Contains("seed");
         }
     }
 }

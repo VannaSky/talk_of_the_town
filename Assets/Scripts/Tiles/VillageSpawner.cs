@@ -220,131 +220,14 @@ namespace Tiles
         /// </summary>
         private List<Vector2Int> ClearVillageArea(Vector2Int center)
         {
-            var clearedTiles = new List<Vector2Int>();
-            var objectsToDestroy = new List<GameObject>();
+            List<Vector2Int> clearedTiles = new List<Vector2Int>();
             int halfSize = villageAreaSize / 2;
             
-            // Calculate world bounds for the village area
-            if (!tileGrid.TryGet(center, out Tile centerTile))
-            {
-                LogError("Center tile not found!");
-                return clearedTiles;
-            }
+            LogInfo($"Clearing {villageAreaSize}x{villageAreaSize} area centered at {center}");
             
-            Vector3 centerWorld = centerTile.transform.position;
-            float clearRadius = (villageAreaSize * cellSize) / 2f;
+            int objectsDestroyed = 0;
             
-            LogInfo($"Clearing area around world pos {centerWorld} with radius {clearRadius}");
-            
-            // COMPREHENSIVE LAYER SEARCH - find ALL potential object layers
-            var allRootObjects = UnityEngine.SceneManagement.SceneManager.GetActiveScene().GetRootGameObjects();
-            var foundLayers = new List<Transform>();
-            
-            LogInfo("Searching for TWC layers...");
-            
-            foreach (var rootObj in allRootObjects)
-            {
-                if (rootObj.name.Contains("layer") || rootObj.name.Contains("Layer"))
-                {
-                    foundLayers.Add(rootObj.transform);
-                    LogInfo($"Found root layer: '{rootObj.name}' with {rootObj.transform.childCount} children");
-                }
-                
-                foreach (Transform child in rootObj.transform)
-                {
-                    if (child.name.Contains("layer") || child.name.Contains("Layer"))
-                    {
-                        foundLayers.Add(child);
-                        LogInfo($"Found child layer: '{child.name}' with {child.childCount} children");
-                    }
-                    
-                    foreach (Transform grandchild in child)
-                    {
-                        if (grandchild.name.Contains("layer") || grandchild.name.Contains("Layer"))
-                        {
-                            foundLayers.Add(grandchild);
-                            LogInfo($"Found grandchild layer: '{grandchild.name}' with {grandchild.childCount} children");
-                        }
-                    }
-                }
-            }
-            
-            LogInfo($"Total layers found: {foundLayers.Count}");
-            
-            // Verify library has Grass archetype before starting
-            if (tileGrid.TryGet(center, out Tile libTestTile))
-            {
-                if (libTestTile.Library != null)
-                {
-                    var grassArchetype = libTestTile.Library.Get(TileStyle.Grass);
-                    LogInfo($"Library verification: Grass archetype = {grassArchetype?.name ?? "NULL"}");
-                    if (grassArchetype == null)
-                    {
-                        LogError("Library does not have Grass archetype mapped!");
-                    }
-                }
-                else
-                {
-                    LogError("Tiles have no Library assigned!");
-                }
-            }
-            
-            // Collect objects to destroy from all found layers
-            foreach (var layer in foundLayers)
-            {
-                // Skip Grass_layer - we want to keep grass!
-                if (layer.name.ToLower().Contains("grass"))
-                    continue;
-                
-                int objectsInLayer = 0;
-                
-                foreach (Transform child in layer)
-                {
-                    if (child.name.Contains("Cluster"))
-                    {
-                        
-                        foreach (Transform obj in child)
-                        {
-                            float distX = Mathf.Abs(obj.position.x - centerWorld.x);
-                            float distZ = Mathf.Abs(obj.position.z - centerWorld.z);
-                            
-                            if (distX <= clearRadius && distZ <= clearRadius)
-                            {
-                                objectsToDestroy.Add(obj.gameObject);
-                                objectsInLayer++;
-                                
-                                if (objectsInLayer <= 3)
-                                {
-                                    LogInfo($"Will destroy '{obj.name}' at ({obj.position.x:F1}, {obj.position.z:F1}) from cluster '{child.name}'");
-                                }
-                            }
-                        }
-                    }
-                    else
-                    {
-                        float distX = Mathf.Abs(child.position.x - centerWorld.x);
-                        float distZ = Mathf.Abs(child.position.z - centerWorld.z);
-                        
-                        if (distX <= clearRadius && distZ <= clearRadius)
-                        {
-                            objectsToDestroy.Add(child.gameObject);
-                            objectsInLayer++;
-                            
-                            if (objectsInLayer <= 3)
-                            {
-                                LogInfo($"Will destroy '{child.name}' at ({child.position.x:F1}, {child.position.z:F1}) in layer '{layer.name}'");
-                            }
-                        }
-                    }
-                }
-                
-                if (objectsInLayer > 0)
-                {
-                    LogInfo($"Layer '{layer.name}': marking {objectsInLayer} objects for destruction");
-                }
-            }
-            
-            // Now process tiles in the area
+            // Process tiles in the area
             for (int dx = -halfSize; dx <= halfSize; dx++)
             {
                 for (int dy = -halfSize; dy <= halfSize; dy++)
@@ -354,22 +237,38 @@ namespace Tiles
                     if (!tileGrid.TryGet(pos, out Tile tile))
                         continue;
                     
-                    // Skip water and coast tiles - can't/shouldn't build there
+                    // Skip water and coast tiles
                     if (tile.Archetype?.Style == TileStyle.Water || tile.Archetype?.Style == TileStyle.Coast)
                         continue;
                     
-                    LogVerbose(
-                        $"Clearing tile object={tile.name} id={tile.GetInstanceID()} gridPos={tile.GridPos} " +
-                        $"before: {tile.Archetype?.name}/{tile.Archetype?.Style}"
-                    );
+                    // Delete only resource groups (Trees, Stones, Seeds)
+                    string[] resourceGroups = { "Trees", "Stones", "Seeds", "Resources" };
                     
+                    foreach (var groupName in resourceGroups)
+                    {
+                        Transform groupTransform = tile.transform.Find(groupName);
+                        if (groupTransform != null)
+                        {
+                            int childCount = groupTransform.childCount;
+                            if (childCount > 0 && objectsDestroyed < 5)
+                            {
+                                LogInfo($"Destroying resource group '{groupName}' with {childCount} objects on tile {pos}");
+                            }
+                            objectsDestroyed += childCount;
+                            Destroy(groupTransform.gameObject);
+                        }
+                    }
+                    
+                    // Clear the tile's resource visual reference
+                    if (tile.ResourceVisual != null)
+                    {
+                        tile.SetResourceVisual(null);
+                    }
+                    
+                    // Set style to grass
                     tile.SetStyle(TileStyle.Grass);
                     
-                    LogVerbose(
-                        $"AFTER SetStyle tile object={tile.name} id={tile.GetInstanceID()} gridPos={tile.GridPos} " +
-                        $"after: {tile.Archetype?.name}/{tile.Archetype?.Style}"
-                    );
-                    
+                    // Clear resource data
                     if (tile.HasResource)
                     {
                         tile.TrySetResource(null);
@@ -379,22 +278,7 @@ namespace Tiles
                 }
             }
             
-            // Now destroy all collected objects
-            int destroyedCount = 0;
-            foreach (var obj in objectsToDestroy)
-            {
-                if (obj != null)
-                {
-                    destroyedCount++;
-                    if (destroyedCount <= 5)
-                    {
-                        LogInfo($"Destroying '{obj.name}' at {obj.transform.position}");
-                    }
-                    Destroy(obj);
-                }
-            }
-            
-            LogInfo($"Cleared {clearedTiles.Count} tiles and destroyed {destroyedCount} objects");
+            LogInfo($"Cleared {clearedTiles.Count} tiles and destroyed {objectsDestroyed} objects");
             return clearedTiles;
         }
         
