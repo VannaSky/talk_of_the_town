@@ -7,6 +7,8 @@ namespace Tiles
 {
     public sealed class TileGridSpawner : MonoBehaviour
     {
+        private const string LogCategory = "TileGridSpawner";
+
         [Header("Refs")]
         [SerializeField] TileWorldCreator twc;
         [SerializeField] TileGrid gridRoot;
@@ -17,14 +19,20 @@ namespace Tiles
         [SerializeField] float cellSize = 2f;
         [SerializeField] Vector3 origin = Vector3.zero;
         [SerializeField] bool destroyOld = true;
-        
+
         [SerializeField] TileArchetypeLibrary library;
+
+        // Local logger helpers
+        void LogError(string msg)   => GameLog.LogError(LogCategory, msg, this);
+        void LogWarning(string msg) => GameLog.LogWarning(LogCategory, msg, this);
+        void LogInfo(string msg)    => GameLog.LogInfo(LogCategory, msg, this);
+        void LogVerbose(string msg) => GameLog.LogVerbose(LogCategory, msg, this);
 
         public void SpawnOrRebuild()
         {
             if (twc == null || twc.twcAsset == null)
             {
-                Debug.LogError("[Spawner] TWC or asset not configured.");
+                LogError("TileWorldCreator or asset not configured.");
                 return;
             }
 
@@ -32,16 +40,16 @@ namespace Tiles
             var activeLayers = GetActiveBlueprintLayers();
             if (activeLayers.Count == 0)
             {
-                Debug.LogWarning("[Spawner] No active blueprint layers found.");
+                LogWarning("No active blueprint layers found.");
                 return;
             }
 
-            Debug.Log($"[Spawner] Found {activeLayers.Count} active blueprint layers: {string.Join(", ", activeLayers)}");
+            LogInfo($"Found {activeLayers.Count} active blueprint layers: {string.Join(", ", activeLayers)}");
 
             // Get all maps
             var maps = new Dictionary<string, bool[,]>();
             bool[,] refMap = null;
-            
+
             foreach (var layerName in activeLayers)
             {
                 var map = SafeMap(layerName);
@@ -50,19 +58,25 @@ namespace Tiles
                     maps[layerName] = map;
                     if (refMap == null) refMap = map;
                 }
+                else
+                {
+                    LogVerbose($"Layer '{layerName}' returned no map (null).");
+                }
             }
 
             if (refMap == null || tilePrefab == null || gridRoot == null)
             {
-                Debug.LogError("[Spawner] No valid maps or missing prefab/grid.");
+                LogError("No valid maps or missing prefab/grid.");
                 return;
             }
 
             int w = refMap.GetLength(0), h = refMap.GetLength(1);
+            LogInfo($"Spawning tiles for map size {w}x{h}.");
 
             // Clear old tiles
             if (destroyOld)
             {
+                LogInfo("Destroying old tiles under gridRoot.");
                 foreach (Transform c in gridRoot.transform)
                     DestroyImmediate(c.gameObject);
             }
@@ -82,8 +96,12 @@ namespace Tiles
                 t.name = $"Tile_{x}_{y}";
                 t.Init(new Vector2Int(x, y), library);
 
-                // Determine type using mapper priority
-                string tileType = DetermineTileType(x, y, maps);
+                // Determine type using mapper priority and APPLY IT
+                TileStyle tileStyle = DetermineTileStyle(x, y, maps);
+                t.SetStyle(tileStyle);
+
+                // Count for statistics
+                string tileType = tileStyle.ToString();
                 if (tileTypeCounts.ContainsKey(tileType))
                     tileTypeCounts[tileType]++;
                 else
@@ -104,18 +122,17 @@ namespace Tiles
                 if (layer.active && !string.IsNullOrEmpty(layer.layerName))
                     layers.Add(layer.layerName);
             }
+
             return layers;
         }
 
-        string DetermineTileType(int x, int y, Dictionary<string, bool[,]> maps)
+        TileStyle DetermineTileStyle(int x, int y, Dictionary<string, bool[,]> maps)
         {
             if (layerMapper == null)
             {
-                // Fallback: return first layer that has this cell
-                foreach (var kvp in maps)
-                    if (kvp.Value[x, y])
-                        return kvp.Key;
-                return "Unknown";
+                // Fallback: return Grass (safest default)
+                LogWarning("LayerMapper is null, defaulting tile style to Grass.");
+                return TileStyle.Grass;
             }
 
             // Use mapper with priority
@@ -136,32 +153,41 @@ namespace Tiles
                 }
             }
 
-            return bestMatch != null ? bestMatch.tileStyle.ToString() : "Unknown";
+            return bestMatch != null ? bestMatch.tileStyle : TileStyle.Grass;
         }
 
         void PrintTileTypeCounts(Dictionary<string, int> counts)
         {
-            int totalCount = 0;
-            Debug.Log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-            Debug.Log("     TILE TYPE COUNTS");
-            Debug.Log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-            
-            foreach (var kvp in counts.OrderByDescending(k => k.Value))
+            if (counts == null || counts.Count == 0)
             {
-                Debug.Log($"  {kvp.Key,-12}: {kvp.Value,5}");
-                totalCount += kvp.Value;
+                LogInfo("No tiles spawned (tile type counts are empty).");
+                return;
             }
-            
-            Debug.Log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-            Debug.Log($"  {"TOTAL",-12}: {totalCount,5}");
-            Debug.Log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+
+            int totalCount = counts.Values.Sum();
+            var summary = string.Join(
+                ", ",
+                counts
+                    .OrderByDescending(kvp => kvp.Value)
+                    .Select(kvp => $"{kvp.Key}={kvp.Value}")
+            );
+
+            LogInfo($"Tile type counts: {summary} (total={totalCount})");
         }
 
         bool[,] SafeMap(string layer)
         {
             if (string.IsNullOrEmpty(layer) || twc == null) return null;
-            try { return twc.GetMapOutputFromBlueprintLayer(layer); }
-            catch { return null; }
+
+            try
+            {
+                return twc.GetMapOutputFromBlueprintLayer(layer);
+            }
+            catch
+            {
+                LogWarning($"SafeMap: Exception while reading layer '{layer}'.");
+                return null;
+            }
         }
     }
 }

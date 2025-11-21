@@ -19,6 +19,8 @@ namespace Tiles
         public Vector2Int GridPos => gridPos;
         public TileArchetype Archetype => archetype;
         public TileArchetypeLibrary Library => library;
+        
+        public GameObject ResourceVisual { get; private set; }
 
         public void SetLibrary(TileArchetypeLibrary lib) => library = lib;
 
@@ -29,6 +31,11 @@ namespace Tiles
         public bool HasResource => Resource != null;
         public bool HasBuilding => Construction != null;
         public bool IsOccupied  => Occupant != null;
+        
+        public void SetResourceVisual(GameObject go)
+        {
+            ResourceVisual = go;
+        }
 
         public bool IsWalkable =>
             archetype != null && archetype.Walkable &&
@@ -46,6 +53,17 @@ namespace Tiles
         public event Action<ResourceInstance> OnResourceChanged;
         public event Action<ConstructionInstance> OnBuildingChanged;
 
+#if UNITY_EDITOR
+        [ContextMenu("Log Instance Info")]
+        private void LogInstanceInfo()
+        {
+            Debug.Log($"[Tile] {name} instanceID={GetInstanceID()} gridPos={GridPos} " +
+                      $"archetype={Archetype?.name}/{Archetype?.Style} " +
+                      $"path={gameObject.transform.GetHierarchyPath()}");
+        }
+#endif
+        
+        
         /// <summary>Runtime init from the spawner.</summary>
         public void Init(Vector2Int pos, TileArchetypeLibrary lib = null)
         {
@@ -69,11 +87,22 @@ namespace Tiles
                 return;
             }
 
-            if (ReferenceEquals(next, archetype)) { OnChanged?.Invoke(this); return; }
+            if (ReferenceEquals(next, archetype))
+            {
+                // Debug.Log($"[Tile] SetStyle SKIP {name} id={GetInstanceID()} pos={gridPos} already {style}");
+                OnChanged?.Invoke(this);
+                return;
+            }
 
-            archetype = next;                     // ← actual assignment
-            // Debug.Log($"[Tile] {name} style → {archetype?.name}");
-            
+            var prev = archetype?.Style.ToString() ?? "NULL";
+            var caller = new System.Diagnostics.StackTrace(1, false).GetFrame(0)?.GetMethod();
+            var callerStr = caller != null
+                ? $"{caller.DeclaringType?.Name}.{caller.Name}"
+                : "<unknown>";
+
+           
+
+            archetype = next;
             OnChanged?.Invoke(this);
         }
 
