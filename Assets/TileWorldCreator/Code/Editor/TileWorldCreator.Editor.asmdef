@@ -1,0 +1,18 @@
+{
+    "name": "TileWorldCreator.Editor",
+    "references": [
+        "GUID:f55d868e111043949b054964007a5adc",
+        "GUID:438e935a418e55c40afee218535d8aec"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

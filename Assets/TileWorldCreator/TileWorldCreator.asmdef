@@ -1,0 +1,15 @@
+{
+    "name": "TileWorldCreator",
+    "references": [
+        "GUID:438e935a418e55c40afee218535d8aec"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

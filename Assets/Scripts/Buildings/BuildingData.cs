@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using Buildings;
 using UnityEngine;
 
 [CreateAssetMenu(fileName = "BuildingData", menuName = "Game/Building Data", order = 100)]
