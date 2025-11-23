@@ -137,7 +137,10 @@ namespace Tiles
 #pragma warning disable CS4014
                 RebakeNavMeshAsync(); // Fire and forget
 #pragma warning restore CS4014
-
+                
+                
+                RegisterExistingResources();
+        
                 LogInfo("TWC → TileGrid sync complete (no map regen).");
             }
         }
@@ -194,11 +197,15 @@ namespace Tiles
             {
                 LogWarning("VillageSpawner reference is null. Skipping village spawning.");
             }
+            
+            RegisterExistingResources();
+            
+            ExportGridToJson();
 
 #pragma warning disable CS4014 // Async call not awaited
             RebakeNavMeshAsync(); // Fire and forget
 #pragma warning restore CS4014
-
+            
             LogInfo("TWC → TileGrid sync complete (with village).");
         }
 
@@ -471,6 +478,85 @@ namespace Tiles
             }
 
             LogInfo("━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+        }
+        
+        /// <summary>
+        /// Scans all tiles for existing resource group children and registers their counts
+        /// </summary>
+        [ContextMenu("Register Existing Resources")]
+        public void RegisterExistingResources()
+        {
+            if (tileGrid == null)
+            {
+                LogError("TileGrid is null, cannot register resources");
+                return;
+            }
+
+            int tilesProcessed = 0;
+            int totalResources = 0;
+
+            // Get all tiles
+            foreach (Transform tileTransform in tileGrid.transform)
+            {
+                if (!tileTransform.TryGetComponent<Tile>(out var tile))
+                    continue;
+
+                tilesProcessed++;
+
+                // Check for Trees group
+                Transform treesGroup = tileTransform.Find("Trees");
+                if (treesGroup != null && treesGroup.childCount > 0)
+                {
+                    tile.AddResource(ResourceType.Wood, treesGroup.childCount);
+                    totalResources += treesGroup.childCount;
+                }
+
+                // Check for Stones group
+                Transform stonesGroup = tileTransform.Find("Stones");
+                if (stonesGroup != null && stonesGroup.childCount > 0)
+                {
+                    tile.AddResource(ResourceType.Stone, stonesGroup.childCount);
+                    totalResources += stonesGroup.childCount;
+                }
+
+                // Check for Seeds group
+                Transform seedsGroup = tileTransform.Find("Seeds");
+                if (seedsGroup != null && seedsGroup.childCount > 0)
+                {
+                    tile.AddResource(ResourceType.Seed, seedsGroup.childCount);
+                    totalResources += seedsGroup.childCount;
+                }
+            }
+
+            LogInfo($"Resource registration complete: {tilesProcessed} tiles processed, {totalResources} total resources registered");
+        }
+        
+        
+        [ContextMenu("Export Grid to JSON")]
+        public void ExportGridToJson()
+        {
+            if (tileGrid == null)
+            {
+                LogError("TileGrid is null, cannot export");
+                return;
+            }
+
+            string filename = $"tilegrid_{System.DateTime.Now:yyyy-MM-dd_HH-mm-ss}.json";
+            tileGrid.SaveToFile(filename);
+            LogInfo($"Grid exported to: {filename}");
+        }
+
+        [ContextMenu("Print LLM Summary")]
+        public void PrintLLMSummary()
+        {
+            if (tileGrid == null)
+            {
+                LogError("TileGrid is null, cannot generate summary");
+                return;
+            }
+
+            string summary = tileGrid.GetLLMSummary();
+            LogInfo($"\n{summary}");
         }
     }
 }

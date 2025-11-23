@@ -219,68 +219,71 @@ namespace Tiles
         /// Returns list of cleared tile positions.
         /// </summary>
         private List<Vector2Int> ClearVillageArea(Vector2Int center)
+{
+    List<Vector2Int> clearedTiles = new List<Vector2Int>();
+    int halfSize = villageAreaSize / 2;
+    
+    LogInfo($"Clearing {villageAreaSize}x{villageAreaSize} area centered at {center}");
+    
+    int objectsDestroyed = 0;
+    
+    // Process tiles in the area
+    for (int dx = -halfSize; dx <= halfSize; dx++)
+    {
+        for (int dy = -halfSize; dy <= halfSize; dy++)
         {
-            List<Vector2Int> clearedTiles = new List<Vector2Int>();
-            int halfSize = villageAreaSize / 2;
+            Vector2Int pos = center + new Vector2Int(dx, dy);
             
-            LogInfo($"Clearing {villageAreaSize}x{villageAreaSize} area centered at {center}");
+            if (!tileGrid.TryGet(pos, out Tile tile))
+                continue;
             
-            int objectsDestroyed = 0;
+            // Skip water and coast tiles
+            if (tile.Archetype?.Style == TileStyle.Water || tile.Archetype?.Style == TileStyle.Coast)
+                continue;
             
-            // Process tiles in the area
-            for (int dx = -halfSize; dx <= halfSize; dx++)
+            // Delete only resource groups (Trees, Stones, Seeds)
+            string[] resourceGroups = { "Trees", "Stones", "Seeds", "Resources" };
+            
+            foreach (var groupName in resourceGroups)
             {
-                for (int dy = -halfSize; dy <= halfSize; dy++)
+                Transform groupTransform = tile.transform.Find(groupName);
+                if (groupTransform != null)
                 {
-                    Vector2Int pos = center + new Vector2Int(dx, dy);
-                    
-                    if (!tileGrid.TryGet(pos, out Tile tile))
-                        continue;
-                    
-                    // Skip water and coast tiles
-                    if (tile.Archetype?.Style == TileStyle.Water || tile.Archetype?.Style == TileStyle.Coast)
-                        continue;
-                    
-                    // Delete only resource groups (Trees, Stones, Seeds)
-                    string[] resourceGroups = { "Trees", "Stones", "Seeds", "Resources" };
-                    
-                    foreach (var groupName in resourceGroups)
+                    int childCount = groupTransform.childCount;
+                    if (childCount > 0 && objectsDestroyed < 5)
                     {
-                        Transform groupTransform = tile.transform.Find(groupName);
-                        if (groupTransform != null)
-                        {
-                            int childCount = groupTransform.childCount;
-                            if (childCount > 0 && objectsDestroyed < 5)
-                            {
-                                LogInfo($"Destroying resource group '{groupName}' with {childCount} objects on tile {pos}");
-                            }
-                            objectsDestroyed += childCount;
-                            Destroy(groupTransform.gameObject);
-                        }
+                        LogInfo($"Destroying resource group '{groupName}' with {childCount} objects on tile {pos}");
                     }
-                    
-                    // Clear the tile's resource visual reference
-                    if (tile.ResourceVisual != null)
-                    {
-                        tile.SetResourceVisual(null);
-                    }
-                    
-                    // Set style to grass
-                    tile.SetStyle(TileStyle.Grass);
-                    
-                    // Clear resource data
-                    if (tile.HasResource)
-                    {
-                        tile.TrySetResource(null);
-                    }
-                    
-                    clearedTiles.Add(pos);
+                    objectsDestroyed += childCount;
+                    Destroy(groupTransform.gameObject);
                 }
             }
             
-            LogInfo($"Cleared {clearedTiles.Count} tiles and destroyed {objectsDestroyed} objects");
-            return clearedTiles;
+            // Clear the tile's resource tracking
+            tile.ClearResources();
+            
+            // Clear the tile's resource visual reference (legacy)
+            if (tile.ResourceVisual != null)
+            {
+                tile.SetResourceVisual(null);
+            }
+            
+            // Set style to grass
+            tile.SetStyle(TileStyle.Grass);
+            
+            // Clear resource data (legacy - now handled by ClearResources above)
+            if (tile.HasResource)
+            {
+                tile.TrySetResource(null);
+            }
+            
+            clearedTiles.Add(pos);
         }
+    }
+    
+    LogInfo($"Cleared {clearedTiles.Count} tiles and destroyed {objectsDestroyed} objects");
+    return clearedTiles;
+}
         
         private void PlaceBuilding(GameObject prefab, Vector2Int gridPos, ConstructionType constructionType, string buildingName)
         {
@@ -289,14 +292,41 @@ namespace Tiles
                 LogError($"Cannot place {buildingName}: tile at {gridPos} not found!");
                 return;
             }
-            
-            Vector3 worldPos = tile.transform.position + new Vector3(0, yOffset, 0);
-            GameObject building = Instantiate(prefab, worldPos, Quaternion.identity, transform);
-            building.name = $"{buildingName}_{gridPos.x}_{gridPos.y}";
-            
+    
+            Vector3 tileCenter = tile.transform.position + new Vector3(cellSize / 2f, yOffset, cellSize / 2f);
+    
+            // Create parent at tile center
+            GameObject buildingParent = new GameObject(buildingName);
+            buildingParent.transform.position = tileCenter;
+    
+            // Instantiate actual building as child
+            GameObject building = Instantiate(prefab, buildingParent.transform);
+    
+            // Center the child on X and Z only, keep Y at 0
+            if (building.TryGetComponent<Renderer>(out var renderer))
+            {
+                Vector3 center = renderer.bounds.center;
+                Vector3 offset = building.transform.position - center;
+                // Only apply X and Z offset, keep Y at 0 (so parent's yOffset is maintained)
+                building.transform.localPosition = new Vector3(offset.x, 0f, offset.z);
+            }
+    
+            // Find or create "Building" container under the tile
+            Transform buildingContainer = tile.transform.Find("Building");
+            if (buildingContainer == null)
+            {
+                GameObject container = new GameObject("Building");
+                container.transform.SetParent(tile.transform);
+                container.transform.localPosition = Vector3.zero;
+                buildingContainer = container.transform;
+            }
+    
+            // Move the building parent under the Building container (maintains world position)
+            buildingParent.transform.SetParent(buildingContainer);
+    
             var construction = new ConstructionInstance(constructionType, 0f, false);
             bool success = tile.TrySetBuilding(construction);
-            
+    
             if (!success)
             {
                 LogWarning($"Failed to mark tile {gridPos} as having building {buildingName}");

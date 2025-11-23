@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 
@@ -22,6 +23,9 @@ namespace Tiles
         
         public GameObject ResourceVisual { get; private set; }
 
+        // Replace single ResourceVisual with proper tracking
+        private Dictionary<ResourceType, int> _resourceCounts = new ();
+        
         public void SetLibrary(TileArchetypeLibrary lib) => library = lib;
 
         public ResourceInstance Resource { get; private set; }
@@ -35,6 +39,59 @@ namespace Tiles
         public void SetResourceVisual(GameObject go)
         {
             ResourceVisual = go;
+        }
+        
+        
+        /// <summary>Add resources to this tile</summary>
+        public void AddResource(ResourceType type, int count = 1)
+        {
+            if (type == ResourceType.None) return;
+        
+            if (!_resourceCounts.ContainsKey(type))
+                _resourceCounts[type] = 0;
+            _resourceCounts[type] += count;
+        
+            // Update the ResourceInstance if needed
+            if (Resource == null || Resource.Type != type)
+            {
+                TrySetResource(new ResourceInstance(type, _resourceCounts[type]));
+            }
+        }
+    
+        /// <summary>Remove resources from this tile</summary>
+        public bool RemoveResource(ResourceType type, int count = 1)
+        {
+            if (!_resourceCounts.ContainsKey(type)) return false;
+        
+            _resourceCounts[type] = Mathf.Max(0, _resourceCounts[type] - count);
+        
+            if (_resourceCounts[type] == 0)
+            {
+                _resourceCounts.Remove(type);
+                TrySetResource(null);
+                return true;
+            }
+        
+            return false;
+        }
+    
+        /// <summary>Get resource count for a specific type</summary>
+        public int GetResourceCount(ResourceType type)
+        {
+            return _resourceCounts.ContainsKey(type) ? _resourceCounts[type] : 0;
+        }
+    
+        /// <summary>Get all resource counts on this tile</summary>
+        public Dictionary<ResourceType, int> GetAllResourceCounts()
+        {
+            return new Dictionary<ResourceType, int>(_resourceCounts);
+        }
+    
+        /// <summary>Clear all resources</summary>
+        public void ClearResources()
+        {
+            _resourceCounts.Clear();
+            TrySetResource(null);
         }
 
         public bool IsWalkable =>
