@@ -25,6 +25,10 @@ namespace Tiles
         [Tooltip("Parent transforms under which TWC instantiates overlay objects (enable 'group under parent' in TWC).")]
         [SerializeField] List<OverlayBuildRoot> overlayBuildRoots = new List<OverlayBuildRoot>();
         
+        [Header("Village Placement Retry")]
+        [SerializeField] private int maxVillagePlacementRetries = 5;
+        private int currentRetryCount = 0;
+        
         [System.Serializable]
         public class OverlayBuildRoot
         {
@@ -101,7 +105,11 @@ namespace Tiles
 
             if (regenerateTWCMap)
             {
+                // Clean up before regenerating
+                CleanupBeforeRegeneration();
+        
                 LogInfo("ExecuteAllBlueprintLayers()");
+                currentRetryCount = 0; // Reset retry counter for new generation
                 tileWorldCreator.ExecuteAllBlueprintLayers();
                 // Events will trigger BuildLayers → Sync → NavMesh
             }
@@ -123,24 +131,33 @@ namespace Tiles
                 // 1) Sync terrain from existing blueprints
                 SyncFromBlueprints();
 
-                // 2) Spawn village AFTER sync
+                // 2) Spawn village (with retry, but regeneration is disabled)
                 if (villageSpawner != null)
                 {
                     LogInfo("Spawning village after blueprint sync (no map regen)...");
-                    villageSpawner.SpawnInitialVillage();
+                    bool success = villageSpawner.SpawnInitialVillage();
+                    if (!success)
+                    {
+                        LogWarning("Village placement failed, but regenerateTWCMap is disabled. Enable it to allow automatic retries.");
+                    }
                 }
                 else
                 {
                     LogWarning("VillageSpawner reference is null. Skipping village spawning (no map regen).");
                 }
 
-#pragma warning disable CS4014
-                RebakeNavMeshAsync(); // Fire and forget
-#pragma warning restore CS4014
-                
-                
+                // 3) Register resources
                 RegisterExistingResources();
         
+                ExportGridToJson();
+                
+                // Alternative for compact version
+                // ExportGridToJsonCompact();
+
+#pragma warning disable CS4014
+                RebakeNavMeshAsync();
+#pragma warning restore CS4014
+
                 LogInfo("TWC → TileGrid sync complete (no map regen).");
             }
         }
@@ -181,31 +198,27 @@ namespace Tiles
             if (spawnTilesBeforeSync && spawner != null)
             {
                 LogInfo("Spawning/Rebuilding tiles from blueprint maps…");
-                spawner.SpawnOrRebuild(); // builds tiles, but does NOT spawn village anymore
+                spawner.SpawnOrRebuild();
             }
 
             // 1) Sync all terrain styles from blueprints
             SyncFromBlueprints();
 
-            // 2) NOW spawn and clear the village area so its Grass style is final
-            if (villageSpawner != null)
-            {
-                LogInfo("Spawning village after blueprint sync...");
-                villageSpawner.SpawnInitialVillage();
-            }
-            else
-            {
-                LogWarning("VillageSpawner reference is null. Skipping village spawning.");
-            }
-            
+            // 2) Try to spawn village (with automatic retry if it fails)
+            TrySpawnVillageWithRetry();
+
+            // 3) Register resources after village is placed
             RegisterExistingResources();
             
             ExportGridToJson();
-
-#pragma warning disable CS4014 // Async call not awaited
-            RebakeNavMeshAsync(); // Fire and forget
-#pragma warning restore CS4014
             
+            // Alternative for compact version
+            // ExportGridToJsonCompact();
+
+#pragma warning disable CS4014
+            RebakeNavMeshAsync();
+#pragma warning restore CS4014
+
             LogInfo("TWC → TileGrid sync complete (with village).");
         }
 
@@ -557,6 +570,98 @@ namespace Tiles
 
             string summary = tileGrid.GetLLMSummary();
             LogInfo($"\n{summary}");
+        }
+        
+        [ContextMenu("Export Grid to JSON (Compact for LLM)")]
+        public void ExportGridToJsonCompact()
+        {
+            if (tileGrid == null)
+            {
+                LogError("TileGrid is null, cannot export");
+                return;
+            }
+
+            string filename = $"tilegrid_compact_{System.DateTime.Now:yyyy-MM-dd_HH-mm-ss}.json";
+            tileGrid.SaveToFileCompact(filename);
+            LogInfo($"Compact grid exported to: {filename}");
+        }
+        
+        private void TrySpawnVillageWithRetry()
+        {
+            if (villageSpawner == null)
+            {
+                LogWarning("VillageSpawner reference is null. Skipping village spawning.");
+                return;
+            }
+
+            LogInfo($"Attempting village spawn (attempt {currentRetryCount + 1}/{maxVillagePlacementRetries})...");
+            bool success = villageSpawner.SpawnInitialVillage();
+
+            if (!success)
+            {
+                currentRetryCount++;
+        
+                if (currentRetryCount >= maxVillagePlacementRetries)
+                {
+                    LogError($"Failed to place village after {maxVillagePlacementRetries} attempts. Giving up.");
+                    currentRetryCount = 0; // Reset for next manual attempt
+                    return;
+                }
+
+                LogWarning($"Village placement failed. Regenerating map (retry {currentRetryCount}/{maxVillagePlacementRetries})...");
+        
+                // Regenerate the entire map and try again
+                RegenerateMapForVillageRetry();
+            }
+            else
+            {
+                LogInfo("Village placed successfully!");
+                currentRetryCount = 0; // Reset counter on success
+            }
+        }
+
+        private void RegenerateMapForVillageRetry()
+        {
+            LogInfo("Starting map regeneration for village retry...");
+    
+            // Clean up everything before regenerating
+            CleanupBeforeRegeneration();
+    
+            // Regenerate TWC map with new seed
+            if (tileWorldCreator != null)
+            {
+                tileWorldCreator.ExecuteAllBlueprintLayers();
+                // This will trigger OnBlueprintLayersComplete → OnBuildLayersComplete
+                // which will eventually call TrySpawnVillageWithRetry again
+            }
+            else
+            {
+                LogError("Cannot regenerate: TileWorldCreator is null");
+            }
+        }
+        
+        /// <summary>
+        /// Cleans up our tile grid before TWC regenerates
+        /// </summary>
+        private void CleanupBeforeRegeneration()
+        {
+            LogInfo("Cleaning up tile grid before regeneration...");
+    
+            // Clean up our TileGrid (TWC will handle its own objects)
+            if (tileGrid != null)
+            {
+                tileGrid.DestroyAllTiles();
+                LogInfo("TileGrid cleared");
+            }
+    
+            // Clear NavMesh
+            if (navMeshSurface != null)
+            {
+                navMeshSurface.RemoveData();
+                LogVerbose("NavMesh data cleared");
+            }
+    
+            LogInfo("Cleanup complete - TWC will regenerate its objects");
         }
     }
 }

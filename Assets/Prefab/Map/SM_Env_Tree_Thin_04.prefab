@@ -12,6 +12,7 @@ GameObject:
   - component: {fileID: 33500306780498428}
   - component: {fileID: 23753785086645104}
   - component: {fileID: 64230827778105848}
+  - component: {fileID: 8536076347928327876}
   m_Layer: 0
   m_Name: SM_Env_Tree_Thin_04
   m_TagString: Untagged
@@ -112,3 +113,18 @@ MeshCollider:
   m_Convex: 1
   m_CookingOptions: 30
   m_Mesh: {fileID: 43558160873415590, guid: cad41492b4bc2d24e8e6a9299e853625, type: 2}
+--- !u!114 &8536076347928327876
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1041347827163862}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c688b4569c0967a19872441cf9c7ac3d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::ResourceNode
+  resourceType: 0
+  resourceAmount: 1
+  isReserved: 0

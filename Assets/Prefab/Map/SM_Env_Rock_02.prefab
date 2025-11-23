@@ -12,6 +12,7 @@ GameObject:
   - component: {fileID: 33851382422936134}
   - component: {fileID: 23850727192280010}
   - component: {fileID: 64561200520357036}
+  - component: {fileID: 655613848545250433}
   m_Layer: 0
   m_Name: SM_Env_Rock_02
   m_TagString: Untagged
@@ -112,3 +113,18 @@ MeshCollider:
   m_Convex: 0
   m_CookingOptions: 30
   m_Mesh: {fileID: 4300000, guid: d90fe027cf8eb9c4cb610007fdb99a41, type: 3}
+--- !u!114 &655613848545250433
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1739339459435030}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c688b4569c0967a19872441cf9c7ac3d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::ResourceNode
+  resourceType: 1
+  resourceAmount: 1
+  isReserved: 0

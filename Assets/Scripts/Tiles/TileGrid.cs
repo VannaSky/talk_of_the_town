@@ -56,6 +56,41 @@ namespace Tiles
         Debug.Log($"Grid saved to: {path}");
     }
     
+    /// <summary>Export compact grid state to JSON for LLM consumption</summary>
+    public string ExportToJsonCompact()
+    {
+        GridDataCompact data = new GridDataCompact();
+    
+        // Calculate grid bounds
+        int minX = int.MaxValue, maxX = int.MinValue;
+        int minY = int.MaxValue, maxY = int.MinValue;
+    
+        foreach (var tile in _tiles.Values)
+        {
+            if (tile.GridPos.x < minX) minX = tile.GridPos.x;
+            if (tile.GridPos.x > maxX) maxX = tile.GridPos.x;
+            if (tile.GridPos.y < minY) minY = tile.GridPos.y;
+            if (tile.GridPos.y > maxY) maxY = tile.GridPos.y;
+        
+            data.tiles.Add(new TileDataCompact(tile));
+        }
+    
+        data.w = maxX - minX + 1;
+        data.h = maxY - minY + 1;
+    
+        // No pretty print for minimal size
+        return JsonUtility.ToJson(data, false);
+    }
+
+    /// <summary>Save compact grid to JSON file</summary>
+    public void SaveToFileCompact(string filename = "tilegrid_compact.json")
+    {
+        string json = ExportToJsonCompact();
+        string path = Path.Combine(Application.persistentDataPath, filename);
+        File.WriteAllText(path, json);
+        Debug.Log($"Compact grid saved to: {path}");
+    }
+    
     /// <summary>Get compact summary for LLM (smaller token count)</summary>
     public string GetLLMSummary()
     {
@@ -102,5 +137,36 @@ namespace Tiles
             foreach (var t in GetComponentsInChildren<Tile>(includeInactive: false))
                 _tiles[t.GridPos] = t;
         }
+        
+        /// <summary>
+        /// Destroys all tile GameObjects and clears the dictionary
+        /// </summary>
+        public void DestroyAllTiles()
+        {
+            // Collect all children
+            var children = new List<Transform>();
+            foreach (Transform child in transform)
+            {
+                children.Add(child);
+            }
+    
+            // Destroy them all
+            foreach (var child in children)
+            {
+#if UNITY_EDITOR
+                if (!Application.isPlaying)
+                    DestroyImmediate(child.gameObject);
+                else
+                    Destroy(child.gameObject);
+#else
+        Destroy(child.gameObject);
+#endif
+            }
+    
+            // Clear the dictionary
+            _tiles.Clear();
+        }
     }
+    
+    
 }

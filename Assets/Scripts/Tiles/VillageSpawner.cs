@@ -36,25 +36,25 @@ namespace Tiles
         /// Main entry point: spawns all initial village buildings.
         /// Call this after tile generation and navmesh baking are complete.
         /// </summary>
-        public void SpawnInitialVillage()
+        public bool  SpawnInitialVillage()
         {
             if (tileGrid == null)
             {
                 LogError("TileGrid reference is null!");
-                return;
+                return false;
             }
 
             LogInfo($"Using tileGrid={tileGrid.name} (id {tileGrid.GetInstanceID()})");
             LogInfo("Starting initial village placement...");
-            
+    
             // 1. Find a suitable center location (not water, not edge)
             Vector2Int? centerPos = FindVillageCenter();
             if (!centerPos.HasValue)
             {
                 LogError("Failed to find suitable center for village!");
-                return;
+                return false; // Signal failure
             }
-            
+    
             LogInfo($"Village center chosen at {centerPos.Value}");
             
             // 2. Clear the village area (remove resources, make all tiles grass)
@@ -64,7 +64,7 @@ namespace Tiles
             if (clearedTiles.Count < 3)
             {
                 LogError("Not enough cleared tiles for buildings!");
-                return;
+                return false;
             }
             
             // 3. Place buildings in cleared area
@@ -91,6 +91,7 @@ namespace Tiles
             }
             
             LogInfo("Initial village spawning complete!");
+            return true; // Signal success
         }
         
         /// <summary>

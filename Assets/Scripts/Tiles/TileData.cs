@@ -14,8 +14,6 @@ namespace Tiles
         public List<ResourceData> resources;
         public string construction;
         public bool isWalkable;
-        public bool isOccupied;
-        public string occupantName;
         
         public TileData(Tile tile)
         {
@@ -39,8 +37,6 @@ namespace Tiles
             
             construction = tile.Construction?.Type.ToString() ?? "None";
             isWalkable = tile.IsWalkable;
-            isOccupied = tile.IsOccupied;
-            occupantName = tile.Occupant?.name ?? "";
         }
     }
     
@@ -55,7 +51,7 @@ namespace Tiles
     [Serializable]
     public class GridData
     {
-        public int width;
+        public int width;   // Map dimensions for LLM context
         public int height;
         public List<TileData> tiles;
         
