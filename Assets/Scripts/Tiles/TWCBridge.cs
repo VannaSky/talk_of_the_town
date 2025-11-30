@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Unity.AI.Navigation;
+using UnityEngine.Serialization;
 
 namespace Tiles
 {
@@ -13,13 +14,14 @@ namespace Tiles
 
         [Header("Refs")]
         [SerializeField] TileWorldCreator tileWorldCreator;
+        [SerializeField] private GameObject tileWorldCreatorMap;
         [SerializeField] TileGrid tileGrid;
         [SerializeField] TileGridSpawner spawner;
         [SerializeField] TileArchetypeLibrary library;
         [SerializeField] TWCLayerMapper layerMapper;
         [SerializeField] NavMeshSurface navMeshSurface;
         [SerializeField] VillageSpawner villageSpawner;
-        
+        [SerializeField] bool dontDestroyOnLoad = true;
         [Header("Overlay Detection")]
         [SerializeField] bool useBuildLayerFallback = true;
         [Tooltip("Parent transforms under which TWC instantiates overlay objects (enable 'group under parent' in TWC).")]
@@ -58,8 +60,18 @@ namespace Tiles
         {
             if (cellSize <= 0f) cellSize = 2f;
             if (origin == default && tileWorldCreator != null)
+            {
                 origin = tileWorldCreator.transform.position;
-            
+                if (dontDestroyOnLoad)
+                {
+                    DontDestroyOnLoad(tileWorldCreatorMap);
+                    DontDestroyOnLoad(tileGrid.gameObject);
+                    DontDestroyOnLoad(gameObject);
+                    DontDestroyOnLoad(Camera.main);
+                }
+                    
+            }
+                
             // Ensure NavMeshSurface uses Physics Colliders, not Render Meshes
             if (navMeshSurface != null)
             {
