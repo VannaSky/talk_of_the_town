@@ -67,7 +67,7 @@ namespace Tiles
                     DontDestroyOnLoad(tileWorldCreatorMap);
                     DontDestroyOnLoad(tileGrid.gameObject);
                     DontDestroyOnLoad(gameObject);
-                    DontDestroyOnLoad(Camera.main);
+             
                 }
                     
             }
