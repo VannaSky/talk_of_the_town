@@ -24,6 +24,7 @@ public class JobHandler : MonoBehaviour
 
     [HideInInspector]
     public VillagerMover villagerMover;
+    public Animator animator;
 
     private void Awake()
     {

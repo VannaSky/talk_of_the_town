@@ -177,14 +177,16 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 19ee26849131f6146b1f43051fe81096, type: 3}
   m_Name: 
   m_EditorClassIdentifier: '::'
-  decisionInterval: 10
-  respectCurrentTask: 1
+  maxDecisionInterval: 30
+  minDecisionInterval: 2
+  idleTimeout: 3
   availableJobTypes: []
   logDecisions: 1
   lastDecision:
     jobName: 
     reason: 
     success: 0
+  currentState: Initializing
 --- !u!114 &6685742529267681108
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -200,6 +202,7 @@ MonoBehaviour:
   currentJob: {fileID: 0}
   allJobLevels: []
   villagerMover: {fileID: 0}
+  animator: {fileID: 475969360241523683}
 --- !u!114 &1840773231379952635
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -292,11 +295,20 @@ PrefabInstance:
       propertyPath: m_ConstrainProportionsScale
       value: 1
       objectReference: {fileID: 0}
+    - target: {fileID: 95270914350943908, guid: b3a21033f5e25ef47a403070d1d96983, type: 3}
+      propertyPath: m_Controller
+      value: 
+      objectReference: {fileID: 9100000, guid: aa4f89f3a5b19e74887e1a730fe57123, type: 2}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
     m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: b3a21033f5e25ef47a403070d1d96983, type: 3}
+--- !u!95 &475969360241523683 stripped
+Animator:
+  m_CorrespondingSourceObject: {fileID: 95270914350943908, guid: b3a21033f5e25ef47a403070d1d96983, type: 3}
+  m_PrefabInstance: {fileID: 560843258246919495}
+  m_PrefabAsset: {fileID: 0}
 --- !u!4 &560664935656890445 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 4330087673648394, guid: b3a21033f5e25ef47a403070d1d96983, type: 3}
