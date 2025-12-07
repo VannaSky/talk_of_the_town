@@ -1,5 +1,6 @@
 using System;
 using Buildings;
+using Tiles;
 using UnityEngine;
 
 [Serializable]
@@ -8,15 +9,20 @@ public class FarmerLogic : JobLogic
     [Header("Farmer Settings")]
     public float workSpeed = 1f;
     public float stoppingDistance = 1.5f;
+    public float harvestTime = 5f;
+    public int foodPerHarvest = 10;
+    public int seedCostPerHarvest = 1;
 
     private enum State { Idle, FindingTarget, MovingToTarget, Working }
     private State currentState = State.Idle;
     private Building currentTarget = null;
+    private float workProgress = 0f;
 
     public override void OnJobStart(JobHandler handler)
     {
         currentState = State.FindingTarget;
         timeSinceLastAction = 0f;
+        workProgress = 0f;
         currentTarget = null;
     }
 
@@ -28,13 +34,21 @@ public class FarmerLogic : JobLogic
                 currentTarget = FindNextFarm(handler);
                 if (currentTarget != null)
                 {
+                    // Check if we have seeds to farm
+                    if (VillageState.Instance != null && !VillageState.Instance.HasResource(ResourceType.Seed, seedCostPerHarvest))
+                    {
+                        currentStatus = $"Need seeds to farm! Have: {VillageState.Instance.Seeds}. Waiting...";
+                        handler.villagerMover.StopMoving();
+                        return false;
+                    }
+                    
                     currentTarget.Reserve();
                     currentState = State.MovingToTarget;
                     handler.villagerMover.StopMoving();
                 }
                 else
                 {
-                    currentStatus = "No farm tasks available. Waiting...";
+                    currentStatus = "No farm available. Waiting...";
                     handler.villagerMover.StopMoving();
                 }
                 break;
@@ -46,14 +60,20 @@ public class FarmerLogic : JobLogic
                     break;
                 }
 
-                currentStatus = $"Moving to farm at {currentTarget.transform.position}";
+                currentStatus = $"Moving to farm";
                 handler.villagerMover.MoveTo(currentTarget.transform.position);
 
                 if (handler.villagerMover.IsNearDestination(stoppingDistance))
                 {
                     handler.villagerMover.StopMoving();
                     currentState = State.Working;
-                    timeSinceLastAction = 0f;
+                    workProgress = 0f;
+                    
+                    // Consume seeds when starting to work
+                    if (VillageState.Instance != null)
+                    {
+                        VillageState.Instance.TrySpendResource(ResourceType.Seed, seedCostPerHarvest);
+                    }
                 }
                 break;
 
@@ -64,20 +84,27 @@ public class FarmerLogic : JobLogic
                     break;
                 }
 
-                timeSinceLastAction += Time.deltaTime;
-                float workApplied = workSpeed * Time.deltaTime;
-                bool levelCompleted = currentTarget.AddWork(workApplied);
+                workProgress += workSpeed * Time.deltaTime;
+                currentStatus = $"Farming ({workProgress:F1}/{harvestTime:F1})...";
 
-                var bt = currentTarget.buildingData != null ? currentTarget.buildingData.buildingType.ToString() : "Farm";
-                currentStatus = $"Working on {bt} ({currentTarget.GetProgressPercent()}%)";
-
-                if (levelCompleted)
+                if (workProgress >= harvestTime)
                 {
-                    int finishedLevelIndex = Mathf.Max(0, currentTarget.currentLevel - 1);
+                    // Harvest complete - produce food!
+                    if (VillageState.Instance != null)
+                    {
+                        VillageState.Instance.AddResource(ResourceType.None, 0); // Food isn't in ResourceType yet
+                        // For now, let's add it as a special case
+                        Debug.Log($"[Farmer] Harvested {foodPerHarvest} food!");
+                        
+                        // TODO: Add Food to ResourceType enum and VillageState
+                        // VillageState.Instance.AddFood(foodPerHarvest);
+                    }
+                    
                     currentTarget.Unreserve();
                     currentState = State.FindingTarget;
                     handler.villagerMover.StopMoving();
-                    return true;
+                    workProgress = 0f;
+                    return true;  // Job cycle complete, gain XP
                 }
                 break;
         }
@@ -96,7 +123,7 @@ public class FarmerLogic : JobLogic
         {
             if (b == null) continue;
             if (b.IsReserved) continue;
-            if (!b.IsFinished()) continue;
+            if (!b.IsFinished()) continue;  // Farm must be finished
             if (b.buildingData == null) continue;
             if (b.buildingData.buildingType != BuildingType.Farm) continue;
 

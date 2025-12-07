@@ -1,24 +1,24 @@
-using UnityEngine;
+﻿using UnityEngine;
 using System;
-using Tiles;  // For ResourceType
+using Tiles;
 
 [Serializable]
-public class LumberjackLogic : JobLogic
+public class MinerLogic : JobLogic
 {
     private enum State
     {
         Idle,
         FindingTarget,
         MovingToTarget,
-        Chopping,
+        Mining,
         Carrying
     }
     
-    [Header("Lumberjack Settings")]
-    public float timeToChop = 4f;
+    [Header("Miner Settings")]
+    public float timeToMine = 5f;
     public float timeToCarry = 2f;
     public float stoppingDistance = 1.5f;
-    public int woodPerTree = 5;  // NEW: How much wood per tree
+    public int stonePerDeposit = 3;
 
     private State currentState = State.Idle;
     private ResourceNode currentTarget = null;
@@ -34,7 +34,7 @@ public class LumberjackLogic : JobLogic
         switch (currentState)
         {
             case State.FindingTarget:
-                currentTarget = FindNextTree(handler);  // CHANGED: Pass handler for position
+                currentTarget = FindNextStone(handler);
                 if (currentTarget != null)
                 {
                     currentTarget.Reserve();
@@ -42,7 +42,7 @@ public class LumberjackLogic : JobLogic
                 }
                 else
                 {
-                    currentStatus = "No trees found! Waiting...";
+                    currentStatus = "No stone deposits found! Waiting...";
                 }
                 handler.villagerMover.StopMoving();
                 break;
@@ -54,18 +54,18 @@ public class LumberjackLogic : JobLogic
                     break;
                 }
                 
-                currentStatus = $"Moving to tree at {currentTarget.transform.position}";
+                currentStatus = $"Moving to stone at {currentTarget.transform.position}";
                 handler.villagerMover.MoveTo(currentTarget.transform.position);
 
                 if (handler.villagerMover.IsNearDestination(stoppingDistance))
                 {
                     handler.villagerMover.StopMoving();
-                    currentState = State.Chopping;
+                    currentState = State.Mining;
                     timeSinceLastAction = 0f; 
                 }
                 break;
                 
-            case State.Chopping:
+            case State.Mining:
                 if (currentTarget == null)
                 {
                     currentState = State.FindingTarget;
@@ -73,9 +73,9 @@ public class LumberjackLogic : JobLogic
                 }
                 
                 timeSinceLastAction += Time.deltaTime;
-                currentStatus = $"Chopping wood ({timeSinceLastAction:F1}/{timeToChop:F1})...";
+                currentStatus = $"Mining stone ({timeSinceLastAction:F1}/{timeToMine:F1})...";
 
-                if (timeSinceLastAction >= timeToChop)
+                if (timeSinceLastAction >= timeToMine)
                 {
                     currentTarget.Harvest();
                     timeSinceLastAction = 0f;
@@ -85,15 +85,15 @@ public class LumberjackLogic : JobLogic
 
             case State.Carrying:
                 timeSinceLastAction += Time.deltaTime;
-                currentStatus = $"Carrying wood ({timeSinceLastAction:F1}/{timeToCarry:F1})...";
+                currentStatus = $"Carrying stone ({timeSinceLastAction:F1}/{timeToCarry:F1})...";
                 
                 if (timeSinceLastAction >= timeToCarry)
                 {
-                    // NEW: Deposit wood to village inventory!
+                    // Deposit stone to village inventory
                     if (VillageState.Instance != null)
                     {
-                        VillageState.Instance.AddResource(ResourceType.Wood, woodPerTree);
-                        currentStatus = $"Deposited {woodPerTree} wood!";
+                        VillageState.Instance.AddResource(ResourceType.Stone, stonePerDeposit);
+                        currentStatus = $"Deposited {stonePerDeposit} stone!";
                     }
                     
                     currentTarget.Unreserve();
@@ -105,8 +105,7 @@ public class LumberjackLogic : JobLogic
         return false;
     }
 
-    // CHANGED: Find nearest tree to the villager's position
-    private ResourceNode FindNextTree(JobHandler handler)
+    private ResourceNode FindNextStone(JobHandler handler)
     {
         ResourceNode[] allNodes = GameObject.FindObjectsByType<ResourceNode>(FindObjectsSortMode.None);
         ResourceNode nearest = null;
@@ -116,7 +115,7 @@ public class LumberjackLogic : JobLogic
         foreach (var node in allNodes)
         {
             if (node == null) continue;
-            if (node.resourceType != ResourceNode.ResourceType.Tree) continue;
+            if (node.resourceType != ResourceNode.ResourceType.Stone) continue;  // Rock in ResourceNode
             if (node.isReserved) continue;
             
             float d = Vector3.Distance(origin, node.transform.position);

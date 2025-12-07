@@ -120,6 +120,8 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 4000249594511029405}
+  - component: {fileID: 3080153234830877584}
+  - component: {fileID: 6186792565546169701}
   - component: {fileID: 6685742529267681108}
   - component: {fileID: 1840773231379952635}
   - component: {fileID: 3982711867639208403}
@@ -147,6 +149,42 @@ Transform:
   - {fileID: 560664935656890445}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &3080153234830877584
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5758365978611229494}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 88eb0de44747bc7de944a9aa5fac2109, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Villager
+  villagerName: Roland
+  tileGrid: {fileID: 0}
+  cellSize: 2
+  currentGridPos: {x: 0, y: 0}
+--- !u!114 &6186792565546169701
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5758365978611229494}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 19ee26849131f6146b1f43051fe81096, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: '::'
+  decisionInterval: 10
+  respectCurrentTask: 1
+  availableJobTypes: []
+  logDecisions: 1
+  lastDecision:
+    jobName: 
+    reason: 
+    success: 0
 --- !u!114 &6685742529267681108
 MonoBehaviour:
   m_ObjectHideFlags: 0
