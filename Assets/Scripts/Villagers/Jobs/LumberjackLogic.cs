@@ -1,18 +1,14 @@
 using UnityEngine;
 using System;
-using Tiles;  // For ResourceType
+using Tiles;
+using AnimationState = Villagers.Jobs.AnimationState;
+
+// For ResourceType
 
 [Serializable]
 public class LumberjackLogic : JobLogic
 {
-    public enum State
-    {
-        Idle = 0,
-        FindingTarget = 1,
-        MovingToTarget = 2,
-        Chopping = 3,
-        Carrying = 4
-    }
+ 
     
     [Header("Lumberjack Settings")]
     public float timeToChop = 4f;
@@ -22,41 +18,41 @@ public class LumberjackLogic : JobLogic
 
     [Header("Animation")]
     [Tooltip("Animator int parameter that mirrors the lumberjack state.")]
-    public string animatorStateParameter = "LumberjackState";
+    public string animatorStateParameter = "AnimationState";
 
-    private State currentState = State.Idle;
+    private AnimationState currentState = AnimationState.Idle;
     private ResourceNode currentTarget = null;
     
     public override void OnJobStart(JobHandler handler)
     {
         timeSinceLastAction = 0f;
-        ChangeState(State.FindingTarget, handler);
+        ChangeState(AnimationState.FindingTarget, handler);
     }
 
     public override bool Execute(JobHandler handler)
     {
         switch (currentState)
         {
-            case State.FindingTarget:
+            case AnimationState.FindingTarget:
                 currentTarget = FindNextTree(handler);
                 if (currentTarget != null)
                 {
                     currentTarget.Reserve();
                     handler.villagerMover.StopMoving();
-                    ChangeState(State.MovingToTarget, handler);
+                    ChangeState(AnimationState.MovingToTarget, handler);
                 }
                 else
                 {
                     currentStatus = "No trees found! Waiting...";
                     // Optionally go to Idle animation while waiting
-                    ChangeState(State.Idle, handler);
+                    ChangeState(AnimationState.Idle, handler);
                 }
                 break;
 
-            case State.MovingToTarget:
+            case AnimationState.MovingToTarget:
                 if (currentTarget == null)
                 {
-                    ChangeState(State.FindingTarget, handler);
+                    ChangeState(AnimationState.FindingTarget, handler);
                     break;
                 }
                 
@@ -66,14 +62,14 @@ public class LumberjackLogic : JobLogic
                 if (handler.villagerMover.IsNearDestination(stoppingDistance))
                 {
                     handler.villagerMover.StopMoving();
-                    ChangeState(State.Chopping, handler);
+                    ChangeState(AnimationState.Chopping, handler);
                 }
                 break;
                 
-            case State.Chopping:
+            case AnimationState.Chopping:
                 if (currentTarget == null)
                 {
-                    ChangeState(State.FindingTarget, handler);
+                    ChangeState(AnimationState.FindingTarget, handler);
                     break;
                 }
                 
@@ -83,11 +79,11 @@ public class LumberjackLogic : JobLogic
                 if (timeSinceLastAction >= timeToChop)
                 {
                     currentTarget.Harvest();
-                    ChangeState(State.Carrying, handler);
+                    ChangeState(AnimationState.Carrying, handler);
                 }
                 break;
 
-            case State.Carrying:
+            case AnimationState.Carrying:
                 timeSinceLastAction += Time.deltaTime;
                 currentStatus = $"Carrying wood ({timeSinceLastAction:F1}/{timeToCarry:F1})...";
                 
@@ -102,7 +98,7 @@ public class LumberjackLogic : JobLogic
                     if (currentTarget != null)
                         currentTarget.Unreserve();
 
-                    ChangeState(State.FindingTarget, handler);
+                    ChangeState(AnimationState.FindingTarget, handler);
                     return true;  // Job complete, gain XP
                 }
                 break;
@@ -111,7 +107,7 @@ public class LumberjackLogic : JobLogic
     }
 
     // Central place for state changes + animation sync
-    private void ChangeState(State newState, JobHandler handler)
+    private void ChangeState(AnimationState newState, JobHandler handler)
     {
         if (currentState == newState)
             return;

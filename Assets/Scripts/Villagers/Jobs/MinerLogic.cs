@@ -1,63 +1,56 @@
 ﻿using UnityEngine;
 using System;
 using Tiles;
+using AnimationState = Villagers.Jobs.AnimationState;
 
 [Serializable]
 public class MinerLogic : JobLogic
 {
-    private enum State
-    {
-        Idle = 0,
-        FindingTarget = 1,
-        MovingToTarget = 2,
-        Mining = 3,
-        Carrying = 4
-    }
+   
     
     [Header("Miner Settings")]
     public float timeToMine = 5f;
     public float timeToCarry = 2f;
     public float stoppingDistance = 1.5f;
     public int stonePerDeposit = 3;
-    
-    [Header("Animation")]
-    [Tooltip("Animator int parameter that mirrors the miner state.")]
-    public string animatorStateParameter = "MinerState";
 
-    private State currentState = State.Idle;
+    [Header("Animation")] [Tooltip("Animator int parameter that mirrors the miner AnimationState.")]
+    public string animatorStateParameter = "AnimationState";
+
+    private AnimationState currentState = AnimationState.Idle;
     private ResourceNode currentTarget = null;
     
     public override void OnJobStart(JobHandler handler)
     {
         timeSinceLastAction = 0f;
-        ChangeState(State.FindingTarget, handler);
+        ChangeState(AnimationState.FindingTarget, handler);
     }
 
     public override bool Execute(JobHandler handler)
     {
         switch (currentState)
         {
-            case State.FindingTarget:
+            case AnimationState.FindingTarget:
                 currentTarget = FindNextStone(handler);
                 if (currentTarget != null)
                 {
                     currentTarget.Reserve();
                     handler.villagerMover.StopMoving();
-                    ChangeState(State.MovingToTarget, handler);
+                    ChangeState(AnimationState.MovingToTarget, handler);
                     //currentState = State.MovingToTarget;
                 }
                 else
                 {
                     currentStatus = "No stone deposits found! Waiting...";
-                    ChangeState(State.Idle, handler);
+                    ChangeState(AnimationState.Idle, handler);
                 }
                 //handler.villagerMover.StopMoving();
                 break;
 
-            case State.MovingToTarget:
+            case AnimationState.MovingToTarget:
                 if (currentTarget == null)
                 {
-                    ChangeState(State.FindingTarget, handler);
+                    ChangeState(AnimationState.FindingTarget, handler);
                     //currentState = State.FindingTarget;
                     break;
                 }
@@ -68,16 +61,16 @@ public class MinerLogic : JobLogic
                 if (handler.villagerMover.IsNearDestination(stoppingDistance))
                 {
                     handler.villagerMover.StopMoving();
-                    ChangeState(State.Mining, handler);
+                    ChangeState(AnimationState.Mining, handler);
                     //currentState = State.Mining;
                     //timeSinceLastAction = 0f; 
                 }
                 break;
                 
-            case State.Mining:
+            case AnimationState.Mining:
                 if (currentTarget == null)
                 {
-                    ChangeState(State.FindingTarget, handler);
+                    ChangeState(AnimationState.FindingTarget, handler);
                     //currentState = State.FindingTarget;
                     break;
                 }
@@ -88,13 +81,13 @@ public class MinerLogic : JobLogic
                 if (timeSinceLastAction >= timeToMine)
                 {
                     currentTarget.Harvest();
-                    ChangeState(State.Carrying, handler);
+                    ChangeState(AnimationState.Carrying, handler);
                     //timeSinceLastAction = 0f;
                     //currentState = State.Carrying;
                 }
                 break;
 
-            case State.Carrying:
+            case AnimationState.Carrying:
                 timeSinceLastAction += Time.deltaTime;
                 currentStatus = $"Carrying stone ({timeSinceLastAction:F1}/{timeToCarry:F1})...";
                 
@@ -110,7 +103,7 @@ public class MinerLogic : JobLogic
                         currentTarget.Unreserve();
                     //currentTarget.Unreserve();
                     //currentState = State.FindingTarget;
-                    ChangeState(State.FindingTarget, handler);
+                    ChangeState(AnimationState.FindingTarget, handler);
                     return true;  // Job complete, gain XP
                 }
                 break;
@@ -119,7 +112,7 @@ public class MinerLogic : JobLogic
     }
 
     // Central place for state changes + animation sync
-    private void ChangeState(State newState, JobHandler handler)
+    private void ChangeState(AnimationState newState, JobHandler handler)
     {
         if (currentState == newState)
             return;
