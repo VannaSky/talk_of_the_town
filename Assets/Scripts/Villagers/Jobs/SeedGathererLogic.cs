@@ -9,5 +9,5 @@ public class SeedGathererLogic : ResourceGatheringJobLogic
     protected override ResourceType DepositResourceType => ResourceType.Seed;
     protected override AnimationState WorkingAnimationState => AnimationState.Gathering;
     protected override string WorkingVerb => "Gathering seeds";
-    protected override string ResourceName => "seed";
+    protected override string ResourceName => "seeds";
 }

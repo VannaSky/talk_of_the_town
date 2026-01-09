@@ -3,219 +3,240 @@ using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
-/// Bridges LLM decisions to JobHandler.
-/// Event-driven: requests new decision when job completes, not just on timer.
+/// Bridges LLM batch decisions to JobHandler.
+/// Listens for batch decisions instead of requesting individually.
 /// </summary>
 [RequireComponent(typeof(Villager))]
 [RequireComponent(typeof(JobHandler))]
 public class VillagerBrain : MonoBehaviour
 {
     [Header("Decision Timing")]
-    [Tooltip("Max seconds between decisions (fallback if no job completion)")]
-    [SerializeField] private float maxDecisionInterval = 30f;
-    
-    [Tooltip("Min seconds between decisions (prevent spam)")]
-    [SerializeField] private float minDecisionInterval = 2f;
-    
-    [Tooltip("Seconds to wait when idle before requesting new decision")]
-    [SerializeField] private float idleTimeout = 3f;
-    
+    [SerializeField] private float checkInterval = 1f;
+    [SerializeField] private float idleTimeout = 5f;
+
     [Header("Available Jobs")]
-    [Tooltip("JobType assets the LLM can choose from")]
     [SerializeField] private List<JobType> availableJobTypes = new List<JobType>();
-    
+
     [Header("Debug")]
     [SerializeField] private bool logDecisions = true;
     [SerializeField] private JobDecision lastDecision;
     [SerializeField] private string currentState = "Initializing";
-    
+
     private Villager _villager;
     private JobHandler _jobHandler;
-    private bool _isProcessing;
-    private float _lastDecisionTime;
     private float _idleTime;
-    private JobType _lastAssignedJob;
-    
+    private float _lastAppliedDecisionTime;
+
     void Awake()
     {
         _villager = GetComponent<Villager>();
         _jobHandler = GetComponent<JobHandler>();
     }
-    
+
     void Start()
     {
-        // Auto-load available jobs from Resources if not assigned
         if (availableJobTypes.Count == 0)
         {
             availableJobTypes.AddRange(Resources.LoadAll<JobType>(""));
             if (logDecisions)
-                Debug.Log($"[VillagerBrain] Loaded {availableJobTypes.Count} job types from Resources");
+                Debug.Log($"[VillagerBrain] Loaded {availableJobTypes.Count} job types");
         }
-        
-        StartCoroutine(DecisionLoop());
+
+        // Subscribe to batch decisions
+        if (LLMController.Instance != null)
+        {
+            LLMController.Instance.OnBatchDecisionMade += OnBatchDecisionReceived;
+        }
+
+        StartCoroutine(WaitForLLMAndSubscribe());
+        StartCoroutine(MonitorLoop());
     }
-    
-    private IEnumerator DecisionLoop()
+
+    void OnDestroy()
     {
-        // Wait for systems to initialize
-        while (LLMController.Instance == null || !LLMController.Instance.IsReady)
+        if (LLMController.Instance != null)
+        {
+            LLMController.Instance.OnBatchDecisionMade -= OnBatchDecisionReceived;
+        }
+    }
+
+    private IEnumerator WaitForLLMAndSubscribe()
+    {
+        while (LLMController.Instance == null)
         {
             currentState = "Waiting for LLM...";
             yield return new WaitForSeconds(0.5f);
         }
-        
+
+        // Subscribe if not already
+        LLMController.Instance.OnBatchDecisionMade -= OnBatchDecisionReceived;
+        LLMController.Instance.OnBatchDecisionMade += OnBatchDecisionReceived;
+
         if (logDecisions)
-            Debug.Log($"[VillagerBrain] {_villager.villagerName} starting decision loop");
-        
-        // Initial decision
-        yield return RequestAndApplyDecision();
-        
-        while (true)
+            Debug.Log($"[VillagerBrain] {_villager.villagerName} subscribed to batch decisions");
+    }
+
+    private void OnBatchDecisionReceived(Dictionary<string, JobDecision> decisions)
+    {
+        if (decisions.TryGetValue(_villager.villagerName, out var decision))
         {
-            yield return new WaitForSeconds(0.5f);  // Check every 0.5s
-            
-            if (_isProcessing) continue;
-            
-            // Check if we should request a new decision
-            DecisionTrigger trigger = ShouldRequestDecision();
-            
-            if (trigger != DecisionTrigger.None)
-            {
-                if (logDecisions)
-                    Debug.Log($"[VillagerBrain] {_villager.villagerName} decision triggered by: {trigger}");
-                
-                yield return RequestAndApplyDecision();
-            }
+            if (logDecisions)
+                Debug.Log($"[VillagerBrain] {_villager.villagerName} received batch decision: {decision.jobName}");
+
+            ApplyDecision(decision);
+        }
+        else
+        {
+            if (logDecisions)
+                Debug.LogWarning($"[VillagerBrain] {_villager.villagerName} not in batch decision");
         }
     }
-    
-    private enum DecisionTrigger
+
+    private IEnumerator MonitorLoop()
     {
-        None,
-        JobCompleted,
-        IdleTimeout,
-        MaxIntervalReached,
-        NoJob
+        // Wait for systems
+        while (LLMController.Instance == null || !LLMController.Instance.IsReady)
+        {
+            yield return new WaitForSeconds(0.5f);
+        }
+
+        while (true)
+        {
+            yield return new WaitForSeconds(checkInterval);
+
+            // Check if we need to request a decision
+            if (ShouldRequestDecision())
+            {
+                if (LLMController.Instance.UseBatchDecisions)
+                {
+                    // Request batch (will affect all villagers)
+                    if (!LLMController.Instance.IsBatchProcessing)
+                    {
+                        if (logDecisions)
+                            Debug.Log($"[VillagerBrain] {_villager.villagerName} triggering batch decision");
+                        LLMController.Instance.RequestImmediateBatchDecision();
+                    }
+                }
+                else
+                {
+                    // Fallback to individual decision
+                    yield return RequestIndividualDecision();
+                }
+            }
+
+            UpdateState();
+        }
     }
-    
-    private DecisionTrigger ShouldRequestDecision()
+
+    private bool ShouldRequestDecision()
     {
-        float timeSinceLastDecision = Time.time - _lastDecisionTime;
-        
-        // Respect minimum interval
-        if (timeSinceLastDecision < minDecisionInterval)
-            return DecisionTrigger.None;
-        
-        // No job assigned?
+        // No job assigned
         if (_jobHandler.currentJob == null)
         {
-            _idleTime += 0.5f;
-            currentState = $"Idle ({_idleTime:F1}s)";
-            
+            _idleTime += checkInterval;
             if (_idleTime >= idleTimeout)
             {
                 _idleTime = 0f;
-                return DecisionTrigger.IdleTimeout;
+                return true;
             }
-            return DecisionTrigger.None;
+            return false;
         }
-        
+
         // Check job status
         string status = _jobHandler.currentJob.JobLogic?.GetCurrentStatus() ?? "Idle";
-        currentState = status;
-        
-        // Job is looking for work = job cycle completed, ready for new decision
+
+        // Job is waiting/stuck
         if (status.Contains("Waiting") || status.Contains("No ") || status.Contains("found"))
         {
-            return DecisionTrigger.JobCompleted;
+            _idleTime += checkInterval;
+            if (_idleTime >= idleTimeout)
+            {
+                _idleTime = 0f;
+                return true;
+            }
         }
-        
-        // Max interval reached (fallback)
-        if (timeSinceLastDecision >= maxDecisionInterval)
+        else
         {
-            return DecisionTrigger.MaxIntervalReached;
+            _idleTime = 0f;
         }
-        
-        // Actively working, don't interrupt
-        _idleTime = 0f;
-        return DecisionTrigger.None;
+
+        return false;
     }
-    
-    private IEnumerator RequestAndApplyDecision()
+
+    private void UpdateState()
     {
-        _isProcessing = true;
+        if (_jobHandler.currentJob == null)
+        {
+            currentState = $"Idle ({_idleTime:F1}s)";
+        }
+        else
+        {
+            currentState = _jobHandler.currentJob.JobLogic?.GetCurrentStatus() ?? "Working";
+        }
+    }
+
+    private IEnumerator RequestIndividualDecision()
+    {
         currentState = "Thinking...";
-        
-        // Build list of job names
+
         var jobNames = new List<string>();
         foreach (var jt in availableJobTypes)
         {
             if (jt != null)
                 jobNames.Add(jt.JobName);
         }
-        
-        // Request decision
+
         var task = LLMController.Instance.RequestJobDecision(_villager, jobNames);
-        
+
         while (!task.IsCompleted)
             yield return null;
-        
-        lastDecision = task.Result;
-        _lastDecisionTime = Time.time;
-        
-        if (!lastDecision.success)
-        {
-            if (logDecisions)
-                Debug.LogWarning($"[VillagerBrain] {_villager.villagerName} decision failed: {lastDecision.reason}");
-            _isProcessing = false;
-            yield break;
-        }
-        
-        ApplyDecision(lastDecision);
-        _isProcessing = false;
+
+        ApplyDecision(task.Result);
     }
-    
+
     private void ApplyDecision(JobDecision decision)
     {
+        if (decision == null) return;
+
+        lastDecision = decision;
+        _lastAppliedDecisionTime = Time.time;
+
         if (logDecisions)
-            Debug.Log($"[VillagerBrain] {_villager.villagerName} -> {decision.jobName}: {decision.reason}");
-        
-        if (decision.IsIdle)
+        {
+            string targetInfo = decision.hasTargetArea ? $" at ({decision.targetX},{decision.targetY})" : "";
+            Debug.Log($"[VillagerBrain] {_villager.villagerName} -> {decision.jobName}{targetInfo}: {decision.reason}");
+        }
+
+        if (decision.IsIdle || !decision.success)
         {
             _jobHandler.AssignJob(null);
-            _lastAssignedJob = null;
-            currentState = "Idle (by choice)";
+            currentState = "Idle";
             return;
         }
-        
-        // Find matching JobType
-        JobType matchedJob = null;
-        foreach (var jt in availableJobTypes)
-        {
-            if (jt != null && jt.JobName.Equals(decision.jobName, System.StringComparison.OrdinalIgnoreCase))
-            {
-                matchedJob = jt;
-                break;
-            }
-        }
-        
+
+        JobType matchedJob = FindJobType(decision.jobName);
+
         if (matchedJob != null)
         {
-            // Only reassign if different job
-            if (_jobHandler.currentJob != matchedJob)
+            bool jobChanged = _jobHandler.currentJob != matchedJob;
+            bool targetChanged = decision.hasTargetArea && _jobHandler.HasDifferentTargetArea(decision.TargetPosition);
+
+            if (jobChanged || targetChanged)
             {
-                _jobHandler.AssignJob(matchedJob);
-                _lastAssignedJob = matchedJob;
-                
+                if (decision.hasTargetArea)
+                {
+                    _jobHandler.AssignJobWithTarget(matchedJob, decision.TargetPosition);
+                }
+                else
+                {
+                    _jobHandler.AssignJob(matchedJob);
+                }
+
                 if (logDecisions)
-                    Debug.Log($"[VillagerBrain] {_villager.villagerName} assigned job: {matchedJob.JobName}");
+                    Debug.Log($"[VillagerBrain] {_villager.villagerName} assigned {matchedJob.JobName}");
             }
-            else if (logDecisions)
-            {
-                Debug.Log($"[VillagerBrain] {_villager.villagerName} continuing job: {matchedJob.JobName}");
-            }
-            
-            currentState = $"{matchedJob.JobName} (assigned)";
+
+            currentState = $"{matchedJob.JobName}";
         }
         else
         {
@@ -224,26 +245,28 @@ public class VillagerBrain : MonoBehaviour
             currentState = "Unknown job";
         }
     }
-    
-    /// <summary>
-    /// Force an immediate decision (useful for testing or events)
-    /// </summary>
+
+    private JobType FindJobType(string jobName)
+    {
+        foreach (var jt in availableJobTypes)
+        {
+            if (jt != null && jt.JobName.Equals(jobName, System.StringComparison.OrdinalIgnoreCase))
+                return jt;
+        }
+        return null;
+    }
+
     public void ForceDecision()
     {
-        if (!_isProcessing)
+        _idleTime = idleTimeout;
+        if (LLMController.Instance != null && LLMController.Instance.UseBatchDecisions)
         {
-            _idleTime = idleTimeout;  // Trigger immediately
-            StartCoroutine(RequestAndApplyDecision());
+            LLMController.Instance.RequestImmediateBatchDecision();
         }
-    }
-    
-    /// <summary>
-    /// Notify that a significant event happened (goal changed, etc.)
-    /// </summary>
-    public void OnSignificantEvent()
-    {
-        // Reset timer to allow quicker re-evaluation
-        _lastDecisionTime = Time.time - maxDecisionInterval + minDecisionInterval;
+        else
+        {
+            StartCoroutine(RequestIndividualDecision());
+        }
     }
 
 #if UNITY_EDITOR
@@ -252,8 +275,6 @@ public class VillagerBrain : MonoBehaviour
     {
         if (Application.isPlaying)
             ForceDecision();
-        else
-            Debug.LogWarning("Only works in Play mode");
     }
 #endif
 }

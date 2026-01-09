@@ -1,5 +1,6 @@
 using System;
 using Tiles;
+using Villagers.Jobs;
 using AnimationState = Villagers.Jobs.AnimationState;
 
 [Serializable]

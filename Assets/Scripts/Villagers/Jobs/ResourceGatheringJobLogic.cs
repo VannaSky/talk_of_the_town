@@ -12,6 +12,16 @@ public abstract class ResourceGatheringJobLogic : JobLogic
     public float stoppingDistance = 1.5f;
     public int resourcePerNode = 3;
 
+    [Header("Target Area")]
+    [Tooltip("How strongly to prefer the LLM's target area (higher = stricter)")]
+    public float targetAreaWeight = 2f;
+
+    [Tooltip("Max distance from target area to search")]
+    public float targetAreaRadius = 15f;
+
+    [Header("Debug")]
+    public bool debugResourceSearch = false;
+
     [NonSerialized] protected ResourceNode _currentTarget = null;
 
     protected abstract ResourceNode.ResourceType TargetResourceType { get; }
@@ -40,6 +50,7 @@ public abstract class ResourceGatheringJobLogic : JobLogic
 
             case AnimationState.Chopping:
             case AnimationState.Mining:
+            case AnimationState.Gathering:
                 ExecuteWorking(handler);
                 break;
 
@@ -55,18 +66,53 @@ public abstract class ResourceGatheringJobLogic : JobLogic
 
     private void ExecuteFindingTarget(JobHandler handler)
     {
-        _currentTarget = FindNearestResource(handler);
+        _currentTarget = FindBestResource(handler);
         if (_currentTarget != null)
         {
             _currentTarget.Reserve();
             handler.villagerMover.StopMoving();
+            Debug.Log($"[{GetType().Name}] Found {ResourceName} at {_currentTarget.transform.position}");
             ChangeState(AnimationState.MovingToTarget, handler);
         }
         else
         {
             currentStatus = $"No {ResourceName} found! Waiting...";
+            if (debugResourceSearch)
+            {
+                LogResourceSearchDebug(handler);
+            }
             ChangeState(AnimationState.Idle, handler);
         }
+    }
+
+    private void LogResourceSearchDebug(JobHandler handler)
+    {
+        ResourceNode[] allNodes = GameObject.FindObjectsByType<ResourceNode>(FindObjectsSortMode.None);
+        Debug.Log($"[{GetType().Name}] DEBUG: Looking for {TargetResourceType}, found {allNodes.Length} total ResourceNodes");
+
+        int matchingType = 0;
+        int reserved = 0;
+        int available = 0;
+
+        foreach (var node in allNodes)
+        {
+            if (node == null) continue;
+
+            bool isCorrectType = node.resourceType == TargetResourceType;
+            bool isReserved = node.isReserved;
+            bool isActive = node.gameObject.activeInHierarchy;
+
+            if (isCorrectType) matchingType++;
+            if (isCorrectType && isReserved) reserved++;
+            if (isCorrectType && !isReserved && isActive) available++;
+
+            if (debugResourceSearch)
+            {
+                Debug.Log($"  - {node.name}: type={node.resourceType}, reserved={isReserved}, active={isActive}, match={isCorrectType}");
+            }
+        }
+
+        Debug.Log($"[{GetType().Name}] DEBUG: {matchingType} matching type, {reserved} reserved, {available} available");
     }
 
     private void ExecuteMovingToTarget(JobHandler handler)
@@ -136,7 +182,93 @@ public abstract class ResourceGatheringJobLogic : JobLogic
         }
     }
 
-    private ResourceNode FindNearestResource(JobHandler handler)
+    private ResourceNode FindBestResource(JobHandler handler)
+    {
+        // Find ALL ResourceNodes, including inactive parents with active children
+        ResourceNode[] allNodes = GameObject.FindObjectsByType<ResourceNode>(FindObjectsSortMode.None);
+        
+        if (debugResourceSearch)
+        {
+            Debug.Log($"[{GetType().Name}] Searching for {TargetResourceType} among {allNodes.Length} nodes");
+        }
+
+        ResourceNode best = null;
+        float bestScore = float.MaxValue;
+
+        Vector3 villagerPos = handler.transform.position;
+        Vector3? targetAreaWorld = null;
+
+        if (handler.PreferredTargetArea.HasValue)
+        {
+            var target = handler.PreferredTargetArea.Value;
+            targetAreaWorld = GridToWorld(target);
+        }
+
+        foreach (var node in allNodes)
+        {
+            if (node == null) continue;
+            
+            // Check if this node matches our target type
+            if (node.resourceType != TargetResourceType)
+            {
+                if (debugResourceSearch)
+                    Debug.Log($"  Skip {node.name}: wrong type ({node.resourceType} != {TargetResourceType})");
+                continue;
+            }
+
+            // Check if reserved
+            if (node.isReserved)
+            {
+                if (debugResourceSearch)
+                    Debug.Log($"  Skip {node.name}: reserved");
+                continue;
+            }
+
+            // Check if active
+            if (!node.gameObject.activeInHierarchy)
+            {
+                if (debugResourceSearch)
+                    Debug.Log($"  Skip {node.name}: inactive");
+                continue;
+            }
+
+            float distanceToVillager = Vector3.Distance(villagerPos, node.transform.position);
+            float score = distanceToVillager;
+
+            if (targetAreaWorld.HasValue)
+            {
+                float distanceToTarget = Vector3.Distance(targetAreaWorld.Value, node.transform.position);
+
+                if (distanceToTarget > targetAreaRadius)
+                {
+                    if (debugResourceSearch)
+                        Debug.Log($"  Skip {node.name}: too far from target ({distanceToTarget:F1} > {targetAreaRadius})");
+                    continue;
+                }
+
+                score = distanceToVillager + (distanceToTarget * targetAreaWeight);
+            }
+
+            if (debugResourceSearch)
+                Debug.Log($"  Consider {node.name}: score={score:F1}");
+
+            if (score < bestScore)
+            {
+                bestScore = score;
+                best = node;
+            }
+        }
+
+        if (best == null && targetAreaWorld.HasValue)
+        {
+            Debug.Log($"[{GetType().Name}] No {ResourceName} near target area, falling back to nearest anywhere");
+            return FindNearestResourceAnywhere(handler);
+        }
+
+        return best;
+    }
+
+    private ResourceNode FindNearestResourceAnywhere(JobHandler handler)
     {
         ResourceNode[] allNodes = GameObject.FindObjectsByType<ResourceNode>(FindObjectsSortMode.None);
         ResourceNode nearest = null;
@@ -148,6 +280,7 @@ public abstract class ResourceGatheringJobLogic : JobLogic
             if (node == null) continue;
             if (node.resourceType != TargetResourceType) continue;
             if (node.isReserved) continue;
+            if (!node.gameObject.activeInHierarchy) continue;
 
             float d = Vector3.Distance(origin, node.transform.position);
             if (d < bestDist)
@@ -157,6 +290,13 @@ public abstract class ResourceGatheringJobLogic : JobLogic
             }
         }
         return nearest;
+    }
+
+    private Vector3 GridToWorld(Vector2Int gridPos, float cellSize = 2f)
+    {
+        float x = gridPos.x * cellSize + cellSize / 2f;
+        float z = gridPos.y * cellSize + cellSize / 2f;
+        return new Vector3(x, 0f, z);
     }
 
     public override void ResetState()
