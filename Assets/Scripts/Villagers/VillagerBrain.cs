@@ -19,8 +19,8 @@ public class VillagerBrain : MonoBehaviour
 
     [Header("Debug")]
     [SerializeField] private bool logDecisions = true;
-    [SerializeField] private JobDecision lastDecision;
-    [SerializeField] private string currentState = "Initializing";
+    public JobDecision lastDecision;
+    public string currentState = "Initializing";
 
     private Villager _villager;
     private JobHandler _jobHandler;
