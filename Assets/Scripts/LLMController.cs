@@ -10,11 +10,12 @@ using ollama;
 /// <summary>
 /// LLM Controller with batch decision-making for all villagers at once.
 /// Prevents race conditions by coordinating assignments in a single prompt.
+/// Now tracks token usage and performance metrics.
 /// </summary>
 public class LLMController : MonoBehaviour
 {
     [Header("Model Settings")]
-    [SerializeField] private string defaultModel = "qwen3:8b";
+    [SerializeField] private string defaultModel = "gpt-oss:120b-cloud";
     [SerializeField] private int keepAliveSeconds = 600;
 
     [Header("Prompt Settings")]
@@ -30,6 +31,12 @@ public class LLMController : MonoBehaviour
     [SerializeField] private bool logPrompts = true;
     [SerializeField] private bool logResponses = true;
     [SerializeField] private bool logErrors = true;
+    [SerializeField] private bool logTokenUsage = true;
+
+    [Header("Metrics Tracking")]
+    [SerializeField] private bool trackMetrics = true;
+    [SerializeField] private bool exportMetricsToFile = false;
+    [SerializeField] private string metricsFilePath = "LLM_Metrics.json";
 
     public static LLMController Instance { get; private set; }
 
@@ -37,6 +44,7 @@ public class LLMController : MonoBehaviour
     public event Action<JobDecision> OnDecisionMade;
     public event Action<Dictionary<string, JobDecision>> OnBatchDecisionMade;
     public event Action<string> OnError;
+    public event Action<LLMMetrics> OnMetricsRecorded;
 
     private List<string> _availableModels = new List<string>();
     public IReadOnlyList<string> AvailableModels => _availableModels;
@@ -46,12 +54,21 @@ public class LLMController : MonoBehaviour
     public bool UseBatchDecisions => useBatchDecisions;
 
     // Batch decision state
-    private bool _isBatchProcessing = false;
-    private Dictionary<string, JobDecision> _latestBatchDecisions = new Dictionary<string, JobDecision>();
-    private float _lastBatchDecisionTime = 0f;
+    private bool _isBatchProcessing;
+    private Dictionary<string, JobDecision> _latestBatchDecisions = new ();
+    private float _lastBatchDecisionTime;
 
     public bool IsBatchProcessing => _isBatchProcessing;
     public float TimeSinceLastBatch => Time.time - _lastBatchDecisionTime;
+
+    // Metrics tracking
+    private List<LLMMetrics> _metricsHistory = new ();
+    private LLMMetrics _lastMetrics;
+    private LLMSessionStats _sessionStats = new ();
+
+    public LLMMetrics LastMetrics => _lastMetrics;
+    public LLMSessionStats SessionStats => _sessionStats;
+    public IReadOnlyList<LLMMetrics> MetricsHistory => _metricsHistory;
 
     private void Awake()
     {
@@ -105,7 +122,6 @@ public class LLMController : MonoBehaviour
 
     private IEnumerator BatchDecisionLoop()
     {
-        // Wait for initialization
         yield return new WaitForSeconds(2f);
 
         while (true)
@@ -119,9 +135,6 @@ public class LLMController : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// Force an immediate batch decision (called by VillagerBrain when needed)
-    /// </summary>
     public void RequestImmediateBatchDecision()
     {
         if (!_isBatchProcessing && IsReady)
@@ -172,9 +185,6 @@ public class LLMController : MonoBehaviour
         return names;
     }
 
-    /// <summary>
-    /// Get the latest decision for a specific villager
-    /// </summary>
     public JobDecision GetLatestDecision(string villagerName)
     {
         if (_latestBatchDecisions.TryGetValue(villagerName, out var decision))
@@ -226,7 +236,6 @@ Respond ONLY with valid JSON containing assignments for ALL {villagerCount} vill
     {
         var sb = new System.Text.StringBuilder();
 
-        // Village goals
         if (VillageGoals.Instance != null)
         {
             sb.AppendLine("=== VILLAGE GOALS ===");
@@ -234,7 +243,6 @@ Respond ONLY with valid JSON containing assignments for ALL {villagerCount} vill
             sb.AppendLine();
         }
 
-        // Village inventory
         if (VillageState.Instance != null)
         {
             sb.AppendLine("=== VILLAGE INVENTORY ===");
@@ -245,7 +253,6 @@ Respond ONLY with valid JSON containing assignments for ALL {villagerCount} vill
             sb.AppendLine();
         }
 
-        // All villagers that need assignments
         sb.AppendLine("=== VILLAGERS TO ASSIGN ===");
         foreach (var v in villagers)
         {
@@ -255,7 +262,6 @@ Respond ONLY with valid JSON containing assignments for ALL {villagerCount} vill
         }
         sb.AppendLine();
 
-        // Available resources with locations
         sb.AppendLine("=== AVAILABLE RESOURCES (assign villagers to DIFFERENT locations!) ===");
         var resourceLocations = GetAllResourceLocations();
 
@@ -334,29 +340,65 @@ Respond ONLY with valid JSON containing assignments for ALL {villagerCount} vill
         if (logPrompts)
             Debug.Log($"[LLM] Batch Prompt:\n{fullPrompt}");
 
+        // Start metrics tracking
+        var metrics = new LLMMetrics
+        {
+            timestamp = DateTime.Now,
+            modelUsed = defaultModel,
+            requestType = "Batch",
+            villagerCount = villagers.Count,
+            promptLength = fullPrompt.Length
+        };
+
+        var startTime = DateTime.Now;
+
         try
         {
-            string response = await Ollama.Chat(defaultModel, fullPrompt, keepAliveSeconds);
+            // Use the extension method to get full metadata
+            var chatResponse = await OllamaExtensions.ChatWithMetadataExt(defaultModel, fullPrompt, keepAliveSeconds);
+            
+            metrics.responseTime = (DateTime.Now - startTime).TotalSeconds;
+            metrics.responseLength = chatResponse.content.Length;
+            
+            // Extract ACTUAL token counts from metadata
+            metrics.promptEvalCount = chatResponse.promptEvalCount;
+            metrics.evalCount = chatResponse.evalCount;
+            metrics.totalTokens = chatResponse.TotalTokens;
+            
+            // Extract timing data
+            metrics.promptEvalDuration = chatResponse.PromptEvalSeconds;
+            metrics.evalDuration = chatResponse.EvalSeconds;
+            metrics.totalDuration = chatResponse.TotalSeconds;
+            metrics.loadDuration = chatResponse.LoadSeconds;
 
             if (logResponses)
-                Debug.Log($"[LLM] Batch Response:\n{response}");
+                Debug.Log($"[LLM] Batch Response:\n{chatResponse.content}");
 
-            results = ParseBatchDecisions(response, villagers);
+            results = ParseBatchDecisions(chatResponse.content, villagers);
+            
+            metrics.success = true;
+            metrics.decisionsCount = results.Count;
         }
         catch (Exception e)
         {
+            metrics.success = false;
+            metrics.errorMessage = e.Message;
+            metrics.responseTime = (DateTime.Now - startTime).TotalSeconds;
+            
             if (logErrors)
                 Debug.LogError($"[LLM] Batch Error: {e.Message}");
 
             OnError?.Invoke(e.Message);
 
-            // Return idle decisions for all on error
             foreach (var v in villagers)
             {
                 if (v != null)
                     results[v.villagerName] = JobDecision.Idle($"Error: {e.Message}");
             }
         }
+
+        // Record metrics
+        RecordMetrics(metrics);
 
         return results;
     }
@@ -367,10 +409,8 @@ Respond ONLY with valid JSON containing assignments for ALL {villagerCount} vill
 
         try
         {
-            // Strip thinking tags
             response = Regex.Replace(response, @"<think>[\s\S]*?</think>", "", RegexOptions.IgnoreCase).Trim();
 
-            // Extract JSON
             var match = Regex.Match(response, @"\{[\s\S]*\}");
             if (!match.Success)
             {
@@ -403,7 +443,6 @@ Respond ONLY with valid JSON containing assignments for ALL {villagerCount} vill
                 }
             }
 
-            // Fill in any missing villagers with idle
             foreach (var v in villagers)
             {
                 if (v != null && !results.ContainsKey(v.villagerName))
@@ -429,17 +468,14 @@ Respond ONLY with valid JSON containing assignments for ALL {villagerCount} vill
 
     public async Task<JobDecision> RequestJobDecision(Villager villager, List<string> availableJobs)
     {
-        // If batch mode, get from latest batch or request new one
         if (useBatchDecisions)
         {
             var existing = GetLatestDecision(villager.villagerName);
             if (existing != null && TimeSinceLastBatch < batchDecisionInterval)
                 return existing;
 
-            // Request new batch
             RequestImmediateBatchDecision();
 
-            // Wait for completion
             float timeout = 30f;
             float elapsed = 0f;
             while (_isBatchProcessing && elapsed < timeout)
@@ -451,7 +487,6 @@ Respond ONLY with valid JSON containing assignments for ALL {villagerCount} vill
             return GetLatestDecision(villager.villagerName) ?? JobDecision.Idle("Batch timeout");
         }
 
-        // Original single-villager logic as fallback
         return await RequestSingleJobDecision(villager, availableJobs);
     }
 
@@ -474,17 +509,54 @@ Respond ONLY with valid JSON containing assignments for ALL {villagerCount} vill
         if (logPrompts)
             Debug.Log($"[LLM] Single Prompt:\n{fullPrompt}");
 
+        var metrics = new LLMMetrics
+        {
+            timestamp = DateTime.Now,
+            modelUsed = defaultModel,
+            requestType = "Single",
+            villagerCount = 1,
+            promptLength = fullPrompt.Length,
+            villagerName = villager.villagerName
+        };
+
+        var startTime = DateTime.Now;
+
         try
         {
-            string response = await Ollama.Chat(defaultModel, fullPrompt, keepAliveSeconds);
+            var chatResponse = await OllamaExtensions.ChatWithMetadataExt(defaultModel, fullPrompt, keepAliveSeconds);
+
+            metrics.responseTime = (DateTime.Now - startTime).TotalSeconds;
+            metrics.responseLength = chatResponse.content.Length;
+            
+            metrics.promptEvalCount = chatResponse.promptEvalCount;
+            metrics.evalCount = chatResponse.evalCount;
+            metrics.totalTokens = chatResponse.TotalTokens;
+            
+            metrics.promptEvalDuration = chatResponse.PromptEvalSeconds;
+            metrics.evalDuration = chatResponse.EvalSeconds;
+            metrics.totalDuration = chatResponse.TotalSeconds;
+            metrics.loadDuration = chatResponse.LoadSeconds;
 
             if (logResponses)
-                Debug.Log($"[LLM] Response:\n{response}");
+                Debug.Log($"[LLM] Response:\n{chatResponse.content}");
 
-            return ParseSingleDecision(response);
+            var decision = ParseSingleDecision(chatResponse.content);
+            
+            metrics.success = decision.success;
+            metrics.decisionsCount = 1;
+            
+            RecordMetrics(metrics);
+            
+            return decision;
         }
         catch (Exception e)
         {
+            metrics.success = false;
+            metrics.errorMessage = e.Message;
+            metrics.responseTime = (DateTime.Now - startTime).TotalSeconds;
+            
+            RecordMetrics(metrics);
+            
             if (logErrors)
                 Debug.LogError($"[LLM] Error: {e.Message}");
 
@@ -515,7 +587,6 @@ JSON only.";
 
         sb.AppendLine($"Villager: {data.name} at ({data.x},{data.y}), Status={data.jobStatus}");
 
-        // Show other villagers
         if (VillageState.Instance != null)
         {
             foreach (var v in VillageState.Instance.Villagers)
@@ -526,7 +597,6 @@ JSON only.";
             }
         }
 
-        // Resources
         var resources = GetAllResourceLocations();
         if (resources.treeLocations.Count > 0)
             sb.AppendLine($"Trees: {FormatLocationsSimple(resources.treeLocations)}");
@@ -562,6 +632,105 @@ JSON only.";
         {
             return JobDecision.Idle($"Parse error: {e.Message}");
         }
+    }
+
+    #endregion
+
+    #region Metrics Tracking
+
+    private void RecordMetrics(LLMMetrics metrics)
+    {
+        if (!trackMetrics) return;
+
+        _lastMetrics = metrics;
+        _metricsHistory.Add(metrics);
+
+        _sessionStats.totalRequests++;
+        if (metrics.success)
+            _sessionStats.successfulRequests++;
+        else
+            _sessionStats.failedRequests++;
+
+        _sessionStats.totalPromptTokens += metrics.promptEvalCount;
+        _sessionStats.totalResponseTokens += metrics.evalCount;
+        _sessionStats.totalTokens += metrics.totalTokens;
+        _sessionStats.totalResponseTime += metrics.responseTime;
+        _sessionStats.totalDecisions += metrics.decisionsCount;
+
+        if (metrics.responseTime > _sessionStats.maxResponseTime)
+            _sessionStats.maxResponseTime = metrics.responseTime;
+
+        if (metrics.responseTime < _sessionStats.minResponseTime || _sessionStats.minResponseTime == 0)
+            _sessionStats.minResponseTime = metrics.responseTime;
+
+        OnMetricsRecorded?.Invoke(metrics);
+
+        if (logTokenUsage)
+        {
+            Debug.Log($"[LLM Metrics] Type={metrics.requestType}, " +
+                     $"Tokens={metrics.totalTokens} (prompt={metrics.promptEvalCount}, response={metrics.evalCount}), " +
+                     $"Time={metrics.responseTime:F2}s (eval={metrics.evalDuration:F2}s), Success={metrics.success}");
+        }
+
+        if (exportMetricsToFile && _metricsHistory.Count % 10 == 0)
+        {
+            ExportMetricsToFile();
+        }
+    }
+
+    public void ExportMetricsToFile()
+    {
+        try
+        {
+            var export = new MetricsExport
+            {
+                sessionStats = _sessionStats,
+                metricsHistory = _metricsHistory
+            };
+
+            string json = JsonUtility.ToJson(export, true);
+            string path = System.IO.Path.Combine(Application.persistentDataPath, metricsFilePath);
+            System.IO.File.WriteAllText(path, json);
+
+            Debug.Log($"[LLM] Metrics exported to: {path}");
+        }
+        catch (Exception e)
+        {
+            Debug.LogError($"[LLM] Failed to export metrics: {e.Message}");
+        }
+    }
+
+    public void ClearMetricsHistory()
+    {
+        _metricsHistory.Clear();
+        _sessionStats = new LLMSessionStats();
+        Debug.Log("[LLM] Metrics history cleared");
+    }
+
+    public string GetMetricsSummary()
+    {
+        if (_sessionStats.totalRequests == 0)
+            return "No metrics recorded yet.";
+
+        double avgResponseTime = _sessionStats.totalResponseTime / _sessionStats.totalRequests;
+        double successRate = (_sessionStats.successfulRequests / (double)_sessionStats.totalRequests) * 100.0;
+        int avgTokensPerRequest = _sessionStats.totalRequests > 0 ? _sessionStats.totalTokens / _sessionStats.totalRequests : 0;
+
+        return $@"=== LLM Session Metrics ===
+Total Requests: {_sessionStats.totalRequests}
+Success Rate: {successRate:F1}%
+Total Decisions Made: {_sessionStats.totalDecisions}
+
+Token Usage (ACTUAL from API):
+  Total: {_sessionStats.totalTokens:N0}
+  Prompt: {_sessionStats.totalPromptTokens:N0}
+  Response: {_sessionStats.totalResponseTokens:N0}
+  Avg per Request: {avgTokensPerRequest:N0}
+
+Response Times:
+  Average: {avgResponseTime:F2}s
+  Min: {_sessionStats.minResponseTime:F2}s
+  Max: {_sessionStats.maxResponseTime:F2}s";
     }
 
     #endregion
@@ -662,6 +831,27 @@ JSON only.";
         var resources = GetAllResourceLocations();
         Debug.Log($"Trees: {resources.treeLocations.Count}, Stone: {resources.stoneLocations.Count}");
     }
+
+    [ContextMenu("Show Metrics Summary")]
+    private void EditorShowMetrics()
+    {
+        if (Application.isPlaying)
+            Debug.Log(GetMetricsSummary());
+    }
+
+    [ContextMenu("Export Metrics to File")]
+    private void EditorExportMetrics()
+    {
+        if (Application.isPlaying)
+            ExportMetricsToFile();
+    }
+
+    [ContextMenu("Clear Metrics History")]
+    private void EditorClearMetrics()
+    {
+        if (Application.isPlaying)
+            ClearMetricsHistory();
+    }
 #endif
 }
 
@@ -714,6 +904,60 @@ public class LLMResponse
     public string content;
     public string error;
     public string model;
+}
+
+[Serializable]
+public class LLMMetrics
+{
+    public DateTime timestamp;
+    public string modelUsed;
+    public string requestType;
+    public int villagerCount;
+    public string villagerName;
+    
+    public int promptLength;
+    public int responseLength;
+    
+    // ACTUAL token counts from Ollama API
+    public int promptEvalCount;
+    public int evalCount;
+    public int totalTokens;
+    
+    // Timing data (in seconds)
+    public double responseTime;
+    public double promptEvalDuration;
+    public double evalDuration;
+    public double totalDuration;
+    public double loadDuration;
+    
+    public bool success;
+    public int decisionsCount;
+    public string errorMessage;
+}
+
+[Serializable]
+public class LLMSessionStats
+{
+    public int totalRequests;
+    public int successfulRequests;
+    public int failedRequests;
+    
+    public int totalPromptTokens;
+    public int totalResponseTokens;
+    public int totalTokens;
+    
+    public double totalResponseTime;
+    public double minResponseTime;
+    public double maxResponseTime;
+    
+    public int totalDecisions;
+}
+
+[Serializable]
+public class MetricsExport
+{
+    public LLMSessionStats sessionStats;
+    public List<LLMMetrics> metricsHistory;
 }
 
 public class ResourceLocations

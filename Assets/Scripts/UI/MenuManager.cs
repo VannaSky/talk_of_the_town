@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using TMPro;
 using UnityEngine;
 
@@ -13,13 +14,24 @@ namespace UI
         [SerializeField] private int food = 0;
         
         [SerializeField] private string model;
-        [SerializeField] private string reasoning;
+        
+        [Header("SessionStats")]
+        [SerializeField] private int tokens;
+        [SerializeField] private int prompt;
+        [SerializeField] private int response;
+        [SerializeField] private double time;
+        
 
         [SerializeField] private TextMeshProUGUI woodText;
         [SerializeField] private TextMeshProUGUI stoneText;
         [SerializeField] private TextMeshProUGUI seedText;
         [SerializeField] private TextMeshProUGUI foodText;
         [SerializeField] private TextMeshProUGUI modelText;
+        
+        [SerializeField] private TextMeshProUGUI tokensText;
+        [SerializeField] private TextMeshProUGUI promptText;
+        [SerializeField] private TextMeshProUGUI responseText;
+        [SerializeField] private TextMeshProUGUI timeText;
        
         private VillageState _villageState;
         private LLMController _llmController;
@@ -40,12 +52,27 @@ namespace UI
             food = _villageState.Food;
             
             model = _llmController.CurrentModel;
+
+            if (_llmController.LastMetrics != null)
+            {
+                tokens = _llmController.LastMetrics.totalTokens;
+                prompt = _llmController.LastMetrics.promptEvalCount;
+                response = _llmController.LastMetrics.evalCount;
+                time = _llmController.LastMetrics.responseTime;
+            }
+            
         
             woodText.text = wood.ToString();
             stoneText.text = stone.ToString();
             seedText.text = seed.ToString();
             foodText.text = food.ToString();
             modelText.text = model;
+            tokensText.text = $"Tokens: {tokens.ToString()}";
+            promptText.text = $"Prompts: {prompt.ToString()}";
+            responseText.text = $"Response: {response.ToString()}";
+            timeText.text = $"Time: {time.ToString(CultureInfo.CurrentCulture)}";
+            
+            
             
         }
     }
