@@ -38,7 +38,11 @@ public abstract class JobLogic
         return ExecuteState(handler);
     }
 
-    public virtual void OnJobEnd(JobHandler handler) { }
+    public virtual void OnJobEnd(JobHandler handler)
+    {
+        if (handler != null && handler.equipment != null)
+            handler.equipment.HideAll();
+    }
 
     protected abstract void OnInitialize(JobHandler handler);
     protected abstract bool ExecuteState(JobHandler handler);
@@ -56,6 +60,11 @@ public abstract class JobLogic
         if (handler != null && handler.animator != null && !string.IsNullOrEmpty(animatorStateParameter))
         {
             handler.animator.SetInteger(animatorStateParameter, (int)_currentState);
+        }
+
+        if (handler != null && handler.equipment != null)
+        {
+            handler.equipment.UpdateVisuals(handler.currentJob?.JobName, _currentState);
         }
     }
 
