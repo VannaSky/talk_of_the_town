@@ -131,6 +131,21 @@ namespace Tiles
         return summary.ToString();
     }
         
+        public List<Tile> FindTilesInRadius(Vector2Int center, int radius, System.Func<Tile, bool> predicate)
+        {
+            var results = new List<Tile>();
+            for (int dx = -radius; dx <= radius; dx++)
+            {
+                for (int dy = -radius; dy <= radius; dy++)
+                {
+                    var pos = center + new Vector2Int(dx, dy);
+                    if (_tiles.TryGetValue(pos, out var tile) && predicate(tile))
+                        results.Add(tile);
+                }
+            }
+            return results;
+        }
+
         public void RebuildIndex()
         {
             _tiles.Clear();

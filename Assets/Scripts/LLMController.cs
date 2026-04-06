@@ -252,7 +252,7 @@ JOB DESCRIPTIONS:
 - Lumberjack: Chops trees for wood. Assign to TREE locations.
 - Miner: Mines stone deposits. Assign to STONE locations.
 - Builder: Constructs buildings. Needs wood+stone in inventory.
-- Farmer: Works at farms to produce food. Needs seeds.
+- Farmer: Plants crops on empty grass tiles (needs seeds) and harvests mature crops for food. Assign to grass areas or mature crop locations.
 - SeedGatherer: Collects seeds from seed nodes (pumpkins, wheat, etc.)
 - IDLE: Rest.
 
@@ -330,6 +330,12 @@ Respond ONLY with valid JSON containing assignments for ALL {villagerCount} vill
         {
             sb.Append("FARMS: ");
             sb.AppendLine(FormatLocationsSimple(resourceLocations.farmLocations));
+        }
+
+        if (resourceLocations.cropLocations.Count > 0)
+        {
+            sb.Append("MATURE CROPS: ");
+            sb.AppendLine(FormatLocationsSimple(resourceLocations.cropLocations));
         }
 
         return sb.ToString();
@@ -639,6 +645,10 @@ JSON only.";
             sb.AppendLine($"Trees: {FormatLocationsSimple(resources.treeLocations)}");
         if (resources.stoneLocations.Count > 0)
             sb.AppendLine($"Stone: {FormatLocationsSimple(resources.stoneLocations)}");
+        if (resources.seedLocations.Count > 0)
+            sb.AppendLine($"Seeds: {FormatLocationsSimple(resources.seedLocations)}");
+        if (resources.cropLocations.Count > 0)
+            sb.AppendLine($"Mature Crops: {FormatLocationsSimple(resources.cropLocations)}");
 
         return sb.ToString();
     }
@@ -796,6 +806,10 @@ Response Times:
                 case ResourceNode.ResourceType.Seed:
                     result.seedLocations.Add(pos);
                     break;
+                case ResourceNode.ResourceType.Crop:
+                    if (node.IsMature)
+                        result.cropLocations.Add(pos);
+                    break;
             }
         }
 
@@ -866,7 +880,7 @@ Response Times:
     private void LogResources()
     {
         var resources = GetAllResourceLocations();
-        Debug.Log($"Trees: {resources.treeLocations.Count}, Stone: {resources.stoneLocations.Count}");
+        Debug.Log($"Trees: {resources.treeLocations.Count}, Stone: {resources.stoneLocations.Count}, Crops: {resources.cropLocations.Count}");
     }
 
     [ContextMenu("Show Metrics Summary")]
@@ -1004,6 +1018,7 @@ public class ResourceLocations
     public List<Vector2Int> seedLocations = new List<Vector2Int>();
     public List<Vector2Int> buildingLocations = new List<Vector2Int>();
     public List<Vector2Int> farmLocations = new List<Vector2Int>();
+    public List<Vector2Int> cropLocations = new List<Vector2Int>();
 }
 
 #endregion

@@ -10,6 +10,7 @@ namespace Villagers.Jobs
         Mining = 5,
         Gathering = 6,
         Building = 7,
-        Farming = 8
+        Farming = 8,
+        Planting = 9
     }
 }
