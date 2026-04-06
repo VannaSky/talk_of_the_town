@@ -92,6 +92,8 @@ public class LLMController : MonoBehaviour
             Ollama.InitChat();
             await LoadAvailableModels();
 
+            await ApplyModelFromGlobalSettings();
+
             IsReady = true;
             OnModelLoaded?.Invoke(defaultModel);
 
@@ -116,6 +118,41 @@ public class LLMController : MonoBehaviour
         _availableModels.Clear();
         foreach (var model in models)
             _availableModels.Add(model.name);
+    }
+
+    private async Task ApplyModelFromGlobalSettings()
+    {
+        var globalSettings = FindObjectOfType<GlobalSettings>();
+        if (globalSettings == null || string.IsNullOrEmpty(globalSettings.LLMModel))
+            return;
+
+        if (_availableModels.Contains(globalSettings.LLMModel))
+        {
+            defaultModel = globalSettings.LLMModel;
+            if (logPrompts)
+                Debug.Log($"[LLM] Applied model from GlobalSettings: {defaultModel}");
+        }
+        else
+        {
+            Debug.Log($"[LLM] Model '{globalSettings.LLMModel}' not found locally. Attempting to pull...");
+
+            bool success = await Ollama.Pull(globalSettings.LLMModel, (status, progress) =>
+            {
+                if (logPrompts)
+                    Debug.Log($"[LLM] Pull '{globalSettings.LLMModel}': {status} ({progress:F1}%)");
+            });
+
+            if (success)
+            {
+                await LoadAvailableModels();
+                defaultModel = globalSettings.LLMModel;
+                Debug.Log($"[LLM] Successfully pulled and applied model: {defaultModel}");
+            }
+            else
+            {
+                Debug.LogWarning($"[LLM] Failed to pull model '{globalSettings.LLMModel}'. Using default: {defaultModel}");
+            }
+        }
     }
 
     #region Batch Decision Loop

@@ -66,6 +66,18 @@ namespace ollama
                     this.keep_alive = keep_alive;
                 }
             }
+
+            public class Pull
+            {
+                public string name;
+                public bool stream;
+
+                public Pull(string name, bool stream = true)
+                {
+                    this.name = name;
+                    this.stream = stream;
+                }
+            }
         }
 
         private static class Response
@@ -112,6 +124,14 @@ namespace ollama
                 public long load_duration;
                 public int prompt_eval_count;
 #endif
+            }
+
+            public class Pull : BaseResponse
+            {
+                public string status;
+                public string digest;
+                public long total;
+                public long completed;
             }
         }
 
