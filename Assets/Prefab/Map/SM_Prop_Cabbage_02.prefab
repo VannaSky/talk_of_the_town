@@ -12,6 +12,7 @@ GameObject:
   - component: {fileID: 33264567479713566}
   - component: {fileID: 23231813421678626}
   - component: {fileID: 64340119541501414}
+  - component: {fileID: -3646809011066142546}
   m_Layer: 0
   m_Name: SM_Prop_Cabbage_02
   m_TagString: Untagged
@@ -112,3 +113,18 @@ MeshCollider:
   m_Convex: 1
   m_CookingOptions: 30
   m_Mesh: {fileID: 43607879091368940, guid: 90b29b17adb4c384a863970c49769231, type: 2}
+--- !u!114 &-3646809011066142546
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1970108276461768}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c688b4569c0967a19872441cf9c7ac3d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::ResourceNode
+  resourceType: 2
+  resourceAmount: 3
+  isReserved: 0

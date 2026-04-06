@@ -12,6 +12,7 @@ GameObject:
   - component: {fileID: 33208899409901408}
   - component: {fileID: 23293445596995644}
   - component: {fileID: 64347128600747940}
+  - component: {fileID: 8126878401115046233}
   m_Layer: 0
   m_Name: SM_Prop_Pumpkin_02
   m_TagString: Untagged
@@ -112,3 +113,18 @@ MeshCollider:
   m_Convex: 1
   m_CookingOptions: 30
   m_Mesh: {fileID: 43941885634921238, guid: e574bf756ef67b049a9dda29c99d569d, type: 2}
+--- !u!114 &8126878401115046233
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1059390375819198}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c688b4569c0967a19872441cf9c7ac3d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::ResourceNode
+  resourceType: 2
+  resourceAmount: 3
+  isReserved: 0

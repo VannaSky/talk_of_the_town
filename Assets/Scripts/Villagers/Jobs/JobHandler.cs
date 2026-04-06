@@ -1,136 +1,91 @@
 using UnityEngine;
-using System.Collections.Generic;
-using System;
-using UnityEditor;
+using AnimationState = Villagers.Jobs.AnimationState;
 
-[RequireComponent(typeof(VillagerMover))]
 public class JobHandler : MonoBehaviour
 {
-    [Serializable]
-    public class JobLevelData
-    {
-        public JobType JobType;
-        public int level = 0;
-        public float experience = 0f;
-    }
+    [Header("Current Job")]
+    public JobType currentJob;
+    
+    [Header("Target Area (from LLM)")]
+    [SerializeField] private bool hasTargetArea;
+    [SerializeField] private Vector2Int targetArea;
 
-    [Header("Job State")]
-    public JobType currentJob = null;
-
-    private Dictionary<JobType, JobLevelData> jobLevels = new();
-
-    [SerializeField]
-    private List<JobLevelData> allJobLevels = new();
-
-    [HideInInspector]
+    [Header("References")]
+    public Animator animator;
     public VillagerMover villagerMover;
 
-    private void Awake()
-    {
-        villagerMover = GetComponent<VillagerMover>();
+    [Header("Debug")]
+    [SerializeField] private int currentJobLevel = 1;
+    [SerializeField] private float currentJobXP = 0f;
 
-        foreach (var jobData in allJobLevels)
+    public Vector2Int? PreferredTargetArea => hasTargetArea ? targetArea : null;
+
+    void Awake()
+    {
+        if (animator == null)
+            animator = GetComponentInChildren<Animator>();
+        if (villagerMover == null)
+            villagerMover = GetComponent<VillagerMover>();
+    }
+
+    void Update()
+    {
+        if (currentJob != null && currentJob.JobLogic != null)
         {
-            jobLevels[jobData.JobType] = jobData;
+            bool completed = currentJob.JobLogic.Execute(this);
+            if (completed)
+            {
+                AddJobXP(10f);
+            }
         }
     }
 
     public void AssignJob(JobType newJob)
     {
+        AssignJobInternal(newJob, false, Vector2Int.zero);
+    }
+
+    public void AssignJobWithTarget(JobType newJob, Vector2Int target)
+    {
+        AssignJobInternal(newJob, true, target);
+    }
+
+    private void AssignJobInternal(JobType newJob, bool withTarget, Vector2Int target)
+    {
+        if (currentJob != null && currentJob.JobLogic != null)
+        {
+            currentJob.JobLogic.OnJobEnd(this);
+            currentJob.JobLogic.ResetState();
+        }
+
         currentJob = newJob;
+        hasTargetArea = withTarget;
+        targetArea = target;
 
         if (currentJob != null && currentJob.JobLogic != null)
         {
             currentJob.JobLogic.OnJobStart(this);
-        }
-
-        if (newJob != null && !jobLevels.ContainsKey(newJob))
-        {
-            JobLevelData newLevelData = new()
-            {
-                JobType = newJob,
-                level = 0,
-                experience = 0f
-            };
-
-            jobLevels[newJob] = newLevelData;
-            allJobLevels.Add(newLevelData);
+            Debug.Log($"[JobHandler] {gameObject.name} started job: {currentJob.JobName}" + 
+                      (hasTargetArea ? $" targeting ({targetArea.x},{targetArea.y})" : ""));
         }
     }
 
-    public int GetCurrentJobLevel()
+    public bool HasDifferentTargetArea(Vector2Int newTarget)
     {
-        if (currentJob != null && jobLevels.ContainsKey(currentJob))
-        {
-            return jobLevels[currentJob].level;
-        }
-        return 0;
+        if (!hasTargetArea) return true;
+        return targetArea != newTarget;
     }
 
-    public void JobFinished()
+    public int GetCurrentJobLevel() => currentJobLevel;
+
+    private void AddJobXP(float amount)
     {
-        if (currentJob == null) return;
-
-        if (jobLevels.TryGetValue(currentJob, out JobLevelData levelData))
+        currentJobXP += amount;
+        if (currentJobXP >= 100f)
         {
-            levelData.experience += 10f;
-
-            if (levelData.experience >= 100f)
-            {
-                levelData.level += 1;
-                levelData.experience = 0f;
-            }
-        }
-    }
-
-    void Update()
-    {
-        if (currentJob == null) return;
-
-        bool isJobComplete = currentJob.JobLogic.Execute(this);
-
-        if (isJobComplete)
-        {
-            JobFinished();
-        }
-    }
-}
-
-[CustomEditor(typeof(JobHandler))]
-public class JobHandlerEditor : Editor
-{
-    private JobType[] allJobTypes;
-
-    private void OnEnable()
-    {
-        allJobTypes = Resources.LoadAll<JobType>("");
-    }
-
-    public override void OnInspectorGUI()
-    {
-        DrawDefaultInspector();
-
-        JobHandler jobHandler = (JobHandler)target;
-
-        GUILayout.Space(10);
-        GUILayout.Label("Quick Job Assignment", EditorStyles.boldLabel);
-
-        foreach (var jobType in allJobTypes)
-        {
-            if (GUILayout.Button(jobType.JobName))
-            {
-                jobHandler.AssignJob(jobType);
-
-                EditorUtility.SetDirty(jobHandler);
-            }
-        }
-
-        GUILayout.Space(10);
-
-        if (GUILayout.Button("Clear Job"))
-        {
-            jobHandler.AssignJob(null);
-            EditorUtility.SetDirty(jobHandler);
+            currentJobXP -= 100f;
+            currentJobLevel++;
+            Debug.Log($"[JobHandler] {gameObject.name} leveled up to {currentJobLevel}!");
         }
     }
 }

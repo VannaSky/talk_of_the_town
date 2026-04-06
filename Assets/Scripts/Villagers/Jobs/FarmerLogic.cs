@@ -1,6 +1,8 @@
 using System;
 using Buildings;
+using Tiles;
 using UnityEngine;
+using AnimationState = Villagers.Jobs.AnimationState;
 
 [Serializable]
 public class FarmerLogic : JobLogic
@@ -8,81 +10,139 @@ public class FarmerLogic : JobLogic
     [Header("Farmer Settings")]
     public float workSpeed = 1f;
     public float stoppingDistance = 1.5f;
+    public float processTime = 5f;
+    public int seedCost = 2;
+    public int foodProduced = 5;
 
-    private enum State { Idle, FindingTarget, MovingToTarget, Working }
-    private State currentState = State.Idle;
-    private Building currentTarget = null;
+    [NonSerialized] private Building _currentTarget = null;
 
-    public override void OnJobStart(JobHandler handler)
+    protected override void OnInitialize(JobHandler handler)
     {
-        currentState = State.FindingTarget;
-        timeSinceLastAction = 0f;
-        currentTarget = null;
+        _currentTarget = null;
+        ChangeState(AnimationState.FindingTarget, handler);
     }
 
-    public override bool Execute(JobHandler handler)
+    protected override bool ExecuteState(JobHandler handler)
     {
-        switch (currentState)
+        switch (_currentState)
         {
-            case State.FindingTarget:
-                currentTarget = FindNextFarm(handler);
-                if (currentTarget != null)
-                {
-                    currentTarget.Reserve();
-                    currentState = State.MovingToTarget;
-                    handler.villagerMover.StopMoving();
-                }
-                else
-                {
-                    currentStatus = "No farm tasks available. Waiting...";
-                    handler.villagerMover.StopMoving();
-                }
+            case AnimationState.FindingTarget:
+                ExecuteFindingTarget(handler);
                 break;
 
-            case State.MovingToTarget:
-                if (currentTarget == null)
-                {
-                    currentState = State.FindingTarget;
-                    break;
-                }
-
-                currentStatus = $"Moving to farm at {currentTarget.transform.position}";
-                handler.villagerMover.MoveTo(currentTarget.transform.position);
-
-                if (handler.villagerMover.IsNearDestination(stoppingDistance))
-                {
-                    handler.villagerMover.StopMoving();
-                    currentState = State.Working;
-                    timeSinceLastAction = 0f;
-                }
+            case AnimationState.MovingToTarget:
+                ExecuteMovingToTarget(handler);
                 break;
 
-            case State.Working:
-                if (currentTarget == null)
-                {
-                    currentState = State.FindingTarget;
-                    break;
-                }
+            case AnimationState.Farming:
+                return ExecuteProcessing(handler);
 
-                timeSinceLastAction += Time.deltaTime;
-                float workApplied = workSpeed * Time.deltaTime;
-                bool levelCompleted = currentTarget.AddWork(workApplied);
-
-                var bt = currentTarget.buildingData != null ? currentTarget.buildingData.buildingType.ToString() : "Farm";
-                currentStatus = $"Working on {bt} ({currentTarget.GetProgressPercent()}%)";
-
-                if (levelCompleted)
-                {
-                    int finishedLevelIndex = Mathf.Max(0, currentTarget.currentLevel - 1);
-                    currentTarget.Unreserve();
-                    currentState = State.FindingTarget;
-                    handler.villagerMover.StopMoving();
-                    return true;
-                }
+            case AnimationState.Idle:
+                ExecuteIdle(handler);
                 break;
         }
-
         return false;
+    }
+
+    private void ExecuteFindingTarget(JobHandler handler)
+    {
+        _currentTarget = FindNextFarm(handler);
+        if (_currentTarget == null)
+        {
+            currentStatus = "No farm available. Waiting...";
+            handler.villagerMover.StopMoving();
+            ChangeState(AnimationState.Idle, handler);
+            return;
+        }
+
+        if (!HasRequiredResources())
+        {
+            currentStatus = $"Need {seedCost} seeds! Have: {VillageState.Instance?.Seeds ?? 0}. Waiting...";
+            handler.villagerMover.StopMoving();
+            ChangeState(AnimationState.Idle, handler);
+            return;
+        }
+
+        _currentTarget.Reserve();
+        handler.villagerMover.StopMoving();
+        ChangeState(AnimationState.MovingToTarget, handler);
+    }
+
+    private void ExecuteMovingToTarget(JobHandler handler)
+    {
+        if (_currentTarget == null)
+        {
+            ChangeState(AnimationState.FindingTarget, handler);
+            return;
+        }
+
+        currentStatus = "Moving to farm";
+        handler.villagerMover.MoveTo(_currentTarget.transform.position);
+
+        if (handler.villagerMover.IsNearDestination(stoppingDistance))
+        {
+            handler.villagerMover.StopMoving();
+
+            if (!TryConsumeResources())
+            {
+                currentStatus = "Out of seeds! Waiting...";
+                _currentTarget.Unreserve();
+                _currentTarget = null;
+                ChangeState(AnimationState.FindingTarget, handler);
+                return;
+            }
+
+            ChangeState(AnimationState.Farming, handler);
+        }
+    }
+
+    private bool ExecuteProcessing(JobHandler handler)
+    {
+        if (_currentTarget == null)
+        {
+            ChangeState(AnimationState.FindingTarget, handler);
+            return false;
+        }
+
+        timeSinceLastAction += Time.deltaTime;
+        currentStatus = $"Processing seeds ({timeSinceLastAction:F1}/{processTime:F1})...";
+
+        if (timeSinceLastAction >= processTime)
+        {
+            if (VillageState.Instance != null)
+            {
+                VillageState.Instance.AddResource(ResourceType.Food, foodProduced);
+                currentStatus = $"Produced {foodProduced} food!";
+                Debug.Log($"[Farmer] Produced {foodProduced} food from {seedCost} seeds!");
+            }
+
+            _currentTarget.Unreserve();
+            _currentTarget = null;
+            ChangeState(AnimationState.FindingTarget, handler);
+            return true;
+        }
+        return false;
+    }
+
+    private void ExecuteIdle(JobHandler handler)
+    {
+        timeSinceLastAction += Time.deltaTime;
+        if (timeSinceLastAction >= 1f)
+        {
+            ChangeState(AnimationState.FindingTarget, handler);
+        }
+    }
+
+    private bool HasRequiredResources()
+    {
+        if (VillageState.Instance == null) return true;
+        return VillageState.Instance.HasResource(ResourceType.Seed, seedCost);
+    }
+
+    private bool TryConsumeResources()
+    {
+        if (VillageState.Instance == null) return true;
+        return VillageState.Instance.TrySpendResource(ResourceType.Seed, seedCost);
     }
 
     private Building FindNextFarm(JobHandler handler)
@@ -90,7 +150,7 @@ public class FarmerLogic : JobLogic
         var all = UnityEngine.Object.FindObjectsByType<Building>(FindObjectsSortMode.None);
         Building nearest = null;
         float bestDist = float.MaxValue;
-        Vector3 origin = handler != null ? handler.transform.position : Vector3.zero;
+        Vector3 origin = handler.transform.position;
 
         foreach (var b in all)
         {
@@ -108,5 +168,11 @@ public class FarmerLogic : JobLogic
             }
         }
         return nearest;
+    }
+
+    public override void ResetState()
+    {
+        base.ResetState();
+        _currentTarget = null;
     }
 }

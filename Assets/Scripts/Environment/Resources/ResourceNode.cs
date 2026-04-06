@@ -5,7 +5,8 @@ public class ResourceNode : MonoBehaviour
     public enum ResourceType
     {
         Tree,
-        Rock,
+        Stone,
+        Seed,
         Water,
     }
 

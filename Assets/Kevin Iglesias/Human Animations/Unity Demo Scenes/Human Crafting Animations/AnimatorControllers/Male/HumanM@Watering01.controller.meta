@@ -1,0 +1,16 @@
+fileFormatVersion: 2
+guid: 70ce3bf40f08e254d8c94962f8bb0ecc
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 9100000
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 147875
+  packageName: Human Crafting Animations
+  packageVersion: 2.2.1
+  assetPath: Assets/Kevin Iglesias/Human Animations/Unity Demo Scenes/Human Crafting
+    Animations/AnimatorControllers/Male/HumanM@Watering01.controller
+  uploadId: 824628

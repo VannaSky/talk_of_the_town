@@ -19,6 +19,7 @@ namespace ollama
             public const string CHAT = "api/chat";
             public const string LIST = "api/tags";
             public const string EMBEDDINGS = "api/embed";
+            public const string PULL = "api/pull";
         }
 
         private static async Task<T> PostRequest<T>(string payload, string endpoint) where T : Response.Base
@@ -86,6 +87,8 @@ namespace ollama
                     {
                         it++;
                         string result = await reader.ReadLineAsync().ConfigureAwait(false);
+                        if (result == null)
+                            break;
                         var response = JsonConvert.DeserializeObject<T>(result);
                         if (it > MaxIterations)
                         {

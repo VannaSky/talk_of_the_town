@@ -1,15 +1,23 @@
 using UnityEngine;
 
-    public class GlobalLogSettings : MonoBehaviour
+public class GlobalSettings : MonoBehaviour
+{
+    [SerializeField] private LogLevel logLevel = LogLevel.Warning;
+    [SerializeField] private string llmModel = "";
+
+    public string LLMModel
     {
-        [SerializeField] private LogLevel logLevel = LogLevel.Warning;
-        [SerializeField] private bool dontDestroyOnLoad = true;
-
-        void Awake()
-        {
-            GameLog.GlobalLevel = logLevel;
-
-            if (dontDestroyOnLoad)
-                DontDestroyOnLoad(gameObject);
-        }
+        get => llmModel;
+        set => llmModel = value;
     }
+
+
+    void Awake()
+    {
+        DontDestroyOnLoad(gameObject);
+        GameLog.GlobalLevel = logLevel;
+        
+        
+       
+    }
+}

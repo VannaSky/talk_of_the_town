@@ -1,22 +1,33 @@
+using UnityEditor;
 using UnityEngine;
 
-public class MainMenu : MonoBehaviour
+namespace MainMenu
 {
-    [SerializeField]
-    private string gameScene = "GameScene";
-
-    public void OnStartPressed()
+    public class MainMenu : MonoBehaviour
     {
-        UnityEngine.SceneManagement.SceneManager.LoadScene(gameScene);
-    }
+        [SerializeField]
+        private string gameScene = "GameScene";
+        
+        [SerializeField] private GameObject settingsMenu;
+        
+        public void OnStartPressed()
+        {
+            UnityEngine.SceneManagement.SceneManager.LoadScene(gameScene);
+        }
 
-    public void OnSettingsPressed()
-    {
-        Debug.Log("Settings button pressed - functionality not implemented yet.");
-    }
+        public void OnSettingsPressed()
+        {
+            settingsMenu.SetActive(true);
+            gameObject.SetActive(false);
+        }
 
-    public void OnQuitPressed()
-    {
-        Application.Quit();
+        public void OnQuitPressed()
+        {
+#if UNITY_EDITOR
+            EditorApplication.ExitPlaymode();
+#else
+            Application.Quit();
+#endif
+        }
     }
 }
