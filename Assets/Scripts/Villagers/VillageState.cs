@@ -109,6 +109,7 @@ public class VillageState : MonoBehaviour
             case ResourceType.Stone: stone += amount; break;
             case ResourceType.Seed: seeds += amount; break;
             case ResourceType.Iron: iron += amount; break;
+            case ResourceType.Food: food += amount; break;
         }
         
         int newValue = GetResource(type);
@@ -129,6 +130,7 @@ public class VillageState : MonoBehaviour
             case ResourceType.Stone: stone -= amount; break;
             case ResourceType.Seed: seeds -= amount; break;
             case ResourceType.Iron: iron -= amount; break;
+            case ResourceType.Food: food -= amount; break;
         }
         
         int newValue = GetResource(type);
@@ -145,6 +147,7 @@ public class VillageState : MonoBehaviour
             ResourceType.Stone => stone,
             ResourceType.Seed => seeds,
             ResourceType.Iron => iron,
+            ResourceType.Food => food,
             _ => 0
         };
     }

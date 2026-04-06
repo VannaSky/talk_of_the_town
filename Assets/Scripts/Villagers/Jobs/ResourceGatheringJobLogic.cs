@@ -224,6 +224,14 @@ public abstract class ResourceGatheringJobLogic : JobLogic
                 continue;
             }
 
+            // Check if mature (skip regrowing nodes)
+            if (!node.IsMature)
+            {
+                if (debugResourceSearch)
+                    Debug.Log($"  Skip {node.name}: not mature ({node.growthStage})");
+                continue;
+            }
+
             // Check if active
             if (!node.gameObject.activeInHierarchy)
             {
@@ -280,6 +288,7 @@ public abstract class ResourceGatheringJobLogic : JobLogic
             if (node == null) continue;
             if (node.resourceType != TargetResourceType) continue;
             if (node.isReserved) continue;
+            if (!node.IsMature) continue;
             if (!node.gameObject.activeInHierarchy) continue;
 
             float d = Vector3.Distance(origin, node.transform.position);
