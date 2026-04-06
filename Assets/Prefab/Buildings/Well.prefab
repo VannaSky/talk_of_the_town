@@ -126,9 +126,17 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: c688b4569c0967a19872441cf9c7ac3d, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ResourceNode
-  resourceType: 2
-  resourceAmount: 20
+  resourceType: 3
+  resourceAmount: 100
   isReserved: 0
+  growthStage: 2
+  canRegrow: 0
+  growthTime: 30
+  currentGrowthTimer: 0
+  defaultResourceAmount: 5
+  seedlingVisual: {fileID: 0}
+  growingVisual: {fileID: 0}
+  matureVisual: {fileID: 0}
 --- !u!1 &8359415645800886344
 GameObject:
   m_ObjectHideFlags: 0

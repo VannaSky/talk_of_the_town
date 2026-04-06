@@ -13,6 +13,7 @@ public class JobHandler : MonoBehaviour
     [Header("References")]
     public Animator animator;
     public VillagerMover villagerMover;
+    public VillagerEquipment equipment;
 
     [Header("Debug")]
     [SerializeField] private int currentJobLevel = 1;
@@ -26,6 +27,8 @@ public class JobHandler : MonoBehaviour
             animator = GetComponentInChildren<Animator>();
         if (villagerMover == null)
             villagerMover = GetComponent<VillagerMover>();
+        if (equipment == null)
+            equipment = GetComponent<VillagerEquipment>();
     }
 
     void Update()
