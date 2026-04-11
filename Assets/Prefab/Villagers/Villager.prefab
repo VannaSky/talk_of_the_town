@@ -222,7 +222,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 4aaa54638f7f6fa43a6adcb6c34a1947, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::VillagerMover
-  moveSpeed: 3.5
+  moveSpeed: 1
   proximityThreshold: 2
 --- !u!195 &3982711867639208403
 NavMeshAgent:
