@@ -9,10 +9,15 @@ public class VillagerMover : MonoBehaviour
     [Header("Movement Settings")]
     [Tooltip("The speed at which the villager moves.")]
     public float moveSpeed = 3.5f;
-    
+
     [Tooltip("The distance threshold to consider the villager 'near' their destination.")]
-    public float proximityThreshold = 2.0f; 
-    
+    public float proximityThreshold = 2.0f;
+
+    [Tooltip("Rotation speed in degrees per second when facing a target.")]
+    public float rotationSpeed = 360f;
+
+    private Vector3? _faceTarget;
+
     void Awake()
     {
         agent = GetComponent<NavMeshAgent>();
@@ -26,6 +31,25 @@ public class VillagerMover : MonoBehaviour
         if (agent.speed != moveSpeed)
         {
             agent.speed = moveSpeed;
+        }
+
+        if (_faceTarget.HasValue)
+        {
+            Vector3 dir = _faceTarget.Value - transform.position;
+            dir.y = 0f;
+            if (dir.sqrMagnitude > 0.001f)
+            {
+                Quaternion targetRot = Quaternion.LookRotation(dir);
+                transform.rotation = Quaternion.RotateTowards(
+                    transform.rotation, targetRot, rotationSpeed * Time.deltaTime);
+
+                if (Quaternion.Angle(transform.rotation, targetRot) < 1f)
+                    _faceTarget = null;
+            }
+            else
+            {
+                _faceTarget = null;
+            }
         }
     }
 
@@ -46,6 +70,7 @@ public class VillagerMover : MonoBehaviour
     {
         if (agent.enabled && agent.isOnNavMesh && !agent.isStopped)
         {
+            FaceTarget(agent.destination);
             agent.isStopped = true;
         }
     }
@@ -66,4 +91,11 @@ public class VillagerMover : MonoBehaviour
     {
         return !agent.isStopped && agent.velocity.sqrMagnitude > 0.01f;
     }
+
+    public void FaceTarget(Vector3 target)
+    {
+        _faceTarget = target;
+    }
+
+    public bool IsFacingTarget => !_faceTarget.HasValue;
 }
