@@ -252,16 +252,21 @@ JOB DESCRIPTIONS:
 - Lumberjack: Chops trees for wood. Assign to TREE locations.
 - Miner: Mines stone deposits. Assign to STONE locations.
 - Builder: Constructs buildings. Needs wood+stone in inventory.
-- Farmer: Plants crops on empty grass tiles (needs seeds) and harvests mature crops for food. Assign to grass areas or mature crop locations.
+- Farmer: Plants crops on empty grass tiles (needs seeds) and harvests mature crops for food. Assign to FARMS or grass areas. THIS IS THE PRIMARY FOOD PRODUCTION JOB.
 - SeedGatherer: Collects seeds from seed nodes (pumpkins, wheat, etc.)
 - IDLE: Rest.
+
+PRIORITY ORDER (follow this strictly):
+1. FARMING FIRST: If Seeds >= 10, assign at least one villager as Farmer. Farming is the most important job — food sustains the village. More seeds = more farmers needed!
+2. BUILDING: If unfinished buildings exist and Wood >= 20 and Stone >= 10, assign a Builder.
+3. GATHERING: Only gather resources that are actually low. If Wood > 50, no more Lumberjacks. If Seeds > 30, no more SeedGatherers — farm those seeds instead!
+4. AVOID OVER-GATHERING: Do NOT keep assigning gatherers when stockpiles are already large. Switch them to Farmer or Builder instead.
 
 CRITICAL COORDINATION RULES:
 1. SPREAD VILLAGERS OUT: Each villager must go to a DIFFERENT location!
 2. NEVER assign two villagers to the same coordinates!
-3. BALANCE JOBS: Don't assign everyone to the same job unless necessary.
-4. MATCH RESOURCES TO NEEDS: Check inventory, gather what's scarce.
-5. USE DIFFERENT RESOURCE NODES: If both need wood, send them to different tree clusters!
+3. CHECK STOCKPILES: High stockpile = stop gathering that resource, switch to productive jobs.
+4. USE DIFFERENT RESOURCE NODES: If both need wood, send them to different tree clusters!
 
 RESPONSE FORMAT (JSON only, assign ALL villagers):
 {jsonExample}
@@ -282,11 +287,16 @@ Respond ONLY with valid JSON containing assignments for ALL {villagerCount} vill
 
         if (VillageState.Instance != null)
         {
+            int wood = VillageState.Instance.Wood;
+            int stone = VillageState.Instance.Stone;
+            int seeds = VillageState.Instance.Seeds;
+            int food = VillageState.Instance.Food;
+
             sb.AppendLine("=== VILLAGE INVENTORY ===");
-            sb.AppendLine($"Wood: {VillageState.Instance.Wood}");
-            sb.AppendLine($"Stone: {VillageState.Instance.Stone}");
-            sb.AppendLine($"Seeds: {VillageState.Instance.Seeds}");
-            sb.AppendLine($"Food: {VillageState.Instance.Food}");
+            sb.AppendLine($"Wood: {wood}{(wood > 50 ? " [SURPLUS - no more Lumberjacks needed]" : wood < 10 ? " [LOW - need Lumberjack]" : "")}");
+            sb.AppendLine($"Stone: {stone}{(stone > 40 ? " [SURPLUS - no more Miners needed]" : stone < 10 ? " [LOW - need Miner]" : "")}");
+            sb.AppendLine($"Seeds: {seeds}{(seeds >= 10 ? $" [SUFFICIENT - assign {Mathf.Max(1, seeds / 20)} Farmer(s) to use these seeds!]" : " [LOW - need SeedGatherer]")}");
+            sb.AppendLine($"Food: {food}{(food < 10 ? " [LOW - farming urgently needed!]" : "")}");
             sb.AppendLine();
         }
 

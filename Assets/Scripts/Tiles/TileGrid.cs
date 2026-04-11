@@ -130,6 +130,26 @@ namespace Tiles
         return summary.ToString();
     }
         
+        /// <summary>
+        /// Finds the nearest tile to a world position by checking all tiles.
+        /// Returns null if the grid is empty.
+        /// </summary>
+        public Tile FindNearestTile(Vector3 worldPos)
+        {
+            Tile nearest = null;
+            float nearestSqr = float.MaxValue;
+            foreach (var tile in _tiles.Values)
+            {
+                float sqr = (tile.transform.position - worldPos).sqrMagnitude;
+                if (sqr < nearestSqr)
+                {
+                    nearestSqr = sqr;
+                    nearest = tile;
+                }
+            }
+            return nearest;
+        }
+
         public List<Tile> FindTilesInRadius(Vector2Int center, int radius, System.Func<Tile, bool> predicate)
         {
             var results = new List<Tile>();
