@@ -23,6 +23,7 @@ public class VillagerMover : MonoBehaviour
         agent = GetComponent<NavMeshAgent>();
         
         agent.speed = moveSpeed;
+        agent.stoppingDistance = 0.1f;
         agent.isStopped = true;
     }
     
