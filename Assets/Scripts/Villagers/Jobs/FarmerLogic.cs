@@ -154,9 +154,10 @@ public class FarmerLogic : JobLogic
             // Instantiate crop on the tile
             if (cropPrefab != null)
             {
+                var cropPos = _targetTile.transform.position + new Vector3(1f, 0.5f, 1f);
                 var cropGO = UnityEngine.Object.Instantiate(
                     cropPrefab,
-                    _targetTile.transform.position,
+                    cropPos,
                     Quaternion.identity,
                     _targetTile.transform
                 );
@@ -227,10 +228,12 @@ public class FarmerLogic : JobLogic
         Vector3 origin = handler.transform.position;
 
         Vector3? targetAreaWorld = null;
-        if (handler.PreferredTargetArea.HasValue)
+        if (handler.PreferredTargetArea.HasValue && VillageState.Instance?.TileGrid != null)
         {
             var target = handler.PreferredTargetArea.Value;
-            targetAreaWorld = GridToWorld(target);
+            // Look up the actual tile world position instead of manual grid-to-world conversion
+            if (VillageState.Instance.TileGrid.TryGet(target, out var targetTile))
+                targetAreaWorld = targetTile.transform.position;
         }
 
         foreach (var node in allNodes)
@@ -264,18 +267,28 @@ public class FarmerLogic : JobLogic
             return null;
 
         Vector3 origin = handler.transform.position;
-        Vector2Int centerGrid = WorldToGrid(origin);
 
+        Vector2Int centerGrid;
         Vector2Int? preferredCenter = handler.PreferredTargetArea;
         if (preferredCenter.HasValue)
+        {
             centerGrid = preferredCenter.Value;
+        }
+        else
+        {
+            // Use the grid's own tile data to find the correct grid center
+            // instead of manual coordinate conversion (which can be wrong if the grid has an origin offset)
+            var nearestTile = VillageState.Instance.TileGrid.FindNearestTile(origin);
+            centerGrid = nearestTile != null ? nearestTile.GridPos : Vector2Int.zero;
+        }
 
         var candidates = VillageState.Instance.TileGrid.FindTilesInRadius(
             centerGrid, searchRadius,
             tile => tile.Archetype != null
                     && (tile.Archetype.Style == TileStyle.Grass || tile.Archetype.Style == TileStyle.Field)
                     && !tile.HasBuilding
-                    && !HasCropOnTile(tile)
+                    && !tile.HasResource
+                    && !HasResourceNodeOnTile(tile)
         );
 
         if (candidates.Count == 0) return null;
@@ -295,16 +308,9 @@ public class FarmerLogic : JobLogic
         return best;
     }
 
-    private bool HasCropOnTile(Tile tile)
+    private bool HasResourceNodeOnTile(Tile tile)
     {
-        // Check if any ResourceNode (Crop) already exists as a child of the tile
-        var nodes = tile.GetComponentsInChildren<ResourceNode>();
-        foreach (var node in nodes)
-        {
-            if (node.resourceType == ResourceNode.ResourceType.Crop)
-                return true;
-        }
-        return false;
+        return tile.GetComponentInChildren<ResourceNode>() != null;
     }
 
     private bool HasRequiredSeeds()
@@ -317,20 +323,6 @@ public class FarmerLogic : JobLogic
     {
         if (VillageState.Instance == null) return true;
         return VillageState.Instance.TrySpendResource(ResourceType.Seed, seedCost);
-    }
-
-    private Vector3 GridToWorld(Vector2Int gridPos, float cellSize = 2f)
-    {
-        float x = gridPos.x * cellSize + cellSize / 2f;
-        float z = gridPos.y * cellSize + cellSize / 2f;
-        return new Vector3(x, 0f, z);
-    }
-
-    private Vector2Int WorldToGrid(Vector3 worldPos, float cellSize = 2f)
-    {
-        int x = Mathf.FloorToInt(worldPos.x / cellSize);
-        int z = Mathf.FloorToInt(worldPos.z / cellSize);
-        return new Vector2Int(x, z);
     }
 
     public override void ResetState()
