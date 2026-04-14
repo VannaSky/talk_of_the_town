@@ -53,7 +53,6 @@ namespace Tiles
         string json = ExportToJson();
         string path = Path.Combine(Application.persistentDataPath, filename);
         File.WriteAllText(path, json);
-        Debug.Log($"Grid saved to: {path}");
     }
     
     /// <summary>Export compact grid state to JSON for LLM consumption</summary>

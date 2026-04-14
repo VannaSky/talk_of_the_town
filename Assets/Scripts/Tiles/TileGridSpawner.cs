@@ -22,6 +22,14 @@ namespace Tiles
 
         [SerializeField] TileArchetypeLibrary library;
 
+        [Header("Load - Resource Prefabs")]
+        [Tooltip("All tree variant prefabs. One is picked at random per tree when loading a saved map.")]
+        [SerializeField] List<GameObject> treePrefabs;
+        [Tooltip("All stone variant prefabs. One is picked at random per stone when loading a saved map.")]
+        [SerializeField] List<GameObject> stonePrefabs;
+        [Tooltip("All seed/field variant prefabs. One is picked at random per seed when loading a saved map.")]
+        [SerializeField] List<GameObject> seedPrefabs;
+
         // Local logger helpers
         void LogError(string msg)   => GameLog.LogError(LogCategory, msg, this);
         void LogWarning(string msg) => GameLog.LogWarning(LogCategory, msg, this);
@@ -475,6 +483,86 @@ namespace Tiles
             // Identify resource objects by name patterns
             string name = obj.name.ToLower();
             return name.Contains("tree") || name.Contains("rock") || name.Contains("stone") || name.Contains("ore") || name.Contains("field") || name.Contains("seed");
+        }
+
+        /// <summary>
+        /// Spawns the tile grid from saved GridData instead of TWC blueprints.
+        /// Used by the load path in TWCBridge. Resource visuals are instantiated from
+        /// the treePrefab / stonePrefab / seedPrefab fields assigned in the Inspector.
+        /// </summary>
+        public void SpawnFromGridData(GridData data)
+        {
+            if (tilePrefab == null || gridRoot == null)
+            {
+                LogError("Missing tilePrefab or gridRoot — cannot spawn from saved data.");
+                return;
+            }
+
+            foreach (var tileData in data.tiles)
+            {
+                var pos = new Vector2Int(tileData.x, tileData.y);
+                var world = new Vector3(origin.x + pos.x * cellSize, origin.y, origin.z + pos.y * cellSize);
+
+                var go = Instantiate(tilePrefab, world, Quaternion.identity, gridRoot.transform);
+                go.name = $"Tile_{pos.x}_{pos.y}";
+
+                var tile = go.GetComponent<Tile>();
+                tile.Init(pos, library);
+
+                if (System.Enum.TryParse<TileStyle>(tileData.tileStyle, out var style))
+                    tile.SetStyle(style);
+
+                if (tileData.resources == null) continue;
+
+                foreach (var resData in tileData.resources)
+                {
+                    if (resData.count <= 0) continue;
+                    if (!System.Enum.TryParse<ResourceType>(resData.type, out var resType)) continue;
+
+                    List<GameObject> prefabList = resType switch
+                    {
+                        ResourceType.Wood  => treePrefabs,
+                        ResourceType.Stone => stonePrefabs,
+                        ResourceType.Seed  => seedPrefabs,
+                        _ => null
+                    };
+
+                    if (prefabList == null || prefabList.Count == 0)
+                    {
+                        LogWarning($"No prefabs assigned for resource type '{resType}'. Assign them in TileGridSpawner Inspector.");
+                        continue;
+                    }
+
+                    string groupName = resType switch
+                    {
+                        ResourceType.Wood  => "Trees",
+                        ResourceType.Stone => "Stones",
+                        ResourceType.Seed  => "Seeds",
+                        _ => "Resources"
+                    };
+
+                    Transform group = GetOrCreateGroup(tile.transform, groupName);
+                    for (int i = 0; i < resData.count; i++)
+                    {
+                        GameObject prefab = prefabList[Random.Range(0, prefabList.Count)];
+                        Instantiate(prefab, group);
+                    }
+                }
+            }
+
+            gridRoot.RebuildIndex();
+            LogInfo($"SpawnFromGridData complete: {data.tiles.Count} tiles spawned ({data.width}x{data.height}).");
+        }
+
+        Transform GetOrCreateGroup(Transform parent, string groupName)
+        {
+            Transform group = parent.Find(groupName);
+            if (group != null) return group;
+
+            var go = new GameObject(groupName);
+            go.transform.SetParent(parent, false);
+            go.transform.localPosition = Vector3.zero;
+            return go.transform;
         }
     }
 }

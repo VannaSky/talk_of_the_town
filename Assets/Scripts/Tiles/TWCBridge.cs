@@ -12,6 +12,13 @@ namespace Tiles
     {
         private const string LogCategory = "TWCBridge";
 
+        /// <summary>
+        /// Set this to a map filename (e.g. "map_01.json") before loading MainScene
+        /// to trigger the load path instead of procedural generation.
+        /// Cleared automatically after use.
+        /// </summary>
+        public static string MapFileToLoad = null;
+
         [Header("Refs")]
         [SerializeField] TileWorldCreator tileWorldCreator;
         [SerializeField] private GameObject tileWorldCreatorMap;
@@ -82,7 +89,16 @@ namespace Tiles
 
         void Start()
         {
-            if (autoRunOnStart) GenerateBuildAndSync();
+            if (!string.IsNullOrEmpty(MapFileToLoad))
+            {
+                string fileToLoad = MapFileToLoad;
+                MapFileToLoad = null; // Clear before loading so retries don't re-trigger load
+                LoadFromFile(fileToLoad);
+            }
+            else if (autoRunOnStart)
+            {
+                GenerateBuildAndSync();
+            }
         }
 
         void OnEnable()
@@ -160,11 +176,6 @@ namespace Tiles
 
                 // 3) Register resources
                 RegisterExistingResources();
-        
-                ExportGridToJson();
-                
-                // Alternative for compact version
-                // ExportGridToJsonCompact();
 
 #pragma warning disable CS4014
                 RebakeNavMeshAsync();
@@ -221,11 +232,6 @@ namespace Tiles
 
             // 3) Register resources after village is placed
             RegisterExistingResources();
-            
-            ExportGridToJson();
-            
-            // Alternative for compact version
-            // ExportGridToJsonCompact();
 
 #pragma warning disable CS4014
             RebakeNavMeshAsync();
@@ -596,6 +602,89 @@ namespace Tiles
             string filename = $"tilegrid_compact_{System.DateTime.Now:yyyy-MM-dd_HH-mm-ss}.json";
             tileGrid.SaveToFileCompact(filename);
             LogInfo($"Compact grid exported to: {filename}");
+        }
+
+        /// <summary>
+        /// Saves the current map with an auto-incremented filename (map_01.json, map_02.json, ...).
+        /// Call this manually via GUI button after approving a generated map.
+        /// </summary>
+        [ContextMenu("Save Map")]
+        public void SaveMap()
+        {
+            if (tileGrid == null)
+            {
+                LogError("TileGrid is null, cannot save map");
+                return;
+            }
+
+            string filename = GetNextMapFilename();
+            tileGrid.SaveToFile(filename);
+            LogInfo($"Map saved as: {filename} (path: {System.IO.Path.Combine(Application.persistentDataPath, filename)})");
+        }
+
+        private string GetNextMapFilename()
+        {
+            string dir = Application.persistentDataPath;
+            int highest = 0;
+
+            foreach (string file in System.IO.Directory.GetFiles(dir, "map_??.json"))
+            {
+                string numberPart = System.IO.Path.GetFileNameWithoutExtension(file).Substring(4); // "map_01" → "01"
+                if (int.TryParse(numberPart, out int n))
+                    highest = Mathf.Max(highest, n);
+            }
+
+            return $"map_{(highest + 1):D2}.json";
+        }
+
+        /// <summary>
+        /// Loads a saved map from file and rebuilds the tile grid without running TWC generation.
+        /// VillageSpawner still runs normally for a fresh game start on the loaded map.
+        /// </summary>
+        public void LoadFromFile(string filename)
+        {
+            string path = System.IO.Path.Combine(Application.persistentDataPath, filename);
+
+            if (!System.IO.File.Exists(path))
+            {
+                LogError($"Map file not found: {path}");
+                return;
+            }
+
+            LogInfo($"Loading map from: {filename}");
+
+            string json = System.IO.File.ReadAllText(path);
+            GridData data = JsonUtility.FromJson<GridData>(json);
+
+            if (data == null || data.tiles == null || data.tiles.Count == 0)
+            {
+                LogError("Failed to deserialize map data or map is empty.");
+                return;
+            }
+
+            // 1. Clear any existing tiles
+            tileGrid.DestroyAllTiles();
+
+            // 2. Spawn tiles and resource visuals from saved data (no TWC)
+            spawner.SpawnFromGridData(data);
+
+            // 3. Count resources from the spawned hierarchy into tile data
+            RegisterExistingResources();
+
+            // 4. Spawn village fresh (no retry/regeneration — map is fixed)
+            if (villageSpawner != null)
+            {
+                bool success = villageSpawner.SpawnInitialVillage();
+                if (!success)
+                    LogWarning("Village placement failed on loaded map. The saved map may not have a valid village area.");
+            }
+
+            // 5. Bake NavMesh
+#pragma warning disable CS4014
+            RebakeNavMeshAsync();
+#pragma warning restore CS4014
+
+            LogInfo($"Map loaded successfully: {filename} ({data.width}x{data.height}, {data.tiles.Count} tiles)");
         }
         
         private void TrySpawnVillageWithRetry()
