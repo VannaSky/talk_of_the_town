@@ -14,6 +14,7 @@ public class FarmerLogic : JobLogic
     public float harvestTime = 5f;
     public int seedCost = 2;
     public int foodProduced = 5;
+    public int seedsProduced = 1;
     public int searchRadius = 15;
 
     [Header("Crop Prefab")]
@@ -200,8 +201,9 @@ public class FarmerLogic : JobLogic
             if (VillageState.Instance != null)
             {
                 VillageState.Instance.AddResource(ResourceType.Food, foodProduced);
-                currentStatus = $"Harvested {foodProduced} food!";
-                Debug.Log($"[Farmer] Harvested {foodProduced} food!");
+                VillageState.Instance.AddResource(ResourceType.Seed, seedsProduced);
+                currentStatus = $"Harvested {foodProduced} food and {seedsProduced} seeds!";
+                Debug.Log($"[Farmer] Harvested {foodProduced} food and {seedsProduced} seeds!");
             }
 
             _targetCrop = null;

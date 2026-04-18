@@ -334,14 +334,14 @@ JOB DESCRIPTIONS:
 - Lumberjack: Chops trees for wood. Assign to TREE locations.
 - Miner: Mines stone deposits. Assign to STONE locations.
 - Builder: Constructs buildings. Needs wood+stone in inventory.
-- Farmer: Plants crops on empty grass tiles (needs seeds) and harvests mature crops for food. Assign to FARMS or grass areas. THIS IS THE PRIMARY FOOD PRODUCTION JOB.
+- Farmer: Plants crops on empty grass tiles (needs seeds) and harvests mature crops for food AND seeds. Each harvest yields both food and a small number of seeds, making farming partially self-sustaining. Assign to FARMS or grass areas. THIS IS THE PRIMARY FOOD PRODUCTION JOB.
 - SeedGatherer: Collects seeds from seed nodes (pumpkins, wheat, etc.)
 - IDLE: Rest.
 
 PRIORITY ORDER (follow this strictly):
 1. FARMING FIRST: If Seeds >= 10, assign at least one villager as Farmer. Farming is the most important job — food sustains the village. More seeds = more farmers needed!
 2. BUILDING: If unfinished buildings exist and Wood >= 20 and Stone >= 10, assign a Builder.
-3. GATHERING: Only gather resources that are actually low. If Wood > 50, no more Lumberjacks. If Seeds > 30, no more SeedGatherers — farm those seeds instead!
+3. GATHERING: Only gather resources that are actually low. If Wood > 50, no more Lumberjacks. If Seeds > 30, no more SeedGatherers — farm those seeds instead! Note: Farmers replenish seeds on every harvest, so a healthy farming cycle reduces the need for dedicated SeedGatherers.
 4. AVOID OVER-GATHERING: Do NOT keep assigning gatherers when stockpiles are already large. Switch them to Farmer or Builder instead.
 
 CRITICAL COORDINATION RULES:
