@@ -1,3 +1,4 @@
+using System;
 using UnityEngine;
 using AnimationState = Villagers.Jobs.AnimationState;
 
@@ -5,7 +6,7 @@ public class JobHandler : MonoBehaviour
 {
     [Header("Current Job")]
     public JobType currentJob;
-    
+
     [Header("Target Area (from LLM)")]
     [SerializeField] private bool hasTargetArea;
     [SerializeField] private Vector2Int targetArea;
@@ -18,6 +19,12 @@ public class JobHandler : MonoBehaviour
     [Header("Debug")]
     [SerializeField] private int currentJobLevel = 1;
     [SerializeField] private float currentJobXP = 0f;
+
+    /// <summary>Fired when this villager can't find work. Throttled to once per <see cref="IdleNotifyCooldown"/> seconds.</summary>
+    public event Action<JobHandler> OnBecameIdle;
+
+    private const float IdleNotifyCooldown = 10f;
+    private float _lastIdleNotifyTime = -999f;
 
     public Vector2Int? PreferredTargetArea => hasTargetArea ? targetArea : null;
 
@@ -71,6 +78,13 @@ public class JobHandler : MonoBehaviour
             Debug.Log($"[JobHandler] {gameObject.name} started job: {currentJob.JobName}" + 
                       (hasTargetArea ? $" targeting ({targetArea.x},{targetArea.y})" : ""));
         }
+    }
+
+    internal void NotifyIdle()
+    {
+        if (Time.time - _lastIdleNotifyTime < IdleNotifyCooldown) return;
+        _lastIdleNotifyTime = Time.time;
+        OnBecameIdle?.Invoke(this);
     }
 
     public bool HasDifferentTargetArea(Vector2Int newTarget)

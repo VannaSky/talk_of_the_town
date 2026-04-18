@@ -54,8 +54,13 @@ public abstract class JobLogic
 
         Debug.Log($"[{GetType().Name}] {handler.name}: {_currentState} -> {newState}");
 
+        bool goingIdle = newState == AnimationState.Idle && _currentState == AnimationState.FindingTarget;
+
         _currentState = newState;
         timeSinceLastAction = 0f;
+
+        if (goingIdle)
+            handler.NotifyIdle();
 
         if (handler != null && handler.animator != null && !string.IsNullOrEmpty(animatorStateParameter))
         {

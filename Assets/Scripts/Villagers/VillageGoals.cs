@@ -85,6 +85,17 @@ public class VillageGoals : MonoBehaviour
     {
         activeGoals.Clear();
     }
+
+    /// <summary>
+    /// Replaces all active goals with the LLM's decisions. Does not fire OnGoalAdded
+    /// to avoid triggering an immediate new decision cycle.
+    /// </summary>
+    public void SetGoalsFromLLM(List<VillageGoal> newGoals)
+    {
+        activeGoals.Clear();
+        activeGoals.AddRange(newGoals);
+        Debug.Log($"[VillageGoals] LLM set {newGoals.Count} goal(s): {string.Join(", ", newGoals.ConvertAll(g => g.description))}");
+    }
     
     private bool IsGoalComplete(VillageGoal goal)
     {

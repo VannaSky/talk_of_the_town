@@ -23,9 +23,11 @@ public class LLMController : MonoBehaviour
     [SerializeField] private bool includeThinkingPrompt = true;
 
     [Header("Batch Decision Settings")]
-    [Tooltip("How often to make batch decisions for all villagers")]
-    [SerializeField] private float batchDecisionInterval = 10f;
+    [Tooltip("Fallback interval for batch decisions when no events fire (seconds)")]
+    [SerializeField] private float batchDecisionInterval = 60f;
     [SerializeField] private bool useBatchDecisions = true;
+    [Tooltip("Seconds to wait after an event before triggering a decision (collects multiple events into one call)")]
+    [SerializeField] private float decisionDebounceDelay = 1f;
 
     [Header("Debug")]
     [SerializeField] private bool logPrompts = true;
@@ -41,7 +43,6 @@ public class LLMController : MonoBehaviour
     public static LLMController Instance { get; private set; }
 
     public event Action<string> OnModelLoaded;
-    public event Action<JobDecision> OnDecisionMade;
     public event Action<Dictionary<string, JobDecision>> OnBatchDecisionMade;
     public event Action<string> OnError;
     public event Action<LLMMetrics> OnMetricsRecorded;
@@ -57,6 +58,7 @@ public class LLMController : MonoBehaviour
     private bool _isBatchProcessing;
     private Dictionary<string, JobDecision> _latestBatchDecisions = new ();
     private float _lastBatchDecisionTime;
+    private Coroutine _pendingDecisionCoroutine;
 
     public bool IsBatchProcessing => _isBatchProcessing;
     public float TimeSinceLastBatch => Time.time - _lastBatchDecisionTime;
@@ -155,6 +157,83 @@ public class LLMController : MonoBehaviour
         }
     }
 
+    private void Start()
+    {
+        if (VillageGoals.Instance != null)
+        {
+            VillageGoals.Instance.OnGoalCompleted += OnVillageGoalCompleted;
+            VillageGoals.Instance.OnGoalAdded += OnVillageGoalAdded;
+        }
+
+        if (VillageState.Instance != null)
+        {
+            VillageState.Instance.OnVillagerRegistered += SubscribeToVillager;
+            VillageState.Instance.OnVillagerUnregistered += UnsubscribeFromVillager;
+
+            foreach (var villager in VillageState.Instance.Villagers)
+                SubscribeToVillager(villager);
+        }
+    }
+
+    private void OnDestroy()
+    {
+        if (VillageGoals.Instance != null)
+        {
+            VillageGoals.Instance.OnGoalCompleted -= OnVillageGoalCompleted;
+            VillageGoals.Instance.OnGoalAdded -= OnVillageGoalAdded;
+        }
+
+        if (VillageState.Instance != null)
+        {
+            VillageState.Instance.OnVillagerRegistered -= SubscribeToVillager;
+            VillageState.Instance.OnVillagerUnregistered -= UnsubscribeFromVillager;
+        }
+    }
+
+    private void SubscribeToVillager(Villager villager)
+    {
+        var jh = villager.GetComponent<JobHandler>();
+        if (jh != null) jh.OnBecameIdle += OnVillagerBecameIdle;
+    }
+
+    private void UnsubscribeFromVillager(Villager villager)
+    {
+        var jh = villager.GetComponent<JobHandler>();
+        if (jh != null) jh.OnBecameIdle -= OnVillagerBecameIdle;
+    }
+
+    private void OnVillagerBecameIdle(JobHandler handler)
+    {
+        TriggerDecision($"Villager {handler.gameObject.name} has no work");
+    }
+
+    private void OnVillageGoalCompleted(VillageGoal goal)
+    {
+        TriggerDecision($"Goal completed: {goal.description}");
+    }
+
+    private void OnVillageGoalAdded(VillageGoal goal)
+    {
+        if (goal.priority >= GoalPriority.High)
+            TriggerDecision($"Urgent goal added: {goal.description}");
+    }
+
+    public void TriggerDecision(string reason)
+    {
+        if (!IsReady || _isBatchProcessing) return;
+        if (_pendingDecisionCoroutine != null)
+            StopCoroutine(_pendingDecisionCoroutine);
+        _pendingDecisionCoroutine = StartCoroutine(DebouncedDecision(reason));
+    }
+
+    private IEnumerator DebouncedDecision(string reason)
+    {
+        yield return new WaitForSeconds(decisionDebounceDelay);
+        _pendingDecisionCoroutine = null;
+        if (logPrompts) Debug.Log($"[LLM] Event-triggered decision: {reason}");
+        yield return RequestBatchDecisions();
+    }
+
     #region Batch Decision Loop
 
     private IEnumerator BatchDecisionLoop()
@@ -163,12 +242,13 @@ public class LLMController : MonoBehaviour
 
         while (true)
         {
+            yield return new WaitForSeconds(batchDecisionInterval);
+
             if (IsReady && VillageState.Instance != null && VillageState.Instance.Villagers.Count > 0)
             {
+                if (logPrompts) Debug.Log("[LLM] Fallback interval triggered batch decision.");
                 yield return RequestBatchDecisions();
             }
-
-            yield return new WaitForSeconds(batchDecisionInterval);
         }
     }
 
@@ -239,8 +319,10 @@ public class LLMController : MonoBehaviour
 
         string jsonExample = @"{
     ""assignments"": [
-        { ""villager"": ""<NAME>"", ""job"": ""<JOB>"", ""targetX"": <X>, ""targetY"": <Y>, ""reason"": ""<why>"" },
         { ""villager"": ""<NAME>"", ""job"": ""<JOB>"", ""targetX"": <X>, ""targetY"": <Y>, ""reason"": ""<why>"" }
+    ],
+    ""goals"": [
+        { ""type"": ""GatherResource"", ""resource"": ""Wood"", ""amount"": 80, ""priority"": ""High"", ""description"": ""Build wood reserves"" }
     ]
 }";
 
@@ -268,10 +350,19 @@ CRITICAL COORDINATION RULES:
 3. CHECK STOCKPILES: High stockpile = stop gathering that resource, switch to productive jobs.
 4. USE DIFFERENT RESOURCE NODES: If both need wood, send them to different tree clusters!
 
+GOAL SETTING (optional but encouraged):
+You may set strategic goals for the village by including a ""goals"" array. Goals track progress and trigger a new decision when completed — use them to chain plans.
+- type: ""GatherResource"" or ""ReachPopulation""
+- resource (for GatherResource): ""Wood"", ""Stone"", ""Seed"", ""Food""
+- amount: target number
+- priority: ""Low"", ""Normal"", ""High"", or ""Critical""
+- description: short readable label shown in the UI
+If you include goals, they replace existing goals. Omit the array to leave goals unchanged.
+
 RESPONSE FORMAT (JSON only, assign ALL villagers):
 {jsonExample}
 
-Respond ONLY with valid JSON containing assignments for ALL {villagerCount} villagers.";
+Respond ONLY with valid JSON.";
     }
 
     private string BuildBatchContext(IReadOnlyList<Villager> villagers, List<string> availableJobs)
@@ -503,6 +594,43 @@ Respond ONLY with valid JSON containing assignments for ALL {villagerCount} vill
                     results[v.villagerName] = JobDecision.Idle("Not in response");
                     Debug.LogWarning($"[LLM] Villager {v.villagerName} not in batch response");
                 }
+            }
+
+            if (raw.goals != null && raw.goals.Count > 0 && VillageGoals.Instance != null)
+            {
+                var parsedGoals = new List<VillageGoal>();
+                foreach (var g in raw.goals)
+                {
+                    if (!Enum.TryParse<GoalType>(g.type, true, out var goalType)) continue;
+
+                    var goal = new VillageGoal
+                    {
+                        type = goalType,
+                        targetAmount = g.amount,
+                        description = !string.IsNullOrEmpty(g.description) ? g.description : g.type,
+                        priority = Enum.TryParse<GoalPriority>(g.priority, true, out var prio) ? prio : GoalPriority.Normal
+                    };
+
+                    if (goalType == GoalType.GatherResource)
+                    {
+                        // Normalize common LLM variants (e.g. "Seeds" → "Seed")
+                        var resourceStr = g.resource?.TrimEnd('s') is "Seed" or "Wood" or "Stone" or "Food" or "Iron"
+                            ? g.resource.TrimEnd('s')
+                            : g.resource;
+
+                        if (!Enum.TryParse<ResourceType>(resourceStr, true, out var rt) || rt == ResourceType.None)
+                        {
+                            Debug.LogWarning($"[LLM] Could not parse resource type '{g.resource}' for goal '{g.description}' — skipping");
+                            continue;
+                        }
+                        goal.targetResource = rt;
+                    }
+
+                    Debug.Log($"[LLM] Goal parsed: {goal.description} | type={goal.type} resource={goal.targetResource} amount={goal.targetAmount} priority={goal.priority}");
+                    parsedGoals.Add(goal);
+                }
+
+                VillageGoals.Instance.SetGoalsFromLLM(parsedGoals);
             }
         }
         catch (Exception e)
@@ -922,6 +1050,7 @@ Response Times:
 public class RawBatchDecision
 {
     public List<RawSingleAssignment> assignments;
+    public List<RawGoalDecision> goals;
 }
 
 [Serializable]
@@ -932,6 +1061,16 @@ public class RawSingleAssignment
     public int targetX;
     public int targetY;
     public string reason;
+}
+
+[Serializable]
+public class RawGoalDecision
+{
+    public string type;
+    public string resource;
+    public int amount;
+    public string priority;
+    public string description;
 }
 
 [Serializable]
