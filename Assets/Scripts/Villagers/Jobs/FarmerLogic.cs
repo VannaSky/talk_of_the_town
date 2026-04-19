@@ -329,6 +329,7 @@ public class FarmerLogic : JobLogic
 
     public override void ResetState()
     {
+        _targetCrop?.Unreserve();
         base.ResetState();
         _targetTile = null;
         _targetCrop = null;

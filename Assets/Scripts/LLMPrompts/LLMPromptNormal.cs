@@ -11,7 +11,7 @@ public static class LLMPromptNormal
 
         string jsonExample = @"{
     ""assignments"": [
-        { ""villager"": ""<NAME>"", ""job"": ""<JOB>"", ""targetX"": <X>, ""targetY"": <Y>, ""reason"": ""<why>"" }
+        { ""villager"": ""<NAME>"", ""job"": ""<JOB>"", ""buildingType"": ""<TYPE>"", ""targetX"": <X>, ""targetY"": <Y>, ""reason"": ""<why>"" }
     ],
     ""goals"": [
         { ""type"": ""GatherResource"", ""resource"": ""Wood"", ""amount"": 80, ""priority"": ""High"", ""description"": ""Build wood reserves"" }
@@ -25,14 +25,14 @@ AVAILABLE JOBS: {jobList}, IDLE
 JOB DESCRIPTIONS:
 - Lumberjack: Chops trees for wood. Assign to TREE locations.
 - Miner: Mines stone deposits. Assign to STONE locations.
-- Builder: Constructs buildings. Needs wood+stone in inventory.
+- Builder: Constructs buildings. Needs wood+stone in inventory. Set ""buildingType"" to one of: House (unlocks new villager slot), Stockpile (increases inventory capacity), Farm (expands farming area). Choose based on village needs.
 - Farmer: Plants crops on empty grass tiles (needs seeds) and harvests mature crops for food AND seeds. Each harvest yields both food and a small number of seeds, making farming partially self-sustaining. Assign to FARMS or grass areas. THIS IS THE PRIMARY FOOD PRODUCTION JOB.
 - SeedGatherer: Collects seeds from seed nodes (pumpkins, wheat, etc.)
 - IDLE: Rest.
 
 PRIORITY ORDER (follow this strictly):
 1. FARMING FIRST: If Seeds >= 10, assign at least one villager as Farmer. Farming is the most important job — food sustains the village. More seeds = more farmers needed!
-2. BUILDING: If unfinished buildings exist and Wood >= 20 and Stone >= 10, assign a Builder.
+2. BUILDING: If Wood >= 20 and Stone >= 10, consider assigning a Builder. Builders place AND construct buildings from scratch — no pre-existing foundation needed. Always specify ""buildingType"": prioritize House if population is near cap, Stockpile if inventory is near full, Farm to expand food production.
 3. GATHERING: Only gather resources that are actually low. If Wood > 50, no more Lumberjacks. If Seeds > 30, no more SeedGatherers — farm those seeds instead! Note: Farmers replenish seeds on every harvest, so a healthy farming cycle reduces the need for dedicated SeedGatherers.
 4. AVOID OVER-GATHERING: Do NOT keep assigning gatherers when stockpiles are already large. Switch them to Farmer or Builder instead.
 

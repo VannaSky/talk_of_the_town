@@ -311,6 +311,7 @@ namespace Villagers.Jobs
 
         public override void ResetState()
         {
+            _currentTarget?.Unreserve();
             base.ResetState();
             _currentTarget = null;
         }

@@ -10,6 +10,7 @@ public class JobHandler : MonoBehaviour
     [Header("Target Area (from LLM)")]
     [SerializeField] private bool hasTargetArea;
     [SerializeField] private Vector2Int targetArea;
+    [SerializeField] private string preferredBuildingType;
 
     [Header("References")]
     public Animator animator;
@@ -27,6 +28,7 @@ public class JobHandler : MonoBehaviour
     private float _lastIdleNotifyTime = -999f;
 
     public Vector2Int? PreferredTargetArea => hasTargetArea ? targetArea : null;
+    public string PreferredBuildingType => preferredBuildingType;
 
     void Awake()
     {
@@ -52,15 +54,20 @@ public class JobHandler : MonoBehaviour
 
     public void AssignJob(JobType newJob)
     {
-        AssignJobInternal(newJob, false, Vector2Int.zero);
+        AssignJobInternal(newJob, false, Vector2Int.zero, "");
     }
 
     public void AssignJobWithTarget(JobType newJob, Vector2Int target)
     {
-        AssignJobInternal(newJob, true, target);
+        AssignJobInternal(newJob, true, target, "");
     }
 
-    private void AssignJobInternal(JobType newJob, bool withTarget, Vector2Int target)
+    public void AssignJobWithBuilding(JobType newJob, Vector2Int target, string buildingType)
+    {
+        AssignJobInternal(newJob, true, target, buildingType);
+    }
+
+    private void AssignJobInternal(JobType newJob, bool withTarget, Vector2Int target, string buildingType)
     {
         if (currentJob != null && currentJob.JobLogic != null)
         {
@@ -71,6 +78,7 @@ public class JobHandler : MonoBehaviour
         currentJob = newJob;
         hasTargetArea = withTarget;
         targetArea = target;
+        preferredBuildingType = buildingType;
 
         if (currentJob != null && currentJob.JobLogic != null)
         {

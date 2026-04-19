@@ -221,9 +221,15 @@ public class VillagerBrain : MonoBehaviour
             bool jobChanged = _jobHandler.currentJob != matchedJob;
             bool targetChanged = decision.hasTargetArea && _jobHandler.HasDifferentTargetArea(decision.TargetPosition);
 
-            if (jobChanged || targetChanged)
+            bool buildingTypeChanged = !string.IsNullOrEmpty(decision.buildingType)
+                && !decision.buildingType.Equals(_jobHandler.PreferredBuildingType, System.StringComparison.OrdinalIgnoreCase);
+            if (jobChanged || targetChanged || buildingTypeChanged)
             {
-                if (decision.hasTargetArea)
+                if (!string.IsNullOrEmpty(decision.buildingType))
+                {
+                    _jobHandler.AssignJobWithBuilding(matchedJob, decision.TargetPosition, decision.buildingType);
+                }
+                else if (decision.hasTargetArea)
                 {
                     _jobHandler.AssignJobWithTarget(matchedJob, decision.TargetPosition);
                 }

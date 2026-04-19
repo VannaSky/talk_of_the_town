@@ -124,7 +124,7 @@ public class LLMController : MonoBehaviour
 
     private async Task ApplyModelFromGlobalSettings()
     {
-        var globalSettings = FindObjectOfType<GlobalSettings>();
+        var globalSettings = FindFirstObjectByType<GlobalSettings>();
         if (globalSettings == null || string.IsNullOrEmpty(globalSettings.LLMModel))
             return;
 
@@ -529,6 +529,7 @@ public class LLMController : MonoBehaviour
                     var decision = new JobDecision
                     {
                         jobName = assignment.job ?? "IDLE",
+                        buildingType = assignment.buildingType ?? "",
                         reason = assignment.reason ?? "",
                         success = true,
                         hasTargetArea = assignment.targetX != 0 || assignment.targetY != 0,
@@ -1011,6 +1012,7 @@ public class RawSingleAssignment
 {
     public string villager;
     public string job;
+    public string buildingType;
     public int targetX;
     public int targetY;
     public string reason;
@@ -1030,6 +1032,7 @@ public class RawGoalDecision
 public class JobDecision
 {
     public string jobName;
+    public string buildingType;
     public string reason;
     public bool success;
     public bool hasTargetArea;

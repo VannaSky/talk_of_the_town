@@ -1,11 +1,25 @@
 using System.Collections.Generic;
 using Buildings;
+using Tiles;
 using UnityEngine;
+
+public enum BuildingBonusType { NewVillager, InventoryCapacity }
+
+[System.Serializable]
+public class BuildingBonus
+{
+    public BuildingBonusType type;
+    public int value = 1;
+}
 
 [CreateAssetMenu(fileName = "BuildingData", menuName = "Game/Building Data", order = 100)]
 public class BuildingData : ScriptableObject
 {
     public BuildingType buildingType = BuildingType.House;
+
+    [Header("Construction")]
+    public GameObject foundationPrefab;
+    public ConstructionType constructionType = ConstructionType.Hut;
 
     [System.Serializable]
     public class LevelData
@@ -13,6 +27,13 @@ public class BuildingData : ScriptableObject
         public List<GameObject> stagePrefabs = new List<GameObject>();
         public GameObject finalPrefab;
         public int workRequired = 10;
+
+        [Header("Resource Cost for this Level")]
+        public int woodCost = 5;
+        public int stoneCost = 2;
+
+        [Header("Bonuses on Completion")]
+        public List<BuildingBonus> bonuses = new List<BuildingBonus>();
     }
 
     public List<LevelData> levels = new List<LevelData>();

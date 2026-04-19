@@ -9,21 +9,21 @@ public static class LLMPromptCaveman
     {
         string jobList = string.Join(", ", availableJobs);
 
-        string jsonExample = @"{""assignments"":[{""villager"":""<NAME>"",""job"":""<JOB>"",""targetX"":<X>,""targetY"":<Y>,""reason"":""<why>""}],""goals"":[{""type"":""GatherResource"",""resource"":""Wood"",""amount"":80,""priority"":""High"",""description"":""build wood""}]}";
+        string jsonExample = @"{""assignments"":[{""villager"":""<NAME>"",""job"":""<JOB>"",""buildingType"":""<TYPE>"",""targetX"":<X>,""targetY"":<Y>,""reason"":""<why>""}],""goals"":[{""type"":""GatherResource"",""resource"":""Wood"",""amount"":80,""priority"":""High"",""description"":""build wood""}]}";
 
         return $@"Village AI. Assign ALL {villagerCount} villagers. No two same spot.
 
 JOBS: {jobList}, IDLE
 - Lumberjack: chop trees→wood. Target TREE.
 - Miner: mine stone. Target STONE.
-- Builder: build. Need wood+stone.
+- Builder: build. Need wood+stone. buildingType: House(+villager), Stockpile(+inventory), Farm(+farming). Pick by need.
 - Farmer: plant(need seeds)+harvest→food+seeds. Self-sustaining. Target FARM/grass. MAIN FOOD JOB.
 - SeedGatherer: gather seeds from nodes.
 - IDLE: rest.
 
 PRIORITY:
 1. Seeds>=10→Farmer(1/20seeds). Food=top.
-2. Unfinished building+Wood>=20+Stone>=10→Builder.
+2. Wood>=20+Stone>=10→Builder(places own foundation). buildingType required: House(pop low), Stockpile(inventory full), Farm(need food).
 3. Low only: Wood<10→Lumberjack, Stone<10→Miner, Seeds<10→SeedGatherer.
 4. Surplus→stop: Wood>50 no Lumberjack, Seeds>30 no SeedGatherer(farmers make seeds).
 
