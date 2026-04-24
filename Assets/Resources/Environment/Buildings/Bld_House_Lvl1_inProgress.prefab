@@ -102,7 +102,7 @@ GameObject:
   - component: {fileID: 23815238158602586}
   - component: {fileID: 64231900175629860}
   m_Layer: 0
-  m_Name: SM_Bld_Preset_House_03_Optimized
+  m_Name: Bld_House_Lvl1_inProgress
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
