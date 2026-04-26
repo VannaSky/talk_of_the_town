@@ -1,4 +1,5 @@
 ﻿using System;
+using Environment.Resources;
 using Tiles;
 using Villagers.Jobs;
 using AnimationState = Villagers.Jobs.AnimationState;

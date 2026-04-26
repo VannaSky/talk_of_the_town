@@ -8,7 +8,7 @@ public class VillagerEquipment : MonoBehaviour
     [Serializable]
     public class JobToolMapping
     {
-        public string jobName;
+        public JobType jobType;
         public GameObject workToolPrefab;
         public GameObject carryItemPrefab;
         public AnimationState[] workStates;
@@ -20,7 +20,7 @@ public class VillagerEquipment : MonoBehaviour
     public JobToolMapping[] toolMappings;
 
     private Transform _handBone;
-    private Dictionary<string, (GameObject workTool, GameObject carryItem)> _instances = new();
+    private Dictionary<JobType, (GameObject workTool, GameObject carryItem)> _instances = new();
     private string _activeJob;
     private GameObject _activeObject;
 
@@ -52,11 +52,11 @@ public class VillagerEquipment : MonoBehaviour
                 carryItem.SetActive(false);
             }
 
-            _instances[mapping.jobName] = (workTool, carryItem);
+            _instances[mapping.jobType] = (workTool, carryItem);
         }
     }
 
-    public void UpdateVisuals(string jobName, AnimationState state)
+    public void UpdateVisuals(JobType jobType, AnimationState state)
     {
         // Hide previous active object
         if (_activeObject != null)
@@ -65,13 +65,13 @@ public class VillagerEquipment : MonoBehaviour
             _activeObject = null;
         }
 
-        if (string.IsNullOrEmpty(jobName)) return;
+        if (jobType == null) return;
 
         // Find the mapping for this job
         JobToolMapping mapping = null;
         foreach (var m in toolMappings)
         {
-            if (m.jobName == jobName)
+            if (m.jobType == jobType)
             {
                 mapping = m;
                 break;
@@ -79,7 +79,7 @@ public class VillagerEquipment : MonoBehaviour
         }
 
         if (mapping == null) return;
-        if (!_instances.TryGetValue(jobName, out var instances)) return;
+        if (!_instances.TryGetValue(jobType, out var instances)) return;
 
         // Check work states
         if (instances.workTool != null && mapping.workStates != null)

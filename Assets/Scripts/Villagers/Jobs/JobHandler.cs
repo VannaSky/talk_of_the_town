@@ -24,6 +24,12 @@ public class JobHandler : MonoBehaviour
     /// <summary>Fired when this villager can't find work. Throttled to once per <see cref="IdleNotifyCooldown"/> seconds.</summary>
     public event Action<JobHandler> OnBecameIdle;
 
+    /// <summary>Fired when the current job's animation state changes.</summary>
+    public event Action<AnimationState, AnimationState> OnAnimationStateChanged;
+
+    /// <summary>Fired when a new job is assigned.</summary>
+    public event Action<JobType> OnJobAssigned;
+
     private const float IdleNotifyCooldown = 10f;
     private float _lastIdleNotifyTime = -999f;
 
@@ -83,9 +89,11 @@ public class JobHandler : MonoBehaviour
         if (currentJob != null && currentJob.JobLogic != null)
         {
             currentJob.JobLogic.OnJobStart(this);
-            Debug.Log($"[JobHandler] {gameObject.name} started job: {currentJob.JobName}" + 
+            Debug.Log($"[JobHandler] {gameObject.name} started job: {currentJob.JobName}" +
                       (hasTargetArea ? $" targeting ({targetArea.x},{targetArea.y})" : ""));
         }
+
+        OnJobAssigned?.Invoke(currentJob);
     }
 
     internal void NotifyIdle()
@@ -93,6 +101,11 @@ public class JobHandler : MonoBehaviour
         if (Time.time - _lastIdleNotifyTime < IdleNotifyCooldown) return;
         _lastIdleNotifyTime = Time.time;
         OnBecameIdle?.Invoke(this);
+    }
+
+    internal void NotifyStateChanged(AnimationState oldState, AnimationState newState)
+    {
+        OnAnimationStateChanged?.Invoke(oldState, newState);
     }
 
     public bool HasDifferentTargetArea(Vector2Int newTarget)

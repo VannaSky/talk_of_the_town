@@ -56,8 +56,11 @@ public abstract class JobLogic
 
         bool goingIdle = newState == AnimationState.Idle && _currentState == AnimationState.FindingTarget;
 
+        var oldState = _currentState;
         _currentState = newState;
         timeSinceLastAction = 0f;
+
+        handler?.NotifyStateChanged(oldState, newState);
 
         if (goingIdle)
             handler.NotifyIdle();
@@ -69,7 +72,7 @@ public abstract class JobLogic
 
         if (handler != null && handler.equipment != null)
         {
-            handler.equipment.UpdateVisuals(handler.currentJob?.JobName, _currentState);
+            handler.equipment.UpdateVisuals(handler.currentJob, _currentState);
         }
     }
 

@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using Environment.Resources;
 using Tiles;
 using UnityEngine;
 using ollama;

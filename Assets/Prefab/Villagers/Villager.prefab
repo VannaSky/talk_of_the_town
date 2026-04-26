@@ -126,6 +126,7 @@ GameObject:
   - component: {fileID: 1840773231379952635}
   - component: {fileID: 3982711867639208403}
   - component: {fileID: 2752139420152250891}
+  - component: {fileID: 3067700278203038447}
   m_Layer: 6
   m_Name: Villager
   m_TagString: Untagged
@@ -184,6 +185,7 @@ MonoBehaviour:
   logDecisions: 1
   lastDecision:
     jobName: 
+    buildingType: 
     reason: 
     success: 0
     hasTargetArea: 0
@@ -205,6 +207,7 @@ MonoBehaviour:
   currentJob: {fileID: 0}
   hasTargetArea: 0
   targetArea: {x: 0, y: 0}
+  preferredBuildingType: 
   animator: {fileID: 475969360241523683}
   villagerMover: {fileID: 0}
   equipment: {fileID: 0}
@@ -224,6 +227,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::VillagerMover
   moveSpeed: 1
   proximityThreshold: 2
+  rotationSpeed: 360
 --- !u!195 &3982711867639208403
 NavMeshAgent:
   m_ObjectHideFlags: 0
@@ -260,31 +264,46 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::VillagerEquipment
   handBoneName: Hand_R
   toolMappings:
-  - jobName: Lumberjack
+  - jobType: {fileID: 11400000, guid: 3eefc3408c5a8709a867f60ee1f3fac5, type: 2}
     workToolPrefab: {fileID: 2128364397589329185, guid: ee4a6f16bdce3604f9e0663bee921ab6, type: 3}
     carryItemPrefab: {fileID: 1563547490563316, guid: 85282dc691cdde34f811edde08021f61, type: 3}
     workStates: 03000000
     carryStates: 04000000
-  - jobName: Miner
+  - jobType: {fileID: 11400000, guid: f0d6ea13f580fa84eb2693a1969cc175, type: 2}
     workToolPrefab: {fileID: 5569136935561951871, guid: 6c3d6fa7bcff3744c9622b3bcb5144fb, type: 3}
     carryItemPrefab: {fileID: 1057863868983194, guid: 30082ab235864f646add22eb6cdc11a3, type: 3}
     workStates: 05000000
     carryStates: 04000000
-  - jobName: SeedGatherer
-    workToolPrefab: {fileID: 0}
+  - jobType: {fileID: 11400000, guid: 335d09911ff1d6a4a8a39115d877cefe, type: 2}
+    workToolPrefab: {fileID: 430512277768205782, guid: b0d20455d3efca14483fce835db91a4c, type: 3}
     carryItemPrefab: {fileID: 430512277768205782, guid: b0d20455d3efca14483fce835db91a4c, type: 3}
     workStates: 06000000
     carryStates: 04000000
-  - jobName: Builder
+  - jobType: {fileID: 11400000, guid: 4a0fc1e16906f107394667adafccddb0, type: 2}
     workToolPrefab: {fileID: 5394582023651604012, guid: ed64e11b0d8914a4099e3470471a6c1a, type: 3}
     carryItemPrefab: {fileID: 0}
     workStates: 07000000
     carryStates: 04000000
-  - jobName: Farmer
-    workToolPrefab: {fileID: 430512277768205782, guid: b0d20455d3efca14483fce835db91a4c, type: 3}
+  - jobType: {fileID: 11400000, guid: 18429fa6c339702a9bd71c49003f29ca, type: 2}
+    workToolPrefab: {fileID: 6258649582156304889, guid: 1be38d1a0041d9342aeb1ab308f49c18, type: 3}
     carryItemPrefab: {fileID: 430512277768205782, guid: b0d20455d3efca14483fce835db91a4c, type: 3}
     workStates: 09000000
     carryStates: 04000000
+--- !u!114 &3067700278203038447
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5758365978611229494}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: eca636c7c4e2c514cb1076d201c6f027, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::VillagerAudioManager
+  audioData: {fileID: 11400000, guid: 3701d067f9549294da43e3629559bfe6, type: 2}
+  voiceSource: {fileID: 0}
+  workSource: {fileID: 0}
 --- !u!1001 &560843258246919495
 PrefabInstance:
   m_ObjectHideFlags: 0
