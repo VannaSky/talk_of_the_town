@@ -1,0 +1,791 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Tile Map Viewer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght,SOFT@9..144,400;9..144,500;9..144,600;9..144,700&family=Manrope:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #f4ecdb;
+  --bg-2: #ebe1cc;
+  --ink: #2b2418;
+  --ink-soft: #5a4f3c;
+  --accent: #8b3a2a;
+  --line: #c8b89a;
+  --panel: #fdf8ec;
+
+  --water: #3d6e85;
+  --water-deep: #25526a;
+  --coast: #e2c995;
+  --coast-dark: #b89a5e;
+  --grass: #94a96a;
+  --grass-dark: #6f8550;
+  --forest: #4a6b3f;
+  --forest-dark: #2f4528;
+  --field: #d9b04c;
+  --field-line: #9c7826;
+  --mountain: #8a8786;
+  --mountain-dark: #4f4d4c;
+  --rock: #6e6a66;
+  --wood: #6b4423;
+  --iron: #5a6b78;
+  --iron-shine: #aab8c2;
+  --seed: #c69b4f;
+  --seed-leaf: #6f8550;
+  --hut: #c75f3a;
+  --well: #4a6f80;
+  --warehouse: #8c5a3c;
+  --mill: #d9c89a;
+  --mill-roof: #6b4423;
+  --mine: #2f2823;
+  --mine-mound: #6e5a47;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  font-family: 'Manrope', sans-serif;
+  color: var(--ink);
+  background: var(--bg);
+  background-image:
+    radial-gradient(1200px 600px at 10% -10%, #ffffff35, transparent 60%),
+    radial-gradient(1000px 800px at 90% 110%, #00000010, transparent 60%);
+  min-height: 100vh;
+}
+
+header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 32px 44px 22px;
+  border-bottom: 1px solid var(--line);
+}
+header .title-block { line-height: 1.1; }
+header .tag {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--ink-soft);
+  margin-bottom: 6px;
+}
+header h1 {
+  font-family: 'Fraunces', serif;
+  font-weight: 600;
+  font-size: 30px;
+  letter-spacing: -0.015em;
+  margin: 0;
+}
+header h1 em {
+  font-style: italic;
+  color: var(--accent);
+  font-variation-settings: 'opsz' 144, 'SOFT' 80;
+  font-weight: 500;
+}
+
+.actions { display: flex; gap: 10px; align-items: center; flex-shrink: 0; }
+.btn, label.btn {
+  font-family: 'Manrope', sans-serif;
+  font-weight: 500;
+  font-size: 13px;
+  padding: 9px 16px;
+  background: var(--ink);
+  color: var(--bg);
+  border: 1px solid var(--ink);
+  border-radius: 0;
+  cursor: pointer;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: background 120ms ease, color 120ms ease;
+}
+.btn:hover, label.btn:hover { background: var(--accent); border-color: var(--accent); }
+.btn-ghost {
+  background: transparent;
+  color: var(--ink);
+}
+.btn-ghost:hover { background: var(--ink); color: var(--bg); }
+
+main {
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  gap: 28px;
+  padding: 28px 44px 60px;
+  max-width: 1600px;
+  margin: 0 auto;
+}
+@media (max-width: 1100px) {
+  main { grid-template-columns: 1fr; }
+}
+
+.canvas-wrap {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  padding: 22px;
+  position: relative;
+  min-height: 420px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 1px 0 #00000010, 0 8px 24px -16px #00000020;
+}
+.canvas-wrap.dragover {
+  border-color: var(--accent);
+  background: #fff5e0;
+  box-shadow: 0 0 0 4px #8b3a2a22 inset;
+}
+.canvas-wrap svg.map { display: block; max-width: 100%; max-height: 82vh; height: auto; }
+.canvas-wrap svg.map .tile { cursor: crosshair; }
+.canvas-wrap svg.map .tile.highlight rect.ground {
+  stroke: var(--accent) !important;
+  stroke-width: 1.4 !important;
+}
+
+.empty {
+  text-align: center;
+  padding: 60px 20px 70px;
+  color: var(--ink-soft);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+.empty .compass { opacity: 0.5; margin-bottom: 4px; }
+.empty .big {
+  font-family: 'Fraunces', serif;
+  font-size: 24px;
+  font-weight: 500;
+  color: var(--ink);
+  letter-spacing: -0.01em;
+}
+.empty .big em { font-style: italic; color: var(--accent); }
+.empty .small { font-size: 13px; max-width: 400px; line-height: 1.5; }
+.empty .small code {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  background: var(--bg-2);
+  padding: 1px 5px;
+}
+.empty input[type=file] { display: none; }
+
+aside.info { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  padding: 18px 20px;
+}
+.panel h2 {
+  font-family: 'Fraunces', serif;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  margin: 0 0 14px 0;
+  color: var(--ink-soft);
+}
+.panel .divider {
+  height: 1px;
+  background: var(--line);
+  margin: 12px 0;
+  border: 0;
+}
+
+.kv { font-family: 'JetBrains Mono', monospace; font-size: 12px; }
+.kv .row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 5px 0;
+  border-bottom: 1px dashed var(--line);
+}
+.kv .row:last-child { border-bottom: none; }
+.kv .label { color: var(--ink-soft); }
+.kv .value { color: var(--ink); text-align: right; word-break: break-all; }
+
+.placeholder {
+  color: var(--ink-soft);
+  font-style: italic;
+  font-family: 'Manrope', sans-serif;
+  font-size: 13px;
+}
+
+.stats { display: grid; grid-template-columns: 1fr 1fr; column-gap: 18px; row-gap: 5px; }
+.stats .stat {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 3px 0;
+  border-bottom: 1px dashed var(--line);
+  font-family: 'JetBrains Mono', monospace;
+}
+.stats .stat .label { font-size: 11px; color: var(--ink-soft); text-transform: lowercase; }
+.stats .stat .value { font-weight: 500; font-size: 12px; }
+.stats .full { grid-column: 1 / -1; }
+
+.toggle-row { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  font-family: 'Manrope', sans-serif;
+  cursor: pointer;
+  user-select: none;
+}
+.toggle input { accent-color: var(--accent); margin: 0; }
+
+.legend ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 7px; }
+.legend li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12.5px;
+}
+.legend .swatch {
+  width: 18px; height: 18px;
+  border: 1px solid #00000022;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-2);
+}
+.legend .group-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--ink-soft);
+  margin: 8px 0 2px;
+}
+
+.error {
+  background: #f7d7c8;
+  color: #6b1f0f;
+  padding: 10px 14px;
+  font-size: 12.5px;
+  border-left: 3px solid var(--accent);
+  margin-top: 10px;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+footer {
+  text-align: center;
+  padding: 18px;
+  font-size: 10.5px;
+  color: var(--ink-soft);
+  font-family: 'JetBrains Mono', monospace;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  border-top: 1px solid var(--line);
+}
+footer .dot { color: var(--accent); margin: 0 8px; }
+
+@keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+svg.map { animation: fadeIn 320ms ease-out both; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="title-block">
+    <div class="tag">Tile Map &middot; JSON Viewer</div>
+    <h1>Cartographer's <em>Glass</em></h1>
+  </div>
+  <div class="actions">
+    <label class="btn" for="file-input-top">Load Map</label>
+    <input id="file-input-top" type="file" accept=".json,application/json" hidden />
+    <button id="reset-btn" class="btn btn-ghost" hidden>Clear</button>
+  </div>
+</header>
+
+<main>
+  <section class="canvas-wrap" id="canvas-wrap">
+    <div class="empty" id="empty">
+      <svg class="compass" width="56" height="56" viewBox="0 0 56 56" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="28" cy="28" r="24" stroke="currentColor" stroke-width="1"/>
+        <circle cx="28" cy="28" r="18" stroke="currentColor" stroke-width="0.5" stroke-dasharray="2 2"/>
+        <polygon points="28,8 31,28 28,48 25,28" fill="currentColor" opacity="0.7"/>
+        <polygon points="8,28 28,25 48,28 28,31" fill="currentColor" opacity="0.35"/>
+        <text x="28" y="6" text-anchor="middle" font-size="6" fill="currentColor" font-family="JetBrains Mono">N</text>
+      </svg>
+      <div class="big">Drop a map <em>here</em></div>
+      <div class="small">or pick a <code>.json</code> file describing tiles, resources, and buildings. Both the verbose schema (<code>tileStyle</code>, <code>resources</code>, <code>construction</code>) and the compact one (<code>t</code>, <code>r</code>, <code>b</code>) are accepted.</div>
+      <label class="btn" for="file-input">Choose file</label>
+      <input id="file-input" type="file" accept=".json,application/json" />
+    </div>
+    <div id="error-box"></div>
+  </section>
+
+  <aside class="info">
+    <div class="panel" id="meta-panel" hidden>
+      <h2>Map</h2>
+      <div class="kv">
+        <div class="row"><span class="label">file</span><span class="value" id="meta-file">(none)</span></div>
+        <div class="row"><span class="label">dimensions</span><span class="value" id="meta-dims">(none)</span></div>
+        <div class="row"><span class="label">tiles</span><span class="value" id="meta-tiles">(none)</span></div>
+      </div>
+      <div class="toggle-row">
+        <label class="toggle"><input type="checkbox" id="flip-y" checked /> Y axis up (Unity convention)</label>
+        <label class="toggle"><input type="checkbox" id="show-grid" checked /> Show grid lines</label>
+        <label class="toggle"><input type="checkbox" id="show-walk" /> Mark non-walkable tiles</label>
+        <label class="toggle"><input type="checkbox" id="show-coords" /> Show coordinates</label>
+      </div>
+    </div>
+
+    <div class="panel" id="hover-panel" hidden>
+      <h2>Inspect</h2>
+      <div id="hover-content"><span class="placeholder">Hover or tap a tile.</span></div>
+    </div>
+
+    <div class="panel" id="stats-panel" hidden>
+      <h2>Composition</h2>
+      <div class="stats" id="stats-content"></div>
+    </div>
+
+    <div class="panel legend">
+      <h2>Legend</h2>
+      <div class="group-label">Terrain</div>
+      <ul>
+        <li><span class="swatch" style="background:var(--water)"></span> Water</li>
+        <li><span class="swatch" style="background:var(--coast)"></span> Coast</li>
+        <li><span class="swatch" style="background:var(--grass)"></span> Grass</li>
+        <li><span class="swatch" style="background:var(--forest)"></span> Forest</li>
+        <li><span class="swatch" style="background:var(--field)"></span> Field</li>
+        <li><span class="swatch" style="background:var(--mountain)"></span> Mountain</li>
+      </ul>
+      <div class="group-label">Resources</div>
+      <ul>
+        <li><span class="swatch"><svg viewBox="0 0 16 16" width="14" height="14"><rect x="2.5" y="6.5" width="11" height="3.5" rx="1.5" fill="var(--wood)" stroke="#3a2010" stroke-width="0.4"/><line x1="5" y1="6.5" x2="5" y2="10" stroke="#3a2010" stroke-width="0.3"/><line x1="9" y1="6.5" x2="9" y2="10" stroke="#3a2010" stroke-width="0.3"/></svg></span> Wood</li>
+        <li><span class="swatch"><svg viewBox="0 0 16 16" width="14" height="14"><circle cx="6" cy="9" r="2.6" fill="var(--rock)" stroke="#3a3938" stroke-width="0.4"/><circle cx="10" cy="8" r="2" fill="var(--rock)" stroke="#3a3938" stroke-width="0.4"/></svg></span> Stone</li>
+        <li><span class="swatch"><svg viewBox="0 0 16 16" width="14" height="14"><polygon points="3,11 5,5 10,4 13,9 11,12 6,12.5" fill="var(--iron)" stroke="#1f2830" stroke-width="0.4"/><polyline points="5,5 7,8 10,4" stroke="var(--iron-shine)" stroke-width="0.6" fill="none" opacity="0.85"/></svg></span> Iron</li>
+        <li><span class="swatch"><svg viewBox="0 0 16 16" width="14" height="14"><ellipse cx="6" cy="10" rx="2.6" ry="3.4" fill="var(--seed)" stroke="#5a3d12" stroke-width="0.4"/><path d="M 6 6.5 q 2 -2 4 -1" stroke="var(--seed-leaf)" stroke-width="0.8" fill="none"/><ellipse cx="10.3" cy="5.7" rx="1.3" ry="0.7" transform="rotate(-30 10.3 5.7)" fill="var(--seed-leaf)"/></svg></span> Seed</li>
+      </ul>
+      <div class="group-label">Construction</div>
+      <ul>
+        <li><span class="swatch"><svg viewBox="0 0 16 16" width="14" height="14"><polygon points="3,7.5 8,3.5 13,7.5 11.5,7.5 11.5,13 4.5,13 4.5,7.5" fill="var(--hut)" stroke="#4a1f0f" stroke-width="0.4"/><rect x="6.8" y="9" width="2.4" height="4" fill="#3d1d10"/></svg></span> Hut</li>
+        <li><span class="swatch"><svg viewBox="0 0 16 16" width="14" height="14"><circle cx="8" cy="9" r="3.2" fill="#d4cab0" stroke="var(--well)" stroke-width="0.7"/><circle cx="8" cy="9" r="1.6" fill="var(--well)"/><line x1="3.5" y1="4.5" x2="12.5" y2="4.5" stroke="#3a2d1d" stroke-width="0.6"/><line x1="5" y1="4.5" x2="5" y2="9" stroke="#3a2d1d" stroke-width="0.4"/><line x1="11" y1="4.5" x2="11" y2="9" stroke="#3a2d1d" stroke-width="0.4"/></svg></span> Well</li>
+        <li><span class="swatch"><svg viewBox="0 0 16 16" width="14" height="14"><polygon points="2,6 14,6 12,3 4,3" fill="#6e4423" stroke="#3d2410" stroke-width="0.4"/><rect x="3" y="6" width="10" height="7" fill="var(--warehouse)" stroke="#3d2410" stroke-width="0.4"/><rect x="6.5" y="8" width="3" height="5" fill="#3d2410"/></svg></span> Warehouse</li>
+        <li><span class="swatch"><svg viewBox="0 0 16 16" width="14" height="14"><polygon points="5,13 11,13 10,5 6,5" fill="var(--mill)" stroke="#5a4423" stroke-width="0.4"/><polygon points="6,5 10,5 9,3.5 7,3.5" fill="var(--mill-roof)" stroke="#3a2010" stroke-width="0.3"/><line x1="8" y1="6" x2="3" y2="3" stroke="#3a2010" stroke-width="0.5"/><line x1="8" y1="6" x2="13" y2="3" stroke="#3a2010" stroke-width="0.5"/><line x1="8" y1="6" x2="3" y2="9" stroke="#3a2010" stroke-width="0.5"/><line x1="8" y1="6" x2="13" y2="9" stroke="#3a2010" stroke-width="0.5"/><circle cx="8" cy="6" r="0.6" fill="#3a2010"/></svg></span> Mill</li>
+        <li><span class="swatch"><svg viewBox="0 0 16 16" width="14" height="14"><path d="M 1 13 q 4 -8 7 -8 q 3 0 7 8 z" fill="var(--mine-mound)" stroke="#3a2d1d" stroke-width="0.4"/><path d="M 5.5 13 q 0 -4 2.5 -4 q 2.5 0 2.5 4 z" fill="var(--mine)" stroke="#1a1308" stroke-width="0.4"/><line x1="3" y1="13" x2="6" y2="10" stroke="#3a2d1d" stroke-width="0.4"/></svg></span> Mine</li>
+      </ul>
+    </div>
+  </aside>
+</main>
+
+<footer>
+  cartographer's glass <span class="dot">&middot;</span> drop &middot; render &middot; inspect
+</footer>
+
+<script>
+'use strict';
+
+const TILE = 36;
+
+const COLORS = {
+  Water:    { fill: 'var(--water)',    dark: 'var(--water-deep)' },
+  Coast:    { fill: 'var(--coast)',    dark: 'var(--coast-dark)' },
+  Grass:    { fill: 'var(--grass)',    dark: 'var(--grass-dark)' },
+  Forest:   { fill: 'var(--forest)',   dark: 'var(--forest-dark)' },
+  Field:    { fill: 'var(--field)',    dark: 'var(--field-line)' },
+  Mountain: { fill: 'var(--mountain)', dark: 'var(--mountain-dark)' },
+};
+
+let mapData = null;
+let mapName = '';
+const options = { flipY: true, showGrid: true, showWalk: false, showCoords: false };
+
+const $ = sel => document.querySelector(sel);
+const canvas = $('#canvas-wrap');
+const empty = $('#empty');
+const errorBox = $('#error-box');
+const resetBtn = $('#reset-btn');
+
+document.querySelectorAll('input[type=file]').forEach(inp => {
+  inp.addEventListener('change', e => {
+    const f = e.target.files && e.target.files[0];
+    if (f) loadFile(f);
+    e.target.value = '';
+  });
+});
+
+resetBtn.addEventListener('click', () => {
+  mapData = null;
+  mapName = '';
+  render();
+});
+
+$('#flip-y').addEventListener('change', e => { options.flipY = e.target.checked; render(); });
+$('#show-grid').addEventListener('change', e => { options.showGrid = e.target.checked; render(); });
+$('#show-walk').addEventListener('change', e => { options.showWalk = e.target.checked; render(); });
+$('#show-coords').addEventListener('change', e => { options.showCoords = e.target.checked; render(); });
+
+['dragenter', 'dragover'].forEach(ev => {
+  canvas.addEventListener(ev, e => {
+    e.preventDefault();
+    e.stopPropagation();
+    canvas.classList.add('dragover');
+  });
+});
+['dragleave', 'drop'].forEach(ev => {
+  canvas.addEventListener(ev, e => {
+    e.preventDefault();
+    e.stopPropagation();
+    canvas.classList.remove('dragover');
+  });
+});
+canvas.addEventListener('drop', e => {
+  const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+  if (f) loadFile(f);
+});
+
+function showError(msg) {
+  errorBox.innerHTML = '<div class="error">' + escapeHtml(msg) + '</div>';
+  setTimeout(() => { errorBox.innerHTML = ''; }, 6000);
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+async function loadFile(file) {
+  errorBox.innerHTML = '';
+  try {
+    const text = await file.text();
+    const data = JSON.parse(text);
+    const normalized = normalize(data);
+    mapData = normalized;
+    mapName = file.name;
+    render();
+  } catch (err) {
+    showError('Could not load file: ' + err.message);
+  }
+}
+
+// Code maps for the compact format
+const TERRAIN_CODES = {
+  G: 'Grass', F: 'Forest', M: 'Mountain', W: 'Water', C: 'Coast', Fi: 'Field',
+};
+const RESOURCE_CODES = {
+  Wd: 'Wood', St: 'Stone', Ir: 'Iron', Sd: 'Seed',
+};
+const BUILDING_CODES = {
+  H: 'Hut', Mi: 'Mill', Mn: 'Mine', We: 'Well', Wh: 'Warehouse',
+};
+
+function normalize(d) {
+  if (!d || typeof d !== 'object') throw new Error('not a JSON object');
+  if (!Array.isArray(d.tiles)) throw new Error('missing tiles array');
+  if (d.tiles.length === 0) throw new Error('empty tiles array');
+
+  const isCompact = ('w' in d && 'h' in d) && !('width' in d);
+  const width = isCompact ? d.w : d.width;
+  const height = isCompact ? d.h : d.height;
+  if (typeof width !== 'number' || typeof height !== 'number') {
+    throw new Error('missing width/height (or w/h)');
+  }
+
+  const tiles = d.tiles.map((src, idx) => {
+    if (typeof src.x !== 'number' || typeof src.y !== 'number') {
+      throw new Error('tile #' + idx + ' missing x or y');
+    }
+    let tileStyle, resources, construction, isWalkable;
+
+    if (isCompact || ('t' in src && !('tileStyle' in src))) {
+      // Compact schema
+      tileStyle = TERRAIN_CODES[src.t] || src.t || 'Grass';
+      resources = (src.r || []).map(r => ({
+        type: RESOURCE_CODES[r.t] || r.t || 'Unknown',
+        count: r.c == null ? 1 : r.c,
+      }));
+      const bcode = src.b || '';
+      construction = bcode === '' ? 'None' : (BUILDING_CODES[bcode] || bcode);
+      isWalkable = src.isWalkable != null ? src.isWalkable : (tileStyle !== 'Water');
+    } else {
+      // Verbose schema (original)
+      tileStyle = src.tileStyle || 'Grass';
+      resources = (src.resources || []).map(r => ({
+        type: r.type || 'Unknown',
+        count: r.count == null ? 1 : r.count,
+      }));
+      construction = src.construction || 'None';
+      isWalkable = src.isWalkable != null ? src.isWalkable : (tileStyle !== 'Water');
+    }
+
+    return { x: src.x, y: src.y, tileStyle, resources, construction, isWalkable };
+  });
+
+  return { width, height, tiles, _legend: d.legend || null, _compact: isCompact };
+}
+
+function render() {
+  errorBox.innerHTML = '';
+  const oldSvg = canvas.querySelector('svg.map');
+  if (oldSvg) oldSvg.remove();
+
+  if (!mapData) {
+    empty.style.display = '';
+    $('#meta-panel').hidden = true;
+    $('#hover-panel').hidden = true;
+    $('#stats-panel').hidden = true;
+    resetBtn.hidden = true;
+    return;
+  }
+
+  empty.style.display = 'none';
+  resetBtn.hidden = false;
+  $('#meta-panel').hidden = false;
+  $('#hover-panel').hidden = false;
+  $('#stats-panel').hidden = false;
+
+  $('#meta-file').textContent = mapName || '(none)';
+  $('#meta-dims').textContent = mapData.width + ' \u00d7 ' + mapData.height;
+  $('#meta-tiles').textContent = mapData.tiles.length;
+
+  const grid = new Map();
+  for (const t of mapData.tiles) grid.set(t.x + ',' + t.y, t);
+
+  const W = mapData.width, H = mapData.height;
+  const svgW = W * TILE, svgH = H * TILE;
+
+  let parts = [];
+  parts.push('<svg class="map" viewBox="0 0 ' + svgW + ' ' + svgH + '" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet">');
+
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const t = grid.get(x + ',' + y);
+      if (!t) continue;
+      const drawY = options.flipY ? (H - 1 - y) : y;
+      parts.push(drawTile(t, x, drawY));
+    }
+  }
+  parts.push('</svg>');
+
+  canvas.insertAdjacentHTML('beforeend', parts.join(''));
+  bindHover();
+  renderStats();
+}
+
+function drawTile(t, gx, gy) {
+  const c = COLORS[t.tileStyle] || { fill: '#cccccc', dark: '#888888' };
+  const px = gx * TILE;
+  const py = gy * TILE;
+  const T = TILE;
+
+  let out = '<g class="tile" data-x="' + t.x + '" data-y="' + t.y + '">';
+
+  const stroke = options.showGrid ? ' stroke="#00000022" stroke-width="0.5"' : ' stroke="none"';
+  out += '<rect class="ground" x="' + px + '" y="' + py + '" width="' + T + '" height="' + T + '" fill="' + c.fill + '"' + stroke + '/>';
+
+  // Terrain texture
+  if (t.tileStyle === 'Water') {
+    out += '<path d="M ' + (px + 4) + ' ' + (py + T - 10) + ' q 4 -3 8 0 t 8 0 t 8 0 t 8 0" stroke="' + c.dark + '" fill="none" stroke-width="0.9" opacity="0.55"/>';
+    out += '<path d="M ' + (px + 4) + ' ' + (py + T - 18) + ' q 4 -3 8 0 t 8 0 t 8 0 t 8 0" stroke="' + c.dark + '" fill="none" stroke-width="0.9" opacity="0.35"/>';
+  } else if (t.tileStyle === 'Coast') {
+    out += '<circle cx="' + (px + 8) + '" cy="' + (py + 11) + '" r="0.9" fill="' + c.dark + '" opacity="0.55"/>';
+    out += '<circle cx="' + (px + 22) + '" cy="' + (py + 18) + '" r="0.9" fill="' + c.dark + '" opacity="0.55"/>';
+    out += '<circle cx="' + (px + 14) + '" cy="' + (py + 26) + '" r="0.9" fill="' + c.dark + '" opacity="0.55"/>';
+    out += '<circle cx="' + (px + 28) + '" cy="' + (py + 8) + '" r="0.9" fill="' + c.dark + '" opacity="0.55"/>';
+  } else if (t.tileStyle === 'Forest') {
+    const cx = px + T / 2;
+    const cy = py + T / 2 + 2;
+    out += '<polygon points="' + cx + ',' + (cy - 11) + ' ' + (cx - 8) + ',' + (cy + 4) + ' ' + (cx + 8) + ',' + (cy + 4) + '" fill="#5d8855" stroke="' + c.dark + '" stroke-width="0.5"/>';
+    out += '<polygon points="' + cx + ',' + (cy - 6) + ' ' + (cx - 6) + ',' + (cy + 6) + ' ' + (cx + 6) + ',' + (cy + 6) + '" fill="#6b9a60" stroke="' + c.dark + '" stroke-width="0.4"/>';
+    out += '<rect x="' + (cx - 1.5) + '" y="' + (cy + 6) + '" width="3" height="4" fill="#3a2418"/>';
+  } else if (t.tileStyle === 'Mountain') {
+    const cx = px + T / 2;
+    const cy = py + T / 2 + 4;
+    out += '<polygon points="' + (cx - 13) + ',' + (cy + 8) + ' ' + (cx - 3) + ',' + (cy - 9) + ' ' + (cx + 7) + ',' + (cy + 4) + ' ' + (cx + 13) + ',' + (cy + 8) + '" fill="' + c.dark + '" stroke="#2f2e2d" stroke-width="0.5"/>';
+    out += '<polygon points="' + (cx - 3) + ',' + (cy - 9) + ' ' + (cx - 6) + ',' + (cy - 2) + ' ' + (cx + 1) + ',' + (cy - 2) + '" fill="#f0eee9" opacity="0.85"/>';
+  } else if (t.tileStyle === 'Field') {
+    for (let i = 0; i < 4; i++) {
+      const yy = py + 7 + i * 7;
+      out += '<line x1="' + (px + 4) + '" y1="' + yy + '" x2="' + (px + T - 4) + '" y2="' + (yy + 2.5) + '" stroke="' + c.dark + '" stroke-width="0.8" opacity="0.55"/>';
+    }
+  } else if (t.tileStyle === 'Grass') {
+    out += '<path d="M ' + (px + 9) + ' ' + (py + 26) + ' l 1 -3 l 1.5 3 M ' + (px + 23) + ' ' + (py + 14) + ' l 1 -3 l 1.5 3 M ' + (px + 17) + ' ' + (py + 30) + ' l 1 -2.5 l 1.5 2.5" stroke="' + c.dark + '" stroke-width="0.7" opacity="0.55" fill="none"/>';
+  }
+
+  // Resources (top-left area)
+  for (let i = 0; i < t.resources.length; i++) {
+    const r = t.resources[i];
+    const rx = px + 3 + i * 13;
+    const ry = py + 3;
+    if (r.type === 'Wood') {
+      out += '<g transform="translate(' + rx + ',' + ry + ')">';
+      out += '<rect x="0" y="2.5" width="10" height="3.6" rx="1.5" fill="var(--wood)" stroke="#3a2010" stroke-width="0.4"/>';
+      out += '<line x1="2.5" y1="2.5" x2="2.5" y2="6.1" stroke="#3a2010" stroke-width="0.3"/>';
+      out += '<line x1="6" y1="2.5" x2="6" y2="6.1" stroke="#3a2010" stroke-width="0.3"/>';
+      out += '</g>';
+    } else if (r.type === 'Stone') {
+      out += '<g transform="translate(' + rx + ',' + ry + ')">';
+      out += '<circle cx="3" cy="5" r="2.4" fill="var(--rock)" stroke="#2f2e2d" stroke-width="0.4"/>';
+      out += '<circle cx="6.5" cy="4.5" r="1.9" fill="#807a73" stroke="#2f2e2d" stroke-width="0.4"/>';
+      out += '</g>';
+    } else if (r.type === 'Iron') {
+      out += '<g transform="translate(' + rx + ',' + ry + ')">';
+      out += '<polygon points="0.5,5.5 2,2 6.5,1.5 8,4 7,6 3,6.5" fill="var(--iron)" stroke="#1f2830" stroke-width="0.4"/>';
+      out += '<polyline points="2,2 4,3.7 6.5,1.5" stroke="var(--iron-shine)" stroke-width="0.5" fill="none" opacity="0.85"/>';
+      out += '</g>';
+    } else if (r.type === 'Seed') {
+      out += '<g transform="translate(' + rx + ',' + ry + ')">';
+      out += '<ellipse cx="3" cy="5" rx="1.7" ry="2.4" fill="var(--seed)" stroke="#5a3d12" stroke-width="0.35"/>';
+      out += '<path d="M 3 2.5 q 1.6 -1.5 3 -0.6" stroke="var(--seed-leaf)" stroke-width="0.6" fill="none"/>';
+      out += '<ellipse cx="5.6" cy="1.7" rx="0.9" ry="0.5" transform="rotate(-30 5.6 1.7)" fill="var(--seed-leaf)"/>';
+      out += '</g>';
+    }
+    if (r.count > 1) {
+      out += '<text x="' + (rx + 11) + '" y="' + (ry + 5) + '" font-family="JetBrains Mono, monospace" font-size="5" fill="#1a1308" font-weight="500">' + r.count + '</text>';
+    }
+  }
+
+  // Construction (centered, lower)
+  if (t.construction === 'Hut') {
+    const cx = px + T / 2;
+    const cy = py + T / 2 + 5;
+    out += '<g>';
+    out += '<polygon points="' + (cx - 9) + ',' + cy + ' ' + cx + ',' + (cy - 10) + ' ' + (cx + 9) + ',' + cy + '" fill="#b04e2a" stroke="#4a1f0f" stroke-width="0.6"/>';
+    out += '<rect x="' + (cx - 7) + '" y="' + cy + '" width="14" height="8" fill="var(--hut)" stroke="#4a1f0f" stroke-width="0.6"/>';
+    out += '<rect x="' + (cx - 2) + '" y="' + (cy + 2) + '" width="4" height="6" fill="#3d1d10"/>';
+    out += '</g>';
+  } else if (t.construction === 'Well') {
+    const cx = px + T / 2;
+    const cy = py + T / 2 + 5;
+    out += '<g>';
+    out += '<circle cx="' + cx + '" cy="' + cy + '" r="6" fill="#d4cab0" stroke="var(--well)" stroke-width="1"/>';
+    out += '<circle cx="' + cx + '" cy="' + cy + '" r="3.2" fill="var(--well)"/>';
+    out += '<line x1="' + (cx - 8) + '" y1="' + (cy - 8) + '" x2="' + (cx + 8) + '" y2="' + (cy - 8) + '" stroke="#3a2d1d" stroke-width="1"/>';
+    out += '<line x1="' + (cx - 6) + '" y1="' + (cy - 8) + '" x2="' + (cx - 6) + '" y2="' + cy + '" stroke="#3a2d1d" stroke-width="0.7"/>';
+    out += '<line x1="' + (cx + 6) + '" y1="' + (cy - 8) + '" x2="' + (cx + 6) + '" y2="' + cy + '" stroke="#3a2d1d" stroke-width="0.7"/>';
+    out += '</g>';
+  } else if (t.construction === 'Warehouse') {
+    const cx = px + T / 2;
+    const cy = py + T / 2 + 5;
+    out += '<g>';
+    out += '<polygon points="' + (cx - 11) + ',' + (cy - 3) + ' ' + (cx + 11) + ',' + (cy - 3) + ' ' + (cx + 8) + ',' + (cy - 9) + ' ' + (cx - 8) + ',' + (cy - 9) + '" fill="#6e4423" stroke="#3d2410" stroke-width="0.6"/>';
+    out += '<rect x="' + (cx - 10) + '" y="' + (cy - 3) + '" width="20" height="11" fill="var(--warehouse)" stroke="#3d2410" stroke-width="0.6"/>';
+    out += '<rect x="' + (cx - 3.5) + '" y="' + (cy + 1) + '" width="7" height="7" fill="#3d2410"/>';
+    out += '<line x1="' + (cx - 10) + '" y1="' + (cy + 2) + '" x2="' + (cx + 10) + '" y2="' + (cy + 2) + '" stroke="#3d2410" stroke-width="0.4"/>';
+    out += '</g>';
+  } else if (t.construction === 'Mill') {
+    const cx = px + T / 2;
+    const cy = py + T / 2 + 4;
+    out += '<g>';
+    out += '<polygon points="' + (cx - 5) + ',' + (cy + 8) + ' ' + (cx + 5) + ',' + (cy + 8) + ' ' + (cx + 4) + ',' + (cy - 4) + ' ' + (cx - 4) + ',' + (cy - 4) + '" fill="var(--mill)" stroke="#5a4423" stroke-width="0.6"/>';
+    out += '<polygon points="' + (cx - 4) + ',' + (cy - 4) + ' ' + (cx + 4) + ',' + (cy - 4) + ' ' + (cx + 2.5) + ',' + (cy - 7) + ' ' + (cx - 2.5) + ',' + (cy - 7) + '" fill="var(--mill-roof)" stroke="#3a2010" stroke-width="0.5"/>';
+    out += '<rect x="' + (cx - 1.5) + '" y="' + (cy + 3) + '" width="3" height="5" fill="#3a2010"/>';
+    out += '<line x1="' + cx + '" y1="' + (cy - 3) + '" x2="' + (cx - 9) + '" y2="' + (cy - 9) + '" stroke="#3a2010" stroke-width="0.7"/>';
+    out += '<line x1="' + cx + '" y1="' + (cy - 3) + '" x2="' + (cx + 9) + '" y2="' + (cy - 9) + '" stroke="#3a2010" stroke-width="0.7"/>';
+    out += '<line x1="' + cx + '" y1="' + (cy - 3) + '" x2="' + (cx - 9) + '" y2="' + (cy + 3) + '" stroke="#3a2010" stroke-width="0.7"/>';
+    out += '<line x1="' + cx + '" y1="' + (cy - 3) + '" x2="' + (cx + 9) + '" y2="' + (cy + 3) + '" stroke="#3a2010" stroke-width="0.7"/>';
+    out += '<circle cx="' + cx + '" cy="' + (cy - 3) + '" r="0.9" fill="#3a2010"/>';
+    out += '</g>';
+  } else if (t.construction === 'Mine') {
+    const cx = px + T / 2;
+    const cy = py + T / 2 + 7;
+    out += '<g>';
+    out += '<path d="M ' + (cx - 12) + ' ' + cy + ' q 6 -13 12 -13 q 6 0 12 13 z" fill="var(--mine-mound)" stroke="#3a2d1d" stroke-width="0.6"/>';
+    out += '<path d="M ' + (cx - 4) + ' ' + cy + ' q 0 -7 4 -7 q 4 0 4 7 z" fill="var(--mine)" stroke="#1a1308" stroke-width="0.5"/>';
+    out += '<line x1="' + (cx - 4) + '" y1="' + cy + '" x2="' + (cx - 4) + '" y2="' + (cy - 6) + '" stroke="#3a2d1d" stroke-width="0.5"/>';
+    out += '<line x1="' + (cx + 4) + '" y1="' + cy + '" x2="' + (cx + 4) + '" y2="' + (cy - 6) + '" stroke="#3a2d1d" stroke-width="0.5"/>';
+    out += '<rect x="' + (cx - 4.5) + '" y="' + (cy - 6.5) + '" width="9" height="1.4" fill="#3a2d1d"/>';
+    out += '</g>';
+  }
+
+  // Walkability marker
+  if (options.showWalk && !t.isWalkable) {
+    out += '<line x1="' + (px + 5) + '" y1="' + (py + 5) + '" x2="' + (px + T - 5) + '" y2="' + (py + T - 5) + '" stroke="#9a1f0f" stroke-width="1" opacity="0.55"/>';
+    out += '<line x1="' + (px + T - 5) + '" y1="' + (py + 5) + '" x2="' + (px + 5) + '" y2="' + (py + T - 5) + '" stroke="#9a1f0f" stroke-width="1" opacity="0.55"/>';
+  }
+
+  // Coordinates
+  if (options.showCoords) {
+    out += '<text x="' + (px + T - 2) + '" y="' + (py + T - 2) + '" text-anchor="end" font-family="JetBrains Mono, monospace" font-size="4.5" fill="#00000088">' + t.x + ',' + t.y + '</text>';
+  }
+
+  out += '</g>';
+  return out;
+}
+
+function bindHover() {
+  const svg = canvas.querySelector('svg.map');
+  if (!svg) return;
+  const handle = (e) => {
+    const target = (e.target.closest && e.target.closest('.tile')) || null;
+    document.querySelectorAll('.tile.highlight').forEach(el => el.classList.remove('highlight'));
+    if (target) {
+      target.classList.add('highlight');
+      const x = +target.dataset.x;
+      const y = +target.dataset.y;
+      const t = mapData.tiles.find(tt => tt.x === x && tt.y === y);
+      showTileDetail(t);
+    }
+  };
+  svg.addEventListener('mousemove', handle);
+  svg.addEventListener('click', handle);
+  svg.addEventListener('mouseleave', () => {
+    document.querySelectorAll('.tile.highlight').forEach(el => el.classList.remove('highlight'));
+    $('#hover-content').innerHTML = '<span class="placeholder">Hover or tap a tile.</span>';
+  });
+}
+
+function showTileDetail(t) {
+  if (!t) return;
+  const resStr = t.resources.length === 0
+    ? '(none)'
+    : t.resources.map(r => r.type + ' \u00d7 ' + r.count).join(', ');
+  $('#hover-content').innerHTML =
+    '<div class="kv">' +
+    '<div class="row"><span class="label">coord</span><span class="value">x ' + t.x + ', y ' + t.y + '</span></div>' +
+    '<div class="row"><span class="label">style</span><span class="value">' + escapeHtml(t.tileStyle) + '</span></div>' +
+    '<div class="row"><span class="label">walkable</span><span class="value">' + (t.isWalkable ? 'yes' : 'no') + '</span></div>' +
+    '<div class="row"><span class="label">resources</span><span class="value">' + escapeHtml(resStr) + '</span></div>' +
+    '<div class="row"><span class="label">construction</span><span class="value">' + escapeHtml(t.construction) + '</span></div>' +
+    '</div>';
+}
+
+function renderStats() {
+  const styles = {};
+  const constr = {};
+  const resCount = {};
+  let walk = 0;
+  for (const t of mapData.tiles) {
+    styles[t.tileStyle] = (styles[t.tileStyle] || 0) + 1;
+    if (t.construction && t.construction !== 'None') {
+      constr[t.construction] = (constr[t.construction] || 0) + 1;
+    }
+    for (const r of t.resources) {
+      resCount[r.type] = (resCount[r.type] || 0) + (r.count || 1);
+    }
+    if (t.isWalkable) walk++;
+  }
+  let html = '';
+  Object.keys(styles).sort().forEach(k => {
+    html += '<div class="stat"><span class="label">' + escapeHtml(k.toLowerCase()) + '</span><span class="value">' + styles[k] + '</span></div>';
+  });
+  html += '<div class="stat full" style="border-top:1px solid var(--line); padding-top:6px; margin-top:4px"><span class="label">walkable</span><span class="value">' + walk + ' / ' + mapData.tiles.length + '</span></div>';
+  if (Object.keys(resCount).length) {
+    html += '<div class="stat full"><span class="label" style="font-weight:600; color:var(--ink); letter-spacing:0.1em; text-transform:uppercase">resources</span><span class="value"></span></div>';
+    Object.keys(resCount).sort().forEach(k => {
+      html += '<div class="stat"><span class="label">' + escapeHtml(k.toLowerCase()) + '</span><span class="value">' + resCount[k] + '</span></div>';
+    });
+  }
+  if (Object.keys(constr).length) {
+    html += '<div class="stat full"><span class="label" style="font-weight:600; color:var(--ink); letter-spacing:0.1em; text-transform:uppercase">construction</span><span class="value"></span></div>';
+    Object.keys(constr).sort().forEach(k => {
+      html += '<div class="stat"><span class="label">' + escapeHtml(k.toLowerCase()) + '</span><span class="value">' + constr[k] + '</span></div>';
+    });
+  }
+  $('#stats-content').innerHTML = html;
+}
+
+render();
+</script>
+</body>
+</html>

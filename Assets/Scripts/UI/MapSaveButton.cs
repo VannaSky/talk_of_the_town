@@ -10,6 +10,9 @@ namespace UI
     /// </summary>
     public class MapSaveButton : MonoBehaviour
     {
+        [Tooltip("Optional: MapLoadButton to refresh its dropdown after saving.")]
+        [SerializeField] private MapLoadButton mapLoadButton;
+
         private TWCBridge _twcBridge;
 
         void Start()
@@ -29,6 +32,9 @@ namespace UI
             }
 
             _twcBridge.SaveMap();
+
+            if (mapLoadButton != null)
+                mapLoadButton.RefreshFileList();
         }
     }
 }

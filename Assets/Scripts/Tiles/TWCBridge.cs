@@ -651,24 +651,38 @@ namespace Tiles
             tileWorldCreator.twcAsset.randomSeed = tileWorldCreator.currentSeed;
 
             string filename = GetNextMapFilename();
-            string path = System.IO.Path.Combine(Application.persistentDataPath, filename);
-            tileWorldCreator.SaveBlueprintStack(path);
-            LogInfo($"Map saved as: {filename} (seed={tileWorldCreator.currentSeed}, path: {path})");
+            string baseName = System.IO.Path.GetFileNameWithoutExtension(filename);
+            string dir = Application.persistentDataPath;
+
+            // Save TWC binary layer stack
+            string twcPath = System.IO.Path.Combine(dir, filename);
+            tileWorldCreator.SaveBlueprintStack(twcPath);
+
+            // Save companion JSON with compact tile grid data (for browser map viewer / LLM)
+            if (tileGrid != null)
+            {
+                tileGrid.SaveToFileCompact(baseName + ".json");
+            }
+
+            LogInfo($"Map saved as: {baseName} (seed={tileWorldCreator.currentSeed}, path: {dir})");
         }
+
 
         private string GetNextMapFilename()
         {
             string dir = Application.persistentDataPath;
-            int highest = 0;
+            string name = Utilities.MapNameGenerator.Generate();
 
-            foreach (string file in System.IO.Directory.GetFiles(dir, "map_??.twcmap"))
+            // Ensure uniqueness by appending a number if the name already exists
+            string filename = $"{name}.twcmap";
+            int attempt = 1;
+            while (System.IO.File.Exists(System.IO.Path.Combine(dir, filename)))
             {
-                string numberPart = System.IO.Path.GetFileNameWithoutExtension(file).Substring(4); // "map_01" → "01"
-                if (int.TryParse(numberPart, out int n))
-                    highest = Mathf.Max(highest, n);
+                filename = $"{name}_{attempt}.twcmap";
+                attempt++;
             }
 
-            return $"map_{(highest + 1):D2}.twcmap";
+            return filename;
         }
 
         /// <summary>
