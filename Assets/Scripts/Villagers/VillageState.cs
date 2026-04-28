@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using Tiles;
 using UnityEngine;
+using Random = UnityEngine.Random;
 
 /// <summary>
 /// Central hub for all village state - inventory, villagers, and map access.
@@ -10,6 +11,8 @@ using UnityEngine;
 public class VillageState : MonoBehaviour
 {
     public static VillageState Instance { get; private set; }
+    
+    private const string LogCategory = "VillageState";
     
     [Header("References")]
     [SerializeField] private TileGrid tileGrid;
@@ -21,12 +24,33 @@ public class VillageState : MonoBehaviour
     [SerializeField] private int iron = 0;
     [SerializeField] private int food = 0;
     
+    [Header("Game Speed")]
+    [SerializeField] [Range(0.1f, 10f)] private float gameSpeed = 1f;
+
+    [Header("Village Capacity")]
+    [SerializeField] private int populationCap = 5;
+    [SerializeField] private int inventoryCapacity = 100;
+
+    [Header("Villager Spawning")]
+    [SerializeField] private GameObject villagerPrefab;
+    [SerializeField] private List<string> villagerNamePool = new List<string>();
+    private int _villagerSpawnCount = 0;
+    
+    // Local helper wrappers (as you use them now)
+    void LogError(string msg)   => GameLog.LogError(LogCategory, msg, this);
+    void LogWarning(string msg) => GameLog.LogWarning(LogCategory, msg, this);
+    void LogInfo(string msg)    => GameLog.LogInfo(LogCategory, msg, this);
+    void LogVerbose(string msg) => GameLog.LogVerbose(LogCategory, msg, this);
+
     [Header("Registered Villagers")]
     [SerializeField] private List<Villager> villagers = new List<Villager>();
     
     // Public accessors
     public TileGrid TileGrid => tileGrid;
     public IReadOnlyList<Villager> Villagers => villagers;
+    public int PopulationCap => populationCap;
+    public int InventoryCapacity => inventoryCapacity;
+    public float GameSpeed => gameSpeed;
     
     // Resource accessors
     public int Wood => wood;
@@ -56,14 +80,16 @@ public class VillageState : MonoBehaviour
     
     void Start()
     {
+        ApplyGameSpeed();
+
         // Auto-find TileGrid if not assigned
         if (tileGrid == null)
         {
             tileGrid = FindFirstObjectByType<TileGrid>();
             if (tileGrid != null)
-                Debug.Log($"[VillageState] Found TileGrid: {tileGrid.name}");
+                LogInfo($"[VillageState] Found TileGrid: {tileGrid.name}");
             else
-                Debug.LogWarning("[VillageState] No TileGrid found!");
+                LogWarning("[VillageState] No TileGrid found!");
         }
         
         // Auto-register existing villagers
@@ -72,6 +98,32 @@ public class VillageState : MonoBehaviour
             RegisterVillager(v);
     }
     
+    #region Game Speed
+
+    public void SetGameSpeed(float speed)
+    {
+        gameSpeed = Mathf.Clamp(speed, 0.1f, 10f);
+        ApplyGameSpeed();
+    }
+
+    private void ApplyGameSpeed()
+    {
+        Time.timeScale = gameSpeed;
+        Time.fixedDeltaTime = 0.02f * gameSpeed;
+        LogInfo($"[VillageState] Game speed: {gameSpeed}x");
+    }
+
+#if UNITY_EDITOR
+    private void OnValidate()
+    {
+        gameSpeed = Mathf.Clamp(gameSpeed, 0.1f, 10f);
+        if (Application.isPlaying)
+            ApplyGameSpeed();
+    }
+#endif
+
+    #endregion
+
     #region Villager Registry
     
     public void RegisterVillager(Villager villager)
@@ -80,7 +132,7 @@ public class VillageState : MonoBehaviour
         {
             villagers.Add(villager);
             OnVillagerRegistered?.Invoke(villager);
-            Debug.Log($"[VillageState] Registered villager: {villager.villagerName}");
+            LogInfo($"Registered villager: {villager.villagerName}");
         }
     }
     
@@ -89,7 +141,7 @@ public class VillageState : MonoBehaviour
         if (villager != null && villagers.Remove(villager))
         {
             OnVillagerUnregistered?.Invoke(villager);
-            Debug.Log($"[VillageState] Unregistered villager: {villager.villagerName}");
+            LogInfo($"Unregistered villager: {villager.villagerName}");
         }
     }
     
@@ -100,8 +152,16 @@ public class VillageState : MonoBehaviour
     public void AddResource(ResourceType type, int amount)
     {
         if (amount <= 0) return;
-        
-        int oldValue = GetResource(type);
+
+        int current = GetResource(type);
+        if (current >= inventoryCapacity)
+        {
+            LogInfo($"{type} storage full ({current}/{inventoryCapacity})");
+            return;
+        }
+        amount = Mathf.Min(amount, inventoryCapacity - current);
+
+        int oldValue = current;
         
         switch (type)
         {
@@ -109,11 +169,12 @@ public class VillageState : MonoBehaviour
             case ResourceType.Stone: stone += amount; break;
             case ResourceType.Seed: seeds += amount; break;
             case ResourceType.Iron: iron += amount; break;
+            case ResourceType.Food: food += amount; break;
         }
         
         int newValue = GetResource(type);
         OnResourceChanged?.Invoke(type, oldValue, newValue);
-        Debug.Log($"[VillageState] +{amount} {type} (now {newValue})");
+        LogInfo($"+{amount} {type} (now {newValue})");
     }
     
     public bool TrySpendResource(ResourceType type, int amount)
@@ -129,11 +190,12 @@ public class VillageState : MonoBehaviour
             case ResourceType.Stone: stone -= amount; break;
             case ResourceType.Seed: seeds -= amount; break;
             case ResourceType.Iron: iron -= amount; break;
+            case ResourceType.Food: food -= amount; break;
         }
         
         int newValue = GetResource(type);
         OnResourceChanged?.Invoke(type, oldValue, newValue);
-        Debug.Log($"[VillageState] -{amount} {type} (now {newValue})");
+        LogInfo($"-{amount} {type} (now {newValue})");
         return true;
     }
     
@@ -145,6 +207,7 @@ public class VillageState : MonoBehaviour
             ResourceType.Stone => stone,
             ResourceType.Seed => seeds,
             ResourceType.Iron => iron,
+            ResourceType.Food => food,
             _ => 0
         };
     }
@@ -153,7 +216,54 @@ public class VillageState : MonoBehaviour
     {
         return GetResource(type) >= amount;
     }
-    
+
+    public void ApplyBuildingBonus(BuildingBonus bonus, Vector3 spawnPosition)
+    {
+        switch (bonus.type)
+        {
+            case BuildingBonusType.NewVillager:
+                for (int i = 0; i < bonus.value; i++)
+                    SpawnVillager(spawnPosition);
+                break;
+            case BuildingBonusType.InventoryCapacity:
+                inventoryCapacity += bonus.value;
+                LogInfo($"Inventory capacity increased by {bonus.value} (now {inventoryCapacity})");
+                break;
+        }
+    }
+
+    private void SpawnVillager(Vector3 nearPosition)
+    {
+        if (villagerPrefab == null)
+        {
+            LogWarning("Cannot spawn villager: villagerPrefab is not assigned.");
+            populationCap++;
+            return;
+        }
+
+        Vector3 offset = new Vector3(Random.Range(-2f, 2f), 0f, Random.Range(-2f, 2f));
+        var go = Instantiate(villagerPrefab, nearPosition + offset, Quaternion.identity);
+        go.name = GetNextVillagerName();
+
+        var villager = go.GetComponent<Villager>();
+        if (villager != null)
+        {
+            villager.villagerName = go.name;
+            RegisterVillager(villager);
+        }
+
+        populationCap++;
+        LogInfo($"Spawned new villager '{go.name}' (population cap now {populationCap})");
+    }
+
+    private string GetNextVillagerName()
+    {
+        _villagerSpawnCount++;
+        if (villagerNamePool != null && _villagerSpawnCount <= villagerNamePool.Count)
+            return villagerNamePool[_villagerSpawnCount - 1];
+        return $"Villager {_villagerSpawnCount}";
+    }
+
     #endregion
     
     #region LLM Data Export
@@ -289,7 +399,7 @@ public class VillageState : MonoBehaviour
     [ContextMenu("Log Village State")]
     private void LogVillageState()
     {
-        Debug.Log(GetVillageContextReadable());
+        LogInfo(GetVillageContextReadable());
     }
     
     [ContextMenu("Add 10 Wood (Test)")]

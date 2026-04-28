@@ -60,6 +60,7 @@ namespace Buildings
                 currentLevel++;
                 levelCompleted = true;
                 ShowFinalForLevel(finishedLevel);
+                ApplyLevelBonuses(finishedLevel);
             }
             UpdateVisuals();
             return levelCompleted;
@@ -78,6 +79,7 @@ namespace Buildings
         private void Awake()
         {
             BuildRuntimeLevels();
+            UpdateVisuals();
         }
 
         private void BuildRuntimeLevels()
@@ -144,7 +146,7 @@ namespace Buildings
                 {
                     foreach (var go in rl.stageInstances) if (go != null) go.SetActive(false);
                 }
-                if (rl.finalInstance != null) rl.finalInstance.SetActive(false);
+                if (i >= currentLevel && rl.finalInstance != null) rl.finalInstance.SetActive(false);
             }
             if (IsFinished()) return;
             var cur = runtimeLevels[currentLevel];
@@ -154,6 +156,15 @@ namespace Buildings
                 int stageIndex = Mathf.Clamp(Mathf.FloorToInt(frac * cur.stageInstances.Count), 0, cur.stageInstances.Count - 1);
                 if (cur.stageInstances[stageIndex] != null) cur.stageInstances[stageIndex].SetActive(true);
             }
+        }
+
+        private void ApplyLevelBonuses(int levelIndex)
+        {
+            if (buildingData == null || levelIndex >= buildingData.levels.Count) return;
+            var levelData = buildingData.levels[levelIndex];
+            if (levelData.bonuses == null || VillageState.Instance == null) return;
+            foreach (var bonus in levelData.bonuses)
+                VillageState.Instance.ApplyBuildingBonus(bonus, transform.position);
         }
 
         public void ShowFinalForLevel(int levelIndex)

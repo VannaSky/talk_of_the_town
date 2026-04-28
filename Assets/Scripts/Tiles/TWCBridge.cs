@@ -12,12 +12,7 @@ namespace Tiles
     {
         private const string LogCategory = "TWCBridge";
 
-        /// <summary>
-        /// Set this to a map filename (e.g. "map_01.json") before loading MainScene
-        /// to trigger the load path instead of procedural generation.
-        /// Cleared automatically after use.
-        /// </summary>
-        public static string MapFileToLoad = null;
+        private static TWCBridge _instance;
 
         [Header("Refs")]
         [SerializeField] TileWorldCreator tileWorldCreator;
@@ -37,6 +32,12 @@ namespace Tiles
         [Header("Village Placement Retry")]
         [SerializeField] private int maxVillagePlacementRetries = 5;
         private int currentRetryCount = 0;
+
+        /// <summary>
+        /// Set to true once LoadFromFile has run. Prevents TWC event callbacks
+        /// (which fire asynchronously via coroutines) from overwriting loaded tile data.
+        /// </summary>
+        private bool _isLoadedFromFile = false;
         
         [System.Serializable]
         public class OverlayBuildRoot
@@ -65,6 +66,14 @@ namespace Tiles
 
         void Awake()
         {
+            // Singleton guard: if a DontDestroyOnLoad instance already exists, destroy this duplicate.
+            if (_instance != null && _instance != this)
+            {
+                Destroy(gameObject);
+                return;
+            }
+            _instance = this;
+
             if (cellSize <= 0f) cellSize = 2f;
             if (origin == default && tileWorldCreator != null)
             {
@@ -89,13 +98,7 @@ namespace Tiles
 
         void Start()
         {
-            if (!string.IsNullOrEmpty(MapFileToLoad))
-            {
-                string fileToLoad = MapFileToLoad;
-                MapFileToLoad = null; // Clear before loading so retries don't re-trigger load
-                LoadFromFile(fileToLoad);
-            }
-            else if (autoRunOnStart)
+            if (autoRunOnStart)
             {
                 GenerateBuildAndSync();
             }
@@ -122,9 +125,31 @@ namespace Tiles
             LogInfo("Unsubscribed from TWC events.");
         }
 
+        void OnDestroy()
+        {
+            if (_instance == this) _instance = null;
+        }
+
+        /// <summary>
+        /// Generates a fresh random map. Resets any loaded-from-file state so the
+        /// full TWC pipeline runs with a new TickCount seed.
+        /// </summary>
+        public void GenerateNewRandomMap()
+        {
+            _isLoadedFromFile = false;
+            tileWorldCreator.twcAsset.useRandomSeed = false;
+            GenerateBuildAndSync();
+        }
+
         [ContextMenu("Generate → Build → Sync")]
         public void GenerateBuildAndSync()
         {
+            if (_isLoadedFromFile)
+            {
+                LogWarning("GenerateBuildAndSync skipped — map was loaded from file. Reload the scene to regenerate.");
+                return;
+            }
+
             if (tileWorldCreator == null)
             {
                 LogError("No TileWorldCreator set.");
@@ -210,12 +235,14 @@ namespace Tiles
 
         void OnBlueprintLayersComplete(TileWorldCreator twc)
         {
+            if (_isLoadedFromFile) { LogInfo("OnBlueprintLayersComplete skipped — loaded from file."); return; }
             LogInfo("OnBlueprintLayersComplete → ExecuteAllBuildLayers(false)");
             tileWorldCreator.ExecuteAllBuildLayers(false);
         }
 
         void OnBuildLayersComplete(TileWorldCreator twc)
         {
+            if (_isLoadedFromFile) { LogInfo("OnBuildLayersComplete skipped — loaded from file."); return; }
             LogInfo("OnBuildLayersComplete");
 
             if (spawnTilesBeforeSync && spawner != null)
@@ -605,41 +632,63 @@ namespace Tiles
         }
 
         /// <summary>
-        /// Saves the current map with an auto-incremented filename (map_01.json, map_02.json, ...).
-        /// Call this manually via GUI button after approving a generated map.
+        /// Saves the current map's TWC blueprint layer stack (including seeds) with an
+        /// auto-incremented filename. The file is small because only the layer configuration
+        /// is stored, not the full map array.
         /// </summary>
         [ContextMenu("Save Map")]
         public void SaveMap()
         {
-            if (tileGrid == null)
+            if (tileWorldCreator == null)
             {
-                LogError("TileGrid is null, cannot save map");
+                LogError("TileWorldCreator is null, cannot save map");
                 return;
             }
 
+            // Stamp the seed that was actually used for this generation into the asset
+            // so SaveBlueprintStack persists it. Without this, randomSeed may be stale
+            // when useRandomSeed was false (TickCount-based generation).
+            tileWorldCreator.twcAsset.randomSeed = tileWorldCreator.currentSeed;
+
             string filename = GetNextMapFilename();
-            tileGrid.SaveToFile(filename);
-            LogInfo($"Map saved as: {filename} (path: {System.IO.Path.Combine(Application.persistentDataPath, filename)})");
+            string baseName = System.IO.Path.GetFileNameWithoutExtension(filename);
+            string dir = Application.persistentDataPath;
+
+            // Save TWC binary layer stack
+            string twcPath = System.IO.Path.Combine(dir, filename);
+            tileWorldCreator.SaveBlueprintStack(twcPath);
+
+            // Save companion JSON with compact tile grid data (for browser map viewer / LLM)
+            if (tileGrid != null)
+            {
+                tileGrid.SaveToFileCompact(baseName + ".json");
+            }
+
+            LogInfo($"Map saved as: {baseName} (seed={tileWorldCreator.currentSeed}, path: {dir})");
         }
+
 
         private string GetNextMapFilename()
         {
             string dir = Application.persistentDataPath;
-            int highest = 0;
+            string name = Utilities.MapNameGenerator.Generate();
 
-            foreach (string file in System.IO.Directory.GetFiles(dir, "map_??.json"))
+            // Ensure uniqueness by appending a number if the name already exists
+            string filename = $"{name}.twcmap";
+            int attempt = 1;
+            while (System.IO.File.Exists(System.IO.Path.Combine(dir, filename)))
             {
-                string numberPart = System.IO.Path.GetFileNameWithoutExtension(file).Substring(4); // "map_01" → "01"
-                if (int.TryParse(numberPart, out int n))
-                    highest = Mathf.Max(highest, n);
+                filename = $"{name}_{attempt}.twcmap";
+                attempt++;
             }
 
-            return $"map_{(highest + 1):D2}.json";
+            return filename;
         }
 
         /// <summary>
-        /// Loads a saved map from file and rebuilds the tile grid without running TWC generation.
-        /// VillageSpawner still runs normally for a fresh game start on the loaded map.
+        /// Loads a saved TWC blueprint stack from file and regenerates the map through TWC's
+        /// normal pipeline. Forces useRandomSeed so TWC uses the saved seed value,
+        /// reproducing the exact same map — clusters, prefabs, and all.
         /// </summary>
         public void LoadFromFile(string filename)
         {
@@ -653,38 +702,28 @@ namespace Tiles
 
             LogInfo($"Loading map from: {filename}");
 
-            string json = System.IO.File.ReadAllText(path);
-            GridData data = JsonUtility.FromJson<GridData>(json);
+            // Allow the TWC callback chain to run (it's a real regeneration, not a bypass)
+            _isLoadedFromFile = false;
 
-            if (data == null || data.tiles == null || data.tiles.Count == 0)
-            {
-                LogError("Failed to deserialize map data or map is empty.");
-                return;
-            }
+            // Clean up our tile grid and navmesh
+            CleanupBeforeRegeneration();
 
-            // 1. Clear any existing tiles
-            tileGrid.DestroyAllTiles();
+            // Load the layer stack without executing yet
+            tileWorldCreator.LoadBlueprintStack(path);
 
-            // 2. Spawn tiles and resource visuals from saved data (no TWC)
-            spawner.SpawnFromGridData(data);
+            // Force TWC to use the saved seed so the map is reproduced identically.
+            // Must be set AFTER LoadBlueprintStack because AssignToAsset overwrites useRandomSeed
+            // from the save file. In TWC, useRandomSeed=true means "use the stored randomSeed
+            // field" (deterministic), while false means "use TickCount" (random each time).
+            tileWorldCreator.twcAsset.useRandomSeed = true;
 
-            // 3. Count resources from the spawned hierarchy into tile data
-            RegisterExistingResources();
+            // Clear cached blueprint maps (LoadBlueprintStackAndExecute does this internally)
+            tileWorldCreator.generatedBlueprintMaps = new System.Collections.Generic.Dictionary<string, TWC.WorldMap>();
 
-            // 4. Spawn village fresh (no retry/regeneration — map is fixed)
-            if (villageSpawner != null)
-            {
-                bool success = villageSpawner.SpawnInitialVillage();
-                if (!success)
-                    LogWarning("Village placement failed on loaded map. The saved map may not have a valid village area.");
-            }
+            LogInfo($"Loaded blueprint stack, seed={tileWorldCreator.twcAsset.randomSeed}. Executing...");
 
-            // 5. Bake NavMesh
-#pragma warning disable CS4014
-            RebakeNavMeshAsync();
-#pragma warning restore CS4014
-
-            LogInfo($"Map loaded successfully: {filename} ({data.width}x{data.height}, {data.tiles.Count} tiles)");
+            currentRetryCount = 0;
+            tileWorldCreator.ExecuteAllBlueprintLayers();
         }
         
         private void TrySpawnVillageWithRetry()
@@ -747,22 +786,23 @@ namespace Tiles
         private void CleanupBeforeRegeneration()
         {
             LogInfo("Cleaning up tile grid before regeneration...");
-    
+
             // Clean up our TileGrid (TWC will handle its own objects)
             if (tileGrid != null)
             {
                 tileGrid.DestroyAllTiles();
                 LogInfo("TileGrid cleared");
             }
-    
+
             // Clear NavMesh
             if (navMeshSurface != null)
             {
                 navMeshSurface.RemoveData();
                 LogVerbose("NavMesh data cleared");
             }
-    
+
             LogInfo("Cleanup complete - TWC will regenerate its objects");
         }
+
     }
 }

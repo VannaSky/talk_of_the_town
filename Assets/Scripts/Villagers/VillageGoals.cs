@@ -9,6 +9,12 @@ using UnityEngine;
 /// </summary>
 public class VillageGoals : MonoBehaviour
 {
+    private const string LogCategory = "VillageGoals";
+    void LogError(string msg)   => GameLog.LogError(LogCategory, msg, this);
+    void LogWarning(string msg) => GameLog.LogWarning(LogCategory, msg, this);
+    void LogInfo(string msg)    => GameLog.LogInfo(LogCategory, msg, this);
+    void LogVerbose(string msg) => GameLog.LogVerbose(LogCategory, msg, this);
+
     public static VillageGoals Instance { get; private set; }
     
     [Header("Active Goals")]
@@ -53,7 +59,7 @@ public class VillageGoals : MonoBehaviour
             var goal = activeGoals[i];
             if (IsGoalComplete(goal))
             {
-                Debug.Log($"[VillageGoals] Goal completed: {goal.description}");
+                LogInfo($"Goal completed: {goal.description}");
                 activeGoals.RemoveAt(i);
                 OnGoalCompleted?.Invoke(goal);
             }
@@ -72,7 +78,7 @@ public class VillageGoals : MonoBehaviour
         }
         
         activeGoals.Add(goal);
-        Debug.Log($"[VillageGoals] New goal: {goal.description}");
+        LogInfo($"New goal: {goal.description}");
         OnGoalAdded?.Invoke(goal);
     }
     
@@ -84,6 +90,17 @@ public class VillageGoals : MonoBehaviour
     public void ClearGoals()
     {
         activeGoals.Clear();
+    }
+
+    /// <summary>
+    /// Replaces all active goals with the LLM's decisions. Does not fire OnGoalAdded
+    /// to avoid triggering an immediate new decision cycle.
+    /// </summary>
+    public void SetGoalsFromLLM(List<VillageGoal> newGoals)
+    {
+        activeGoals.Clear();
+        activeGoals.AddRange(newGoals);
+        LogInfo($"LLM set {newGoals.Count} goal(s): {string.Join(", ", newGoals.ConvertAll(g => g.description))}");
     }
     
     private bool IsGoalComplete(VillageGoal goal)

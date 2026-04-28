@@ -5,6 +5,12 @@ using AnimationState = Villagers.Jobs.AnimationState;
 [Serializable]
 public abstract class JobLogic
 {
+    protected string LogCategory => GetType().Name;
+    protected void LogError(string msg)   => GameLog.LogError(LogCategory, msg, null);
+    protected void LogWarning(string msg) => GameLog.LogWarning(LogCategory, msg, null);
+    protected void LogInfo(string msg)    => GameLog.LogInfo(LogCategory, msg, null);
+    protected void LogVerbose(string msg) => GameLog.LogVerbose(LogCategory, msg, null);
+
     [Header("Animation")]
     [Tooltip("Animator int parameter that mirrors the AnimationState.")]
     public string animatorStateParameter = "AnimationState";
@@ -19,7 +25,7 @@ public abstract class JobLogic
     {
         if (_initialized)
         {
-            Debug.LogWarning($"[{GetType().Name}] OnJobStart called again on {handler.name} - ignoring");
+            LogWarning($"OnJobStart called again on {handler.name} - ignoring");
             return;
         }
 
@@ -38,7 +44,11 @@ public abstract class JobLogic
         return ExecuteState(handler);
     }
 
-    public virtual void OnJobEnd(JobHandler handler) { }
+    public virtual void OnJobEnd(JobHandler handler)
+    {
+        if (handler != null && handler.equipment != null)
+            handler.equipment.HideAll();
+    }
 
     protected abstract void OnInitialize(JobHandler handler);
     protected abstract bool ExecuteState(JobHandler handler);
@@ -48,14 +58,27 @@ public abstract class JobLogic
         if (_currentState == newState)
             return;
 
-        Debug.Log($"[{GetType().Name}] {handler.name}: {_currentState} -> {newState}");
+        LogInfo($"{handler.name}: {_currentState} -> {newState}");
 
+        bool goingIdle = newState == AnimationState.Idle && _currentState == AnimationState.FindingTarget;
+
+        var oldState = _currentState;
         _currentState = newState;
         timeSinceLastAction = 0f;
+
+        handler?.NotifyStateChanged(oldState, newState);
+
+        if (goingIdle)
+            handler.NotifyIdle();
 
         if (handler != null && handler.animator != null && !string.IsNullOrEmpty(animatorStateParameter))
         {
             handler.animator.SetInteger(animatorStateParameter, (int)_currentState);
+        }
+
+        if (handler != null && handler.equipment != null)
+        {
+            handler.equipment.UpdateVisuals(handler.currentJob, _currentState);
         }
     }
 

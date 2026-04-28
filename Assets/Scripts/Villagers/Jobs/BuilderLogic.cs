@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using Buildings;
+using Environment.Resources;
 using Tiles;
 using UnityEngine;
 using AnimationState = Villagers.Jobs.AnimationState;
@@ -10,17 +12,23 @@ public class BuilderLogic : JobLogic
     [Header("Builder Settings")]
     public float buildSpeed = 1f;
     public float stoppingDistance = 1.5f;
+    public int searchRadius = 15;
 
-    [Header("Resource Costs (per build cycle)")]
-    public int woodCostPerCycle = 2;
-    public int stoneCostPerCycle = 1;
+    [Header("Buildings to Place")]
+    public List<BuildingData> buildableTypes = new List<BuildingData>();
 
+    [NonSerialized] private int _buildingTypeIndex = 0;
+
+    private enum BuilderPhase { Building, Placing }
+
+    [NonSerialized] private BuilderPhase _phase;
     [NonSerialized] private Building _currentTarget = null;
-    [NonSerialized] private float _resourceCheckTimer = 0f;
+    [NonSerialized] private Tile _targetTile = null;
 
     protected override void OnInitialize(JobHandler handler)
     {
         _currentTarget = null;
+        _targetTile = null;
         ChangeState(AnimationState.FindingTarget, handler);
     }
 
@@ -31,73 +39,99 @@ public class BuilderLogic : JobLogic
             case AnimationState.FindingTarget:
                 ExecuteFindingTarget(handler);
                 break;
-
-            case AnimationState.Idle:
-                ExecuteWaitingForResources(handler);
-                break;
-
             case AnimationState.MovingToTarget:
                 ExecuteMovingToTarget(handler);
                 break;
-
             case AnimationState.Building:
                 return ExecuteBuilding(handler);
+            case AnimationState.Idle:
+                ExecuteIdle(handler);
+                break;
         }
         return false;
     }
 
     private void ExecuteFindingTarget(JobHandler handler)
     {
+        // Phase 1: build any existing unfinished building
         _currentTarget = FindNextBuilding(handler);
         if (_currentTarget != null)
         {
-            if (HasRequiredResources())
+            _phase = BuilderPhase.Building;
+            _currentTarget.Reserve();
+            handler.villagerMover.StopMoving();
+            ChangeState(AnimationState.MovingToTarget, handler);
+            return;
+        }
+
+        // Phase 2: find an empty tile and place a new foundation
+        var data = PickBuildingData(handler);
+        if (data != null)
+        {
+            _targetTile = FindBuildingTile(handler, data);
+            if (_targetTile != null)
             {
-                _currentTarget.Reserve();
+                _phase = BuilderPhase.Placing;
                 handler.villagerMover.StopMoving();
                 ChangeState(AnimationState.MovingToTarget, handler);
-            }
-            else
-            {
-                currentStatus = $"Need resources! Wood: {VillageState.Instance.Wood}/{woodCostPerCycle}, Stone: {VillageState.Instance.Stone}/{stoneCostPerCycle}";
-                ChangeState(AnimationState.Idle, handler);
+                return;
             }
         }
-        else
-        {
-            currentStatus = "No building tasks available. Waiting...";
-            handler.villagerMover.StopMoving();
-            ChangeState(AnimationState.Idle, handler);
-        }
-    }
 
-    private void ExecuteWaitingForResources(JobHandler handler)
-    {
-        timeSinceLastAction += Time.deltaTime;
-        if (timeSinceLastAction >= 1f)
-        {
-            ChangeState(AnimationState.FindingTarget, handler);
-        }
+        currentStatus = "No building tasks available. Waiting...";
+        handler.villagerMover.StopMoving();
+        ChangeState(AnimationState.Idle, handler);
     }
 
     private void ExecuteMovingToTarget(JobHandler handler)
     {
-        if (_currentTarget == null)
+        Vector3 destination;
+
+        if (_phase == BuilderPhase.Building)
         {
-            ChangeState(AnimationState.FindingTarget, handler);
+            if (_currentTarget == null) { ChangeState(AnimationState.FindingTarget, handler); return; }
+            destination = _currentTarget.transform.position;
+            currentStatus = $"Moving to build {GetBuildingName()}";
+        }
+        else
+        {
+            if (_targetTile == null) { ChangeState(AnimationState.FindingTarget, handler); return; }
+            destination = _targetTile.transform.position;
+            currentStatus = "Moving to place building foundation";
+        }
+
+        handler.villagerMover.MoveTo(destination);
+
+        if (!handler.villagerMover.IsNearDestination(stoppingDistance)) return;
+
+        handler.villagerMover.StopMoving();
+
+        if (_phase == BuilderPhase.Placing)
+        {
+            _currentTarget = PlaceFoundation(_targetTile, PickBuildingData(handler));
+            _targetTile = null;
+
+            if (_currentTarget == null)
+            {
+                currentStatus = "Failed to place foundation. Waiting...";
+                ChangeState(AnimationState.Idle, handler);
+                return;
+            }
+
+            _currentTarget.Reserve();
+        }
+
+        // Consume resources once before starting to build the current level
+        if (!TryConsumeResourcesForCurrentLevel())
+        {
+            currentStatus = $"Waiting for resources to build {GetBuildingName()}...";
+            _currentTarget.Unreserve();
+            _currentTarget = null;
+            ChangeState(AnimationState.Idle, handler);
             return;
         }
 
-        var buildingName = GetBuildingName();
-        currentStatus = $"Moving to build {buildingName}";
-        handler.villagerMover.MoveTo(_currentTarget.transform.position);
-
-        if (handler.villagerMover.IsNearDestination(stoppingDistance))
-        {
-            handler.villagerMover.StopMoving();
-            _resourceCheckTimer = 0f;
-            ChangeState(AnimationState.Building, handler);
-        }
+        ChangeState(AnimationState.Building, handler);
     }
 
     private bool ExecuteBuilding(JobHandler handler)
@@ -108,40 +142,18 @@ public class BuilderLogic : JobLogic
             return false;
         }
 
-        _resourceCheckTimer += Time.deltaTime;
-
-        if (_resourceCheckTimer >= 1f)
-        {
-            _resourceCheckTimer = 0f;
-
-            if (!TryConsumeResources())
-            {
-                currentStatus = "Out of resources! Waiting...";
-                _currentTarget.Unreserve();
-                _currentTarget = null;
-                ChangeState(AnimationState.FindingTarget, handler);
-                return false;
-            }
-        }
-
         float workApplied = buildSpeed * Time.deltaTime;
         bool levelCompleted = _currentTarget.AddWork(workApplied);
 
-        var buildingName = GetBuildingName();
-        currentStatus = $"Building {buildingName} ({_currentTarget.GetProgressPercent()}%)";
+        currentStatus = $"Building {GetBuildingName()} ({_currentTarget.GetProgressPercent()}%)";
 
         if (levelCompleted)
         {
-            int finishedLevelIndex = Mathf.Max(0, _currentTarget.currentLevel - 1);
-            _currentTarget.ShowFinalForLevel(finishedLevelIndex);
-            _currentTarget.Unreserve();
-
             bool finished = _currentTarget.IsFinished();
             if (finished)
-            {
-                Debug.Log($"[Builder] Completed building: {buildingName}");
-            }
+                Debug.Log($"[Builder] Completed building: {GetBuildingName()}");
 
+            _currentTarget.Unreserve();
             _currentTarget = null;
             ChangeState(AnimationState.FindingTarget, handler);
             return true;
@@ -150,23 +162,89 @@ public class BuilderLogic : JobLogic
         return false;
     }
 
-    private bool HasRequiredResources()
+    private void ExecuteIdle(JobHandler handler)
     {
-        if (VillageState.Instance == null) return true;
-        return VillageState.Instance.HasResource(ResourceType.Wood, woodCostPerCycle)
-            && VillageState.Instance.HasResource(ResourceType.Stone, stoneCostPerCycle);
+        timeSinceLastAction += Time.deltaTime;
+        if (timeSinceLastAction >= 1f)
+            ChangeState(AnimationState.FindingTarget, handler);
     }
 
-    private bool TryConsumeResources()
+    private Building PlaceFoundation(Tile tile, BuildingData data)
     {
-        if (VillageState.Instance == null) return true;
+        if (tile == null || data == null || data.foundationPrefab == null) return null;
 
-        bool consumed = VillageState.Instance.TrySpendResource(ResourceType.Wood, woodCostPerCycle);
-        if (consumed)
+        if (!tile.AllowsBuilding(data.constructionType))
         {
-            VillageState.Instance.TrySpendResource(ResourceType.Stone, stoneCostPerCycle);
+            Debug.LogWarning($"[Builder] Tile {tile.GridPos} does not allow {data.constructionType}");
+            return null;
         }
-        return consumed;
+
+        // Find or create "Building" container under the tile (matches VillageSpawner convention)
+        Transform buildingContainer = tile.transform.Find("Building");
+        if (buildingContainer == null)
+        {
+            var container = new GameObject("Building");
+            container.transform.SetParent(tile.transform);
+            container.transform.localPosition = Vector3.zero;
+            buildingContainer = container.transform;
+        }
+
+        Vector3 spawnPos = tile.transform.position + new Vector3(1f, 0.5f, 1f);
+        var go = UnityEngine.Object.Instantiate(data.foundationPrefab, spawnPos, Quaternion.identity, buildingContainer);
+        go.name = $"{data.buildingType}_{tile.GridPos.x}_{tile.GridPos.y}";
+
+        tile.TrySetBuilding(new ConstructionInstance(data.constructionType, 0f, false));
+
+        var building = go.GetComponent<Building>();
+        if (building == null)
+            Debug.LogWarning($"[Builder] {data.buildingType} prefab has no Building component!");
+
+        // Advance the type index so the next placement cycles to the next building type
+        if (buildableTypes != null && buildableTypes.Count > 0)
+            _buildingTypeIndex = (_buildingTypeIndex + 1) % buildableTypes.Count;
+
+        Debug.Log($"[Builder] Placed {data.buildingType} foundation at {tile.GridPos}");
+        return building;
+    }
+
+    private BuildingData PickBuildingData(JobHandler handler)
+    {
+        if (buildableTypes == null || buildableTypes.Count == 0) return null;
+
+        string preferred = handler?.PreferredBuildingType;
+        if (!string.IsNullOrEmpty(preferred))
+        {
+            foreach (var data in buildableTypes)
+            {
+                if (data != null && data.buildingType.ToString().Equals(preferred, System.StringComparison.OrdinalIgnoreCase))
+                    return data;
+            }
+            Debug.LogWarning($"[Builder] LLM requested '{preferred}' but it's not in buildableTypes — falling back to round-robin");
+        }
+
+        return buildableTypes[_buildingTypeIndex % buildableTypes.Count];
+    }
+
+    private bool TryConsumeResourcesForCurrentLevel()
+    {
+        if (_currentTarget == null || VillageState.Instance == null) return true;
+        if (_currentTarget.buildingData == null) return true;
+
+        int level = _currentTarget.currentLevel;
+        if (level >= _currentTarget.buildingData.levels.Count) return true;
+
+        var levelData = _currentTarget.buildingData.levels[level];
+
+        if (!VillageState.Instance.HasResource(ResourceType.Wood, levelData.woodCost)
+            || !VillageState.Instance.HasResource(ResourceType.Stone, levelData.stoneCost))
+        {
+            currentStatus = $"Need {levelData.woodCost} wood, {levelData.stoneCost} stone to build {GetBuildingName()}";
+            return false;
+        }
+
+        VillageState.Instance.TrySpendResource(ResourceType.Wood, levelData.woodCost);
+        VillageState.Instance.TrySpendResource(ResourceType.Stone, levelData.stoneCost);
+        return true;
     }
 
     private string GetBuildingName()
@@ -180,29 +258,113 @@ public class BuilderLogic : JobLogic
     {
         var all = UnityEngine.Object.FindObjectsByType<Building>(FindObjectsSortMode.None);
         Building nearest = null;
-        float bestDist = float.MaxValue;
+        float bestScore = float.MaxValue;
         Vector3 origin = handler.transform.position;
+
+        Vector3? targetAreaWorld = GetTargetAreaWorld(handler);
 
         foreach (var b in all)
         {
-            if (b == null) continue;
-            if (b.IsReserved) continue;
-            if (b.IsFinished()) continue;
+            if (b == null || b.IsReserved || b.IsFinished()) continue;
 
-            float d = Vector3.Distance(origin, b.transform.position);
-            if (d < bestDist)
+            float score = Vector3.Distance(origin, b.transform.position);
+            if (targetAreaWorld.HasValue)
+                score += Vector3.Distance(targetAreaWorld.Value, b.transform.position) * 2f;
+
+            if (score < bestScore)
             {
-                bestDist = d;
+                bestScore = score;
                 nearest = b;
             }
         }
+
         return nearest;
+    }
+
+    private Tile FindBuildingTile(JobHandler handler, BuildingData data)
+    {
+        if (VillageState.Instance?.TileGrid == null || data == null) return null;
+
+        Vector3 origin = handler.transform.position;
+        Vector2Int? preferred = handler.PreferredTargetArea;
+
+        Vector2Int centerGrid;
+        if (preferred.HasValue)
+        {
+            centerGrid = preferred.Value;
+        }
+        else
+        {
+            var nearest = VillageState.Instance.TileGrid.FindNearestTile(origin);
+            centerGrid = nearest != null ? nearest.GridPos : Vector2Int.zero;
+        }
+
+        var ct = data.constructionType;
+        var candidates = VillageState.Instance.TileGrid.FindTilesInRadius(
+            centerGrid, searchRadius,
+            tile => tile.Archetype != null
+                    && tile.Archetype.Style == TileStyle.Grass
+                    && !tile.HasBuilding
+                    && !tile.HasResource
+                    && tile.AllowsBuilding(ct)
+                    && !HasResourceNodeOnTile(tile)
+        );
+
+        if (candidates.Count == 0) return null;
+
+        // Score: distance from builder + bias toward tiles near existing buildings
+        Tile best = null;
+        float bestScore = float.MaxValue;
+
+        foreach (var tile in candidates)
+        {
+            float dist = Vector3.Distance(origin, tile.transform.position);
+            float buildingProximity = GetNearestBuildingDistance(tile);
+            // Prefer tiles close to the builder and close to existing buildings
+            float score = dist + buildingProximity * 0.5f;
+
+            if (score < bestScore)
+            {
+                bestScore = score;
+                best = tile;
+            }
+        }
+
+        return best;
+    }
+
+    private float GetNearestBuildingDistance(Tile tile)
+    {
+        var allBuildings = UnityEngine.Object.FindObjectsByType<Building>(FindObjectsSortMode.None);
+        float nearest = float.MaxValue;
+        foreach (var b in allBuildings)
+        {
+            if (b == null) continue;
+            float d = Vector3.Distance(tile.transform.position, b.transform.position);
+            if (d < nearest) nearest = d;
+        }
+        return nearest == float.MaxValue ? 0f : nearest;
+    }
+
+    private bool HasResourceNodeOnTile(Tile tile)
+    {
+        return tile.GetComponentInChildren<ResourceNode>() != null;
+    }
+
+    private Vector3? GetTargetAreaWorld(JobHandler handler)
+    {
+        if (!handler.PreferredTargetArea.HasValue || VillageState.Instance?.TileGrid == null)
+            return null;
+        if (VillageState.Instance.TileGrid.TryGet(handler.PreferredTargetArea.Value, out var tile))
+            return tile.transform.position;
+        return null;
     }
 
     public override void ResetState()
     {
+        _currentTarget?.Unreserve();
         base.ResetState();
         _currentTarget = null;
-        _resourceCheckTimer = 0f;
+        _targetTile = null;
     }
 }

@@ -1,32 +1,77 @@
 using Tiles;
+using TMPro;
 using UnityEngine;
-using UnityEngine.SceneManagement;
 
 namespace UI
 {
     /// <summary>
-    /// Attach to the Load button (or any GameObject) in the Menu scene.
-    /// Wire the Button's OnClick() to this component's LoadMap() method.
-    /// Set mapFilename in the Inspector to choose which saved map to load.
+    /// Populates a TMP_Dropdown with saved .twcmap files from persistentDataPath.
+    /// Wire the Button's OnClick() to LoadMap(). The dropdown selection determines which file to load.
     /// </summary>
     public class MapLoadButton : MonoBehaviour
     {
-        [Tooltip("Name of the scene to load (must match exactly as in Build Settings).")]
-        [SerializeField] string mainSceneName = "MainScene";
+        [Tooltip("Dropdown that lists available saved maps.")]
+        [SerializeField] TMP_Dropdown mapDropdown;
 
-        [Tooltip("Saved map file to load, e.g. map_01.json")]
-        [SerializeField] string mapFilename = "map_01.json";
-
-        public void LoadMap()
+        void Start()
         {
-            if (string.IsNullOrEmpty(mapFilename))
+            RefreshFileList();
+        }
+
+        /// <summary>
+        /// Scans persistentDataPath for .twcmap files and populates the dropdown.
+        /// </summary>
+        public void RefreshFileList()
+        {
+            if (mapDropdown == null)
             {
-                Debug.LogError("[MapLoadButton] mapFilename is not set.");
+                Debug.LogWarning("[MapLoadButton] No dropdown assigned.");
                 return;
             }
 
-            TWCBridge.MapFileToLoad = mapFilename;
-            SceneManager.LoadScene(mainSceneName);
+            mapDropdown.ClearOptions();
+
+            string dir = Application.persistentDataPath;
+            if (!System.IO.Directory.Exists(dir)) return;
+
+            var files = System.IO.Directory.GetFiles(dir, "*.twcmap");
+            if (files.Length == 0)
+            {
+                mapDropdown.AddOptions(new System.Collections.Generic.List<string> { "No saved maps" });
+                mapDropdown.interactable = false;
+                return;
+            }
+
+            mapDropdown.interactable = true;
+            var options = new System.Collections.Generic.List<string>();
+            foreach (var file in files)
+            {
+                options.Add(System.IO.Path.GetFileName(file));
+            }
+
+            options.Sort();
+            mapDropdown.AddOptions(options);
+        }
+
+        public void LoadMap()
+        {
+            if (mapDropdown == null || mapDropdown.options.Count == 0)
+            {
+                Debug.LogError("[MapLoadButton] No map selected.");
+                return;
+            }
+
+            string selected = mapDropdown.options[mapDropdown.value].text;
+            if (selected == "No saved maps") return;
+
+            var bridge = FindObjectOfType<TWCBridge>();
+            if (bridge == null)
+            {
+                Debug.LogError("[MapLoadButton] No TWCBridge found in scene.");
+                return;
+            }
+
+            bridge.LoadFromFile(selected);
         }
     }
 }

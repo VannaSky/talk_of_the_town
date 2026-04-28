@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using Environment.Resources;
 using Tiles;
 using UnityEngine;
 using ollama;
@@ -14,6 +15,8 @@ using ollama;
 /// </summary>
 public class LLMController : MonoBehaviour
 {
+    
+    private const string LogCategory = "LLMController";
     [Header("Model Settings")]
     [SerializeField] private string defaultModel = "gpt-oss:120b-cloud";
     [SerializeField] private int keepAliveSeconds = 600;
@@ -23,9 +26,11 @@ public class LLMController : MonoBehaviour
     [SerializeField] private bool includeThinkingPrompt = true;
 
     [Header("Batch Decision Settings")]
-    [Tooltip("How often to make batch decisions for all villagers")]
-    [SerializeField] private float batchDecisionInterval = 10f;
+    [Tooltip("Fallback interval for batch decisions when no events fire (seconds)")]
+    [SerializeField] private float batchDecisionInterval = 60f;
     [SerializeField] private bool useBatchDecisions = true;
+    [Tooltip("Seconds to wait after an event before triggering a decision (collects multiple events into one call)")]
+    [SerializeField] private float decisionDebounceDelay = 1f;
 
     [Header("Debug")]
     [SerializeField] private bool logPrompts = true;
@@ -41,7 +46,6 @@ public class LLMController : MonoBehaviour
     public static LLMController Instance { get; private set; }
 
     public event Action<string> OnModelLoaded;
-    public event Action<JobDecision> OnDecisionMade;
     public event Action<Dictionary<string, JobDecision>> OnBatchDecisionMade;
     public event Action<string> OnError;
     public event Action<LLMMetrics> OnMetricsRecorded;
@@ -52,11 +56,19 @@ public class LLMController : MonoBehaviour
     public bool IsReady { get; private set; }
     public string CurrentModel => defaultModel;
     public bool UseBatchDecisions => useBatchDecisions;
+    
+    // Local helper wrappers (as you use them now)
+    void LogError(string msg)   => GameLog.LogError(LogCategory, msg, this);
+    void LogWarning(string msg) => GameLog.LogWarning(LogCategory, msg, this);
+    void LogInfo(string msg)    => GameLog.LogInfo(LogCategory, msg, this);
+    void LogVerbose(string msg) => GameLog.LogVerbose(LogCategory, msg, this);
+
 
     // Batch decision state
     private bool _isBatchProcessing;
     private Dictionary<string, JobDecision> _latestBatchDecisions = new ();
     private float _lastBatchDecisionTime;
+    private Coroutine _pendingDecisionCoroutine;
 
     public bool IsBatchProcessing => _isBatchProcessing;
     public float TimeSinceLastBatch => Time.time - _lastBatchDecisionTime;
@@ -98,7 +110,7 @@ public class LLMController : MonoBehaviour
             OnModelLoaded?.Invoke(defaultModel);
 
             if (logPrompts)
-                Debug.Log($"[LLM] Controller ready with model: {defaultModel}");
+                LogInfo($"Controller ready with model: {defaultModel}");
 
             if (useBatchDecisions)
             {
@@ -107,7 +119,7 @@ public class LLMController : MonoBehaviour
         }
         catch (Exception e)
         {
-            Debug.LogError($"[LLM] Initialization failed: {e.Message}");
+            LogError($"Initialization failed: {e.Message}");
             OnError?.Invoke(e.Message);
         }
     }
@@ -122,7 +134,7 @@ public class LLMController : MonoBehaviour
 
     private async Task ApplyModelFromGlobalSettings()
     {
-        var globalSettings = FindObjectOfType<GlobalSettings>();
+        var globalSettings = FindFirstObjectByType<GlobalSettings>();
         if (globalSettings == null || string.IsNullOrEmpty(globalSettings.LLMModel))
             return;
 
@@ -130,29 +142,106 @@ public class LLMController : MonoBehaviour
         {
             defaultModel = globalSettings.LLMModel;
             if (logPrompts)
-                Debug.Log($"[LLM] Applied model from GlobalSettings: {defaultModel}");
+                LogInfo($"Applied model from GlobalSettings: {defaultModel}");
         }
         else
         {
-            Debug.Log($"[LLM] Model '{globalSettings.LLMModel}' not found locally. Attempting to pull...");
+            LogInfo($"Model '{globalSettings.LLMModel}' not found locally. Attempting to pull...");
 
             bool success = await Ollama.Pull(globalSettings.LLMModel, (status, progress) =>
             {
                 if (logPrompts)
-                    Debug.Log($"[LLM] Pull '{globalSettings.LLMModel}': {status} ({progress:F1}%)");
+                    LogInfo($"Pull '{globalSettings.LLMModel}': {status} ({progress:F1}%)");
             });
 
             if (success)
             {
                 await LoadAvailableModels();
                 defaultModel = globalSettings.LLMModel;
-                Debug.Log($"[LLM] Successfully pulled and applied model: {defaultModel}");
+                LogInfo($"Successfully pulled and applied model: {defaultModel}");
             }
             else
             {
-                Debug.LogWarning($"[LLM] Failed to pull model '{globalSettings.LLMModel}'. Using default: {defaultModel}");
+                LogInfo($"Failed to pull model '{globalSettings.LLMModel}'. Using default: {defaultModel}");
             }
         }
+    }
+
+    private void Start()
+    {
+        if (VillageGoals.Instance != null)
+        {
+            VillageGoals.Instance.OnGoalCompleted += OnVillageGoalCompleted;
+            VillageGoals.Instance.OnGoalAdded += OnVillageGoalAdded;
+        }
+
+        if (VillageState.Instance != null)
+        {
+            VillageState.Instance.OnVillagerRegistered += SubscribeToVillager;
+            VillageState.Instance.OnVillagerUnregistered += UnsubscribeFromVillager;
+
+            foreach (var villager in VillageState.Instance.Villagers)
+                SubscribeToVillager(villager);
+        }
+    }
+
+    private void OnDestroy()
+    {
+        if (VillageGoals.Instance != null)
+        {
+            VillageGoals.Instance.OnGoalCompleted -= OnVillageGoalCompleted;
+            VillageGoals.Instance.OnGoalAdded -= OnVillageGoalAdded;
+        }
+
+        if (VillageState.Instance != null)
+        {
+            VillageState.Instance.OnVillagerRegistered -= SubscribeToVillager;
+            VillageState.Instance.OnVillagerUnregistered -= UnsubscribeFromVillager;
+        }
+    }
+
+    private void SubscribeToVillager(Villager villager)
+    {
+        var jh = villager.GetComponent<JobHandler>();
+        if (jh != null) jh.OnBecameIdle += OnVillagerBecameIdle;
+    }
+
+    private void UnsubscribeFromVillager(Villager villager)
+    {
+        var jh = villager.GetComponent<JobHandler>();
+        if (jh != null) jh.OnBecameIdle -= OnVillagerBecameIdle;
+    }
+
+    private void OnVillagerBecameIdle(JobHandler handler)
+    {
+        TriggerDecision($"Villager {handler.gameObject.name} has no work");
+    }
+
+    private void OnVillageGoalCompleted(VillageGoal goal)
+    {
+        TriggerDecision($"Goal completed: {goal.description}");
+    }
+
+    private void OnVillageGoalAdded(VillageGoal goal)
+    {
+        if (goal.priority >= GoalPriority.High)
+            TriggerDecision($"Urgent goal added: {goal.description}");
+    }
+
+    public void TriggerDecision(string reason)
+    {
+        if (!IsReady || _isBatchProcessing) return;
+        if (_pendingDecisionCoroutine != null)
+            StopCoroutine(_pendingDecisionCoroutine);
+        _pendingDecisionCoroutine = StartCoroutine(DebouncedDecision(reason));
+    }
+
+    private IEnumerator DebouncedDecision(string reason)
+    {
+        yield return new WaitForSeconds(decisionDebounceDelay);
+        _pendingDecisionCoroutine = null;
+        if (logPrompts) LogInfo($"Event-triggered decision: {reason}");
+        yield return RequestBatchDecisions();
     }
 
     #region Batch Decision Loop
@@ -163,12 +252,13 @@ public class LLMController : MonoBehaviour
 
         while (true)
         {
+            yield return new WaitForSeconds(batchDecisionInterval);
+
             if (IsReady && VillageState.Instance != null && VillageState.Instance.Villagers.Count > 0)
             {
+                if (logPrompts) LogInfo($"Fallback interval triggered batch decision.");
                 yield return RequestBatchDecisions();
             }
-
-            yield return new WaitForSeconds(batchDecisionInterval);
         }
     }
 
@@ -207,7 +297,7 @@ public class LLMController : MonoBehaviour
         OnBatchDecisionMade?.Invoke(_latestBatchDecisions);
 
         if (logPrompts)
-            Debug.Log($"[LLM] Batch decisions made for {_latestBatchDecisions.Count} villagers");
+            LogInfo($"Batch decisions made for {_latestBatchDecisions.Count} villagers");
     }
 
     private List<string> GetAvailableJobNames()
@@ -235,38 +325,10 @@ public class LLMController : MonoBehaviour
 
     private string BuildBatchSystemPrompt(List<string> availableJobs, int villagerCount)
     {
-        string jobList = string.Join(", ", availableJobs);
-
-        string jsonExample = @"{
-    ""assignments"": [
-        { ""villager"": ""<NAME>"", ""job"": ""<JOB>"", ""targetX"": <X>, ""targetY"": <Y>, ""reason"": ""<why>"" },
-        { ""villager"": ""<NAME>"", ""job"": ""<JOB>"", ""targetX"": <X>, ""targetY"": <Y>, ""reason"": ""<why>"" }
-    ]
-}";
-
-        return $@"You are an AI coordinator for a village simulation. You must assign jobs to ALL {villagerCount} villagers at once, ensuring they work efficiently and don't cluster together.
-
-AVAILABLE JOBS: {jobList}, IDLE
-
-JOB DESCRIPTIONS:
-- Lumberjack: Chops trees for wood. Assign to TREE locations.
-- Miner: Mines stone deposits. Assign to STONE locations.
-- Builder: Constructs buildings. Needs wood+stone in inventory.
-- Farmer: Works at farms to produce food. Needs seeds.
-- SeedGatherer: Collects seeds from seed nodes (pumpkins, wheat, etc.)
-- IDLE: Rest.
-
-CRITICAL COORDINATION RULES:
-1. SPREAD VILLAGERS OUT: Each villager must go to a DIFFERENT location!
-2. NEVER assign two villagers to the same coordinates!
-3. BALANCE JOBS: Don't assign everyone to the same job unless necessary.
-4. MATCH RESOURCES TO NEEDS: Check inventory, gather what's scarce.
-5. USE DIFFERENT RESOURCE NODES: If both need wood, send them to different tree clusters!
-
-RESPONSE FORMAT (JSON only, assign ALL villagers):
-{jsonExample}
-
-Respond ONLY with valid JSON containing assignments for ALL {villagerCount} villagers.";
+        bool caveman = GlobalSettings.Instance != null && GlobalSettings.Instance.UseCavemanPrompt;
+        return caveman
+            ? LLMPromptCaveman.BuildBatchSystemPrompt(availableJobs, villagerCount)
+            : LLMPromptNormal.BuildBatchSystemPrompt(availableJobs, villagerCount);
     }
 
     private string BuildBatchContext(IReadOnlyList<Villager> villagers, List<string> availableJobs)
@@ -282,11 +344,16 @@ Respond ONLY with valid JSON containing assignments for ALL {villagerCount} vill
 
         if (VillageState.Instance != null)
         {
+            int wood = VillageState.Instance.Wood;
+            int stone = VillageState.Instance.Stone;
+            int seeds = VillageState.Instance.Seeds;
+            int food = VillageState.Instance.Food;
+
             sb.AppendLine("=== VILLAGE INVENTORY ===");
-            sb.AppendLine($"Wood: {VillageState.Instance.Wood}");
-            sb.AppendLine($"Stone: {VillageState.Instance.Stone}");
-            sb.AppendLine($"Seeds: {VillageState.Instance.Seeds}");
-            sb.AppendLine($"Food: {VillageState.Instance.Food}");
+            sb.AppendLine($"Wood: {wood}{(wood > 50 ? " [SURPLUS - no more Lumberjacks needed]" : wood < 10 ? " [LOW - need Lumberjack]" : "")}");
+            sb.AppendLine($"Stone: {stone}{(stone > 40 ? " [SURPLUS - no more Miners needed]" : stone < 10 ? " [LOW - need Miner]" : "")}");
+            sb.AppendLine($"Seeds: {seeds}{(seeds >= 10 ? $" [SUFFICIENT - assign {Mathf.Max(1, seeds / 20)} Farmer(s) to use these seeds!]" : " [LOW - need SeedGatherer]")}");
+            sb.AppendLine($"Food: {food}{(food < 10 ? " [LOW - farming urgently needed!]" : "")}");
             sb.AppendLine();
         }
 
@@ -332,6 +399,12 @@ Respond ONLY with valid JSON containing assignments for ALL {villagerCount} vill
             sb.AppendLine(FormatLocationsSimple(resourceLocations.farmLocations));
         }
 
+        if (resourceLocations.cropLocations.Count > 0)
+        {
+            sb.Append("MATURE CROPS: ");
+            sb.AppendLine(FormatLocationsSimple(resourceLocations.cropLocations));
+        }
+
         return sb.ToString();
     }
 
@@ -375,7 +448,7 @@ Respond ONLY with valid JSON containing assignments for ALL {villagerCount} vill
             fullPrompt += "\n/think";
 
         if (logPrompts)
-            Debug.Log($"[LLM] Batch Prompt:\n{fullPrompt}");
+            LogInfo($"Batch Prompt:\n{fullPrompt}");
 
         // Start metrics tracking
         var metrics = new LLMMetrics
@@ -409,7 +482,7 @@ Respond ONLY with valid JSON containing assignments for ALL {villagerCount} vill
             metrics.loadDuration = chatResponse.LoadSeconds;
 
             if (logResponses)
-                Debug.Log($"[LLM] Batch Response:\n{chatResponse.content}");
+                LogInfo($"Batch Response:\n{chatResponse.content}");
 
             results = ParseBatchDecisions(chatResponse.content, villagers);
             
@@ -423,7 +496,7 @@ Respond ONLY with valid JSON containing assignments for ALL {villagerCount} vill
             metrics.responseTime = (DateTime.Now - startTime).TotalSeconds;
             
             if (logErrors)
-                Debug.LogError($"[LLM] Batch Error: {e.Message}");
+                LogError($"Batch Error: {e.Message}");
 
             OnError?.Invoke(e.Message);
 
@@ -451,7 +524,7 @@ Respond ONLY with valid JSON containing assignments for ALL {villagerCount} vill
             var match = Regex.Match(response, @"\{[\s\S]*\}");
             if (!match.Success)
             {
-                Debug.LogWarning("[LLM] No JSON found in batch response");
+                LogWarning("No JSON found in batch response");
                 foreach (var v in villagers)
                     if (v != null) results[v.villagerName] = JobDecision.Idle("No JSON");
                 return results;
@@ -466,6 +539,7 @@ Respond ONLY with valid JSON containing assignments for ALL {villagerCount} vill
                     var decision = new JobDecision
                     {
                         jobName = assignment.job ?? "IDLE",
+                        buildingType = assignment.buildingType ?? "",
                         reason = assignment.reason ?? "",
                         success = true,
                         hasTargetArea = assignment.targetX != 0 || assignment.targetY != 0,
@@ -476,7 +550,7 @@ Respond ONLY with valid JSON containing assignments for ALL {villagerCount} vill
                     results[assignment.villager] = decision;
 
                     if (logPrompts)
-                        Debug.Log($"[LLM] Parsed: {assignment.villager} -> {decision.jobName} at ({decision.targetX},{decision.targetY})");
+                        LogInfo($"Parsed: {assignment.villager} -> {decision.jobName} at ({decision.targetX},{decision.targetY})");
                 }
             }
 
@@ -485,13 +559,50 @@ Respond ONLY with valid JSON containing assignments for ALL {villagerCount} vill
                 if (v != null && !results.ContainsKey(v.villagerName))
                 {
                     results[v.villagerName] = JobDecision.Idle("Not in response");
-                    Debug.LogWarning($"[LLM] Villager {v.villagerName} not in batch response");
+                    LogWarning($"Villager {v.villagerName} not in batch response");
                 }
+            }
+
+            if (raw.goals != null && raw.goals.Count > 0 && VillageGoals.Instance != null)
+            {
+                var parsedGoals = new List<VillageGoal>();
+                foreach (var g in raw.goals)
+                {
+                    if (!Enum.TryParse<GoalType>(g.type, true, out var goalType)) continue;
+
+                    var goal = new VillageGoal
+                    {
+                        type = goalType,
+                        targetAmount = g.amount,
+                        description = !string.IsNullOrEmpty(g.description) ? g.description : g.type,
+                        priority = Enum.TryParse<GoalPriority>(g.priority, true, out var prio) ? prio : GoalPriority.Normal
+                    };
+
+                    if (goalType == GoalType.GatherResource)
+                    {
+                        // Normalize common LLM variants (e.g. "Seeds" → "Seed")
+                        var resourceStr = g.resource?.TrimEnd('s') is "Seed" or "Wood" or "Stone" or "Food" or "Iron"
+                            ? g.resource.TrimEnd('s')
+                            : g.resource;
+
+                        if (!Enum.TryParse<ResourceType>(resourceStr, true, out var rt) || rt == ResourceType.None)
+                        {
+                            LogWarning($"Could not parse resource type '{g.resource}' for goal '{g.description}' — skipping");
+                            continue;
+                        }
+                        goal.targetResource = rt;
+                    }
+
+                    LogInfo($"Goal parsed: {goal.description} | type={goal.type} resource={goal.targetResource} amount={goal.targetAmount} priority={goal.priority}");
+                    parsedGoals.Add(goal);
+                }
+
+                VillageGoals.Instance.SetGoalsFromLLM(parsedGoals);
             }
         }
         catch (Exception e)
         {
-            Debug.LogWarning($"[LLM] Batch parse error: {e.Message}");
+            LogWarning($"Batch parse error: {e.Message}");
             foreach (var v in villagers)
                 if (v != null) results[v.villagerName] = JobDecision.Idle($"Parse error: {e.Message}");
         }
@@ -544,7 +655,7 @@ Respond ONLY with valid JSON containing assignments for ALL {villagerCount} vill
             fullPrompt += "\n/think";
 
         if (logPrompts)
-            Debug.Log($"[LLM] Single Prompt:\n{fullPrompt}");
+            LogInfo($"Single Prompt:\n{fullPrompt}");
 
         var metrics = new LLMMetrics
         {
@@ -575,7 +686,7 @@ Respond ONLY with valid JSON containing assignments for ALL {villagerCount} vill
             metrics.loadDuration = chatResponse.LoadSeconds;
 
             if (logResponses)
-                Debug.Log($"[LLM] Response:\n{chatResponse.content}");
+                LogInfo($"Response:\n{chatResponse.content}");
 
             var decision = ParseSingleDecision(chatResponse.content);
             
@@ -595,7 +706,7 @@ Respond ONLY with valid JSON containing assignments for ALL {villagerCount} vill
             RecordMetrics(metrics);
             
             if (logErrors)
-                Debug.LogError($"[LLM] Error: {e.Message}");
+                LogError($"Error: {e.Message}");
 
             return JobDecision.Idle($"Error: {e.Message}");
         }
@@ -603,13 +714,10 @@ Respond ONLY with valid JSON containing assignments for ALL {villagerCount} vill
 
     private string BuildSingleSystemPrompt(List<string> availableJobs)
     {
-        string jobList = string.Join(", ", availableJobs);
-        string jsonExample = @"{ ""job"": ""<JOB>"", ""targetX"": <X>, ""targetY"": <Y>, ""reason"": ""<why>"" }";
-
-        return $@"You control a villager. Pick a job and location.
-JOBS: {jobList}, IDLE
-Response format: {jsonExample}
-JSON only.";
+        bool caveman = GlobalSettings.Instance != null && GlobalSettings.Instance.UseCavemanPrompt;
+        return caveman
+            ? LLMPromptCaveman.BuildSingleSystemPrompt(availableJobs)
+            : LLMPromptNormal.BuildSingleSystemPrompt(availableJobs);
     }
 
     private string BuildSingleContext(Villager targetVillager)
@@ -639,6 +747,10 @@ JSON only.";
             sb.AppendLine($"Trees: {FormatLocationsSimple(resources.treeLocations)}");
         if (resources.stoneLocations.Count > 0)
             sb.AppendLine($"Stone: {FormatLocationsSimple(resources.stoneLocations)}");
+        if (resources.seedLocations.Count > 0)
+            sb.AppendLine($"Seeds: {FormatLocationsSimple(resources.seedLocations)}");
+        if (resources.cropLocations.Count > 0)
+            sb.AppendLine($"Mature Crops: {FormatLocationsSimple(resources.cropLocations)}");
 
         return sb.ToString();
     }
@@ -704,7 +816,7 @@ JSON only.";
 
         if (logTokenUsage)
         {
-            Debug.Log($"[LLM Metrics] Type={metrics.requestType}, " +
+            LogInfo($"Metrics: Type={metrics.requestType}, " +
                      $"Tokens={metrics.totalTokens} (prompt={metrics.promptEvalCount}, response={metrics.evalCount}), " +
                      $"Time={metrics.responseTime:F2}s (eval={metrics.evalDuration:F2}s), Success={metrics.success}");
         }
@@ -729,11 +841,11 @@ JSON only.";
             string path = System.IO.Path.Combine(Application.persistentDataPath, metricsFilePath);
             System.IO.File.WriteAllText(path, json);
 
-            Debug.Log($"[LLM] Metrics exported to: {path}");
+            LogInfo($"Metrics exported to: {path}");
         }
         catch (Exception e)
         {
-            Debug.LogError($"[LLM] Failed to export metrics: {e.Message}");
+            LogError($"Failed to export metrics: {e.Message}");
         }
     }
 
@@ -741,7 +853,7 @@ JSON only.";
     {
         _metricsHistory.Clear();
         _sessionStats = new LLMSessionStats();
-        Debug.Log("[LLM] Metrics history cleared");
+        LogInfo("Metrics history cleared");
     }
 
     public string GetMetricsSummary()
@@ -796,6 +908,10 @@ Response Times:
                 case ResourceNode.ResourceType.Seed:
                     result.seedLocations.Add(pos);
                     break;
+                case ResourceNode.ResourceType.Crop:
+                    if (node.IsMature)
+                        result.cropLocations.Add(pos);
+                    break;
             }
         }
 
@@ -829,7 +945,7 @@ Response Times:
     public void ResetChat()
     {
         Ollama.InitChat();
-        if (logPrompts) Debug.Log("[LLM] Chat reset");
+        if (logPrompts) LogInfo("Chat reset");
     }
 
     public void SetModel(string modelName)
@@ -866,7 +982,7 @@ Response Times:
     private void LogResources()
     {
         var resources = GetAllResourceLocations();
-        Debug.Log($"Trees: {resources.treeLocations.Count}, Stone: {resources.stoneLocations.Count}");
+        Debug.Log($"Trees: {resources.treeLocations.Count}, Stone: {resources.stoneLocations.Count}, Crops: {resources.cropLocations.Count}");
     }
 
     [ContextMenu("Show Metrics Summary")]
@@ -898,6 +1014,7 @@ Response Times:
 public class RawBatchDecision
 {
     public List<RawSingleAssignment> assignments;
+    public List<RawGoalDecision> goals;
 }
 
 [Serializable]
@@ -905,15 +1022,27 @@ public class RawSingleAssignment
 {
     public string villager;
     public string job;
+    public string buildingType;
     public int targetX;
     public int targetY;
     public string reason;
 }
 
 [Serializable]
+public class RawGoalDecision
+{
+    public string type;
+    public string resource;
+    public int amount;
+    public string priority;
+    public string description;
+}
+
+[Serializable]
 public class JobDecision
 {
     public string jobName;
+    public string buildingType;
     public string reason;
     public bool success;
     public bool hasTargetArea;
@@ -1004,6 +1133,7 @@ public class ResourceLocations
     public List<Vector2Int> seedLocations = new List<Vector2Int>();
     public List<Vector2Int> buildingLocations = new List<Vector2Int>();
     public List<Vector2Int> farmLocations = new List<Vector2Int>();
+    public List<Vector2Int> cropLocations = new List<Vector2Int>();
 }
 
 #endregion

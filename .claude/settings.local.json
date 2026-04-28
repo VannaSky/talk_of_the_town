@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:doorfortyfour.github.io)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebSearch",
+      "WebFetch(domain:giantgrey.gitbook.io)",
+      "Bash(xargs grep:*)"
+    ]
+  }
+}

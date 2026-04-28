@@ -36,7 +36,7 @@ namespace Tiles
         /// Main entry point: spawns all initial village buildings.
         /// Call this after tile generation and navmesh baking are complete.
         /// </summary>
-        public bool  SpawnInitialVillage()
+        public bool SpawnInitialVillage(bool clearArea = true)
         {
             if (tileGrid == null)
             {
@@ -46,7 +46,7 @@ namespace Tiles
 
             LogInfo($"Using tileGrid={tileGrid.name} (id {tileGrid.GetInstanceID()})");
             LogInfo("Starting initial village placement...");
-    
+
             // 1. Find a suitable center location (not water, not edge)
             Vector2Int? centerPos = FindVillageCenter();
             if (!centerPos.HasValue)
@@ -54,11 +54,11 @@ namespace Tiles
                 LogError("Failed to find suitable center for village!");
                 return false; // Signal failure
             }
-    
+
             LogInfo($"Village center chosen at {centerPos.Value}");
-            
-            // 2. Clear the village area (remove resources, make all tiles grass)
-            List<Vector2Int> clearedTiles = ClearVillageArea(centerPos.Value);
+
+            // 2. Clear the village area (remove resources, optionally convert tiles to grass)
+            List<Vector2Int> clearedTiles = ClearVillageArea(centerPos.Value, clearArea);
             LogInfo($"Cleared {clearedTiles.Count} tiles for village");
             
             if (clearedTiles.Count < 3)
@@ -216,75 +216,76 @@ namespace Tiles
         }
 
         /// <summary>
-        /// Clears a rectangular area around the center, removing resources and converting to grass.
+        /// Clears a rectangular area around the center, removing resources and optionally converting tiles to grass.
+        /// Pass clearStyles=false when loading a saved map to preserve tile styles.
         /// Returns list of cleared tile positions.
         /// </summary>
-        private List<Vector2Int> ClearVillageArea(Vector2Int center)
-{
-    List<Vector2Int> clearedTiles = new List<Vector2Int>();
-    int halfSize = villageAreaSize / 2;
-    
-    LogInfo($"Clearing {villageAreaSize}x{villageAreaSize} area centered at {center}");
-    
-    int objectsDestroyed = 0;
-    
-    // Process tiles in the area
-    for (int dx = -halfSize; dx <= halfSize; dx++)
-    {
-        for (int dy = -halfSize; dy <= halfSize; dy++)
+        private List<Vector2Int> ClearVillageArea(Vector2Int center, bool clearStyles = true)
         {
-            Vector2Int pos = center + new Vector2Int(dx, dy);
-            
-            if (!tileGrid.TryGet(pos, out Tile tile))
-                continue;
-            
-            // Skip water and coast tiles
-            if (tile.Archetype?.Style == TileStyle.Water || tile.Archetype?.Style == TileStyle.Coast)
-                continue;
-            
-            // Delete only resource groups (Trees, Stones, Seeds)
-            string[] resourceGroups = { "Trees", "Stones", "Seeds", "Resources" };
-            
-            foreach (var groupName in resourceGroups)
+            List<Vector2Int> clearedTiles = new List<Vector2Int>();
+            int halfSize = villageAreaSize / 2;
+
+            LogInfo($"Clearing {villageAreaSize}x{villageAreaSize} area centered at {center}");
+
+            int objectsDestroyed = 0;
+
+            // Process tiles in the area
+            for (int dx = -halfSize; dx <= halfSize; dx++)
             {
-                Transform groupTransform = tile.transform.Find(groupName);
-                if (groupTransform != null)
+                for (int dy = -halfSize; dy <= halfSize; dy++)
                 {
-                    int childCount = groupTransform.childCount;
-                    if (childCount > 0 && objectsDestroyed < 5)
+                    Vector2Int pos = center + new Vector2Int(dx, dy);
+
+                    if (!tileGrid.TryGet(pos, out Tile tile))
+                        continue;
+
+                    // Skip water and coast tiles
+                    if (tile.Archetype?.Style == TileStyle.Water || tile.Archetype?.Style == TileStyle.Coast)
+                        continue;
+
+                    // Delete only resource groups (Trees, Stones, Seeds)
+                    string[] resourceGroups = { "Trees", "Stones", "Seeds", "Resources" };
+
+                    foreach (var groupName in resourceGroups)
                     {
-                        LogInfo($"Destroying resource group '{groupName}' with {childCount} objects on tile {pos}");
+                        Transform groupTransform = tile.transform.Find(groupName);
+                        if (groupTransform != null)
+                        {
+                            int childCount = groupTransform.childCount;
+                            if (childCount > 0 && objectsDestroyed < 5)
+                            {
+                                LogInfo($"Destroying resource group '{groupName}' with {childCount} objects on tile {pos}");
+                            }
+                            objectsDestroyed += childCount;
+                            Destroy(groupTransform.gameObject);
+                        }
                     }
-                    objectsDestroyed += childCount;
-                    Destroy(groupTransform.gameObject);
+
+                    // Clear the tile's resource tracking
+                    tile.ClearResources();
+
+                    // Clear the tile's resource visual reference (legacy)
+                    if (tile.ResourceVisual != null)
+                    {
+                        tile.SetResourceVisual(null);
+                    }
+
+                    if (clearStyles)
+                        tile.SetStyle(TileStyle.Grass);
+
+                    // Clear resource data (legacy - now handled by ClearResources above)
+                    if (tile.HasResource)
+                    {
+                        tile.TrySetResource(null);
+                    }
+
+                    clearedTiles.Add(pos);
                 }
             }
-            
-            // Clear the tile's resource tracking
-            tile.ClearResources();
-            
-            // Clear the tile's resource visual reference (legacy)
-            if (tile.ResourceVisual != null)
-            {
-                tile.SetResourceVisual(null);
-            }
-            
-            // Set style to grass
-            tile.SetStyle(TileStyle.Grass);
-            
-            // Clear resource data (legacy - now handled by ClearResources above)
-            if (tile.HasResource)
-            {
-                tile.TrySetResource(null);
-            }
-            
-            clearedTiles.Add(pos);
+
+            LogInfo($"Cleared {clearedTiles.Count} tiles and destroyed {objectsDestroyed} objects");
+            return clearedTiles;
         }
-    }
-    
-    LogInfo($"Cleared {clearedTiles.Count} tiles and destroyed {objectsDestroyed} objects");
-    return clearedTiles;
-}
         
         private void PlaceBuilding(GameObject prefab, Vector2Int gridPos, ConstructionType constructionType, string buildingName)
         {
