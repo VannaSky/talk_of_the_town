@@ -12,6 +12,8 @@ public class VillageState : MonoBehaviour
 {
     public static VillageState Instance { get; private set; }
     
+    private const string LogCategory = "VillageState";
+    
     [Header("References")]
     [SerializeField] private TileGrid tileGrid;
     
@@ -33,6 +35,12 @@ public class VillageState : MonoBehaviour
     [SerializeField] private GameObject villagerPrefab;
     [SerializeField] private List<string> villagerNamePool = new List<string>();
     private int _villagerSpawnCount = 0;
+    
+    // Local helper wrappers (as you use them now)
+    void LogError(string msg)   => GameLog.LogError(LogCategory, msg, this);
+    void LogWarning(string msg) => GameLog.LogWarning(LogCategory, msg, this);
+    void LogInfo(string msg)    => GameLog.LogInfo(LogCategory, msg, this);
+    void LogVerbose(string msg) => GameLog.LogVerbose(LogCategory, msg, this);
 
     [Header("Registered Villagers")]
     [SerializeField] private List<Villager> villagers = new List<Villager>();
@@ -79,9 +87,9 @@ public class VillageState : MonoBehaviour
         {
             tileGrid = FindFirstObjectByType<TileGrid>();
             if (tileGrid != null)
-                Debug.Log($"[VillageState] Found TileGrid: {tileGrid.name}");
+                LogInfo($"[VillageState] Found TileGrid: {tileGrid.name}");
             else
-                Debug.LogWarning("[VillageState] No TileGrid found!");
+                LogWarning("[VillageState] No TileGrid found!");
         }
         
         // Auto-register existing villagers
@@ -102,7 +110,7 @@ public class VillageState : MonoBehaviour
     {
         Time.timeScale = gameSpeed;
         Time.fixedDeltaTime = 0.02f * gameSpeed;
-        Debug.Log($"[VillageState] Game speed: {gameSpeed}x");
+        LogInfo($"[VillageState] Game speed: {gameSpeed}x");
     }
 
 #if UNITY_EDITOR
@@ -124,7 +132,7 @@ public class VillageState : MonoBehaviour
         {
             villagers.Add(villager);
             OnVillagerRegistered?.Invoke(villager);
-            Debug.Log($"[VillageState] Registered villager: {villager.villagerName}");
+            LogInfo($"Registered villager: {villager.villagerName}");
         }
     }
     
@@ -133,7 +141,7 @@ public class VillageState : MonoBehaviour
         if (villager != null && villagers.Remove(villager))
         {
             OnVillagerUnregistered?.Invoke(villager);
-            Debug.Log($"[VillageState] Unregistered villager: {villager.villagerName}");
+            LogInfo($"Unregistered villager: {villager.villagerName}");
         }
     }
     
@@ -148,7 +156,7 @@ public class VillageState : MonoBehaviour
         int current = GetResource(type);
         if (current >= inventoryCapacity)
         {
-            Debug.Log($"[VillageState] {type} storage full ({current}/{inventoryCapacity})");
+            LogInfo($"{type} storage full ({current}/{inventoryCapacity})");
             return;
         }
         amount = Mathf.Min(amount, inventoryCapacity - current);
@@ -166,7 +174,7 @@ public class VillageState : MonoBehaviour
         
         int newValue = GetResource(type);
         OnResourceChanged?.Invoke(type, oldValue, newValue);
-        Debug.Log($"[VillageState] +{amount} {type} (now {newValue})");
+        LogInfo($"+{amount} {type} (now {newValue})");
     }
     
     public bool TrySpendResource(ResourceType type, int amount)
@@ -187,7 +195,7 @@ public class VillageState : MonoBehaviour
         
         int newValue = GetResource(type);
         OnResourceChanged?.Invoke(type, oldValue, newValue);
-        Debug.Log($"[VillageState] -{amount} {type} (now {newValue})");
+        LogInfo($"-{amount} {type} (now {newValue})");
         return true;
     }
     
@@ -219,7 +227,7 @@ public class VillageState : MonoBehaviour
                 break;
             case BuildingBonusType.InventoryCapacity:
                 inventoryCapacity += bonus.value;
-                Debug.Log($"[VillageState] Inventory capacity increased by {bonus.value} (now {inventoryCapacity})");
+                LogInfo($"Inventory capacity increased by {bonus.value} (now {inventoryCapacity})");
                 break;
         }
     }
@@ -228,7 +236,7 @@ public class VillageState : MonoBehaviour
     {
         if (villagerPrefab == null)
         {
-            Debug.LogWarning("[VillageState] Cannot spawn villager: villagerPrefab is not assigned.");
+            LogWarning("Cannot spawn villager: villagerPrefab is not assigned.");
             populationCap++;
             return;
         }
@@ -245,7 +253,7 @@ public class VillageState : MonoBehaviour
         }
 
         populationCap++;
-        Debug.Log($"[VillageState] Spawned new villager '{go.name}' (population cap now {populationCap})");
+        LogInfo($"Spawned new villager '{go.name}' (population cap now {populationCap})");
     }
 
     private string GetNextVillagerName()
@@ -391,7 +399,7 @@ public class VillageState : MonoBehaviour
     [ContextMenu("Log Village State")]
     private void LogVillageState()
     {
-        Debug.Log(GetVillageContextReadable());
+        LogInfo(GetVillageContextReadable());
     }
     
     [ContextMenu("Add 10 Wood (Test)")]

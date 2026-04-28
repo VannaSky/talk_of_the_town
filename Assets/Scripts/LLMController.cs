@@ -15,6 +15,8 @@ using ollama;
 /// </summary>
 public class LLMController : MonoBehaviour
 {
+    
+    private const string LogCategory = "LLMController";
     [Header("Model Settings")]
     [SerializeField] private string defaultModel = "gpt-oss:120b-cloud";
     [SerializeField] private int keepAliveSeconds = 600;
@@ -54,6 +56,13 @@ public class LLMController : MonoBehaviour
     public bool IsReady { get; private set; }
     public string CurrentModel => defaultModel;
     public bool UseBatchDecisions => useBatchDecisions;
+    
+    // Local helper wrappers (as you use them now)
+    void LogError(string msg)   => GameLog.LogError(LogCategory, msg, this);
+    void LogWarning(string msg) => GameLog.LogWarning(LogCategory, msg, this);
+    void LogInfo(string msg)    => GameLog.LogInfo(LogCategory, msg, this);
+    void LogVerbose(string msg) => GameLog.LogVerbose(LogCategory, msg, this);
+
 
     // Batch decision state
     private bool _isBatchProcessing;
@@ -101,7 +110,7 @@ public class LLMController : MonoBehaviour
             OnModelLoaded?.Invoke(defaultModel);
 
             if (logPrompts)
-                Debug.Log($"[LLM] Controller ready with model: {defaultModel}");
+                LogInfo($"Controller ready with model: {defaultModel}");
 
             if (useBatchDecisions)
             {
@@ -110,7 +119,7 @@ public class LLMController : MonoBehaviour
         }
         catch (Exception e)
         {
-            Debug.LogError($"[LLM] Initialization failed: {e.Message}");
+            LogError($"Initialization failed: {e.Message}");
             OnError?.Invoke(e.Message);
         }
     }
@@ -133,27 +142,27 @@ public class LLMController : MonoBehaviour
         {
             defaultModel = globalSettings.LLMModel;
             if (logPrompts)
-                Debug.Log($"[LLM] Applied model from GlobalSettings: {defaultModel}");
+                LogInfo($"Applied model from GlobalSettings: {defaultModel}");
         }
         else
         {
-            Debug.Log($"[LLM] Model '{globalSettings.LLMModel}' not found locally. Attempting to pull...");
+            LogInfo($"Model '{globalSettings.LLMModel}' not found locally. Attempting to pull...");
 
             bool success = await Ollama.Pull(globalSettings.LLMModel, (status, progress) =>
             {
                 if (logPrompts)
-                    Debug.Log($"[LLM] Pull '{globalSettings.LLMModel}': {status} ({progress:F1}%)");
+                    LogInfo($"Pull '{globalSettings.LLMModel}': {status} ({progress:F1}%)");
             });
 
             if (success)
             {
                 await LoadAvailableModels();
                 defaultModel = globalSettings.LLMModel;
-                Debug.Log($"[LLM] Successfully pulled and applied model: {defaultModel}");
+                LogInfo($"Successfully pulled and applied model: {defaultModel}");
             }
             else
             {
-                Debug.LogWarning($"[LLM] Failed to pull model '{globalSettings.LLMModel}'. Using default: {defaultModel}");
+                LogInfo($"Failed to pull model '{globalSettings.LLMModel}'. Using default: {defaultModel}");
             }
         }
     }
@@ -231,7 +240,7 @@ public class LLMController : MonoBehaviour
     {
         yield return new WaitForSeconds(decisionDebounceDelay);
         _pendingDecisionCoroutine = null;
-        if (logPrompts) Debug.Log($"[LLM] Event-triggered decision: {reason}");
+        if (logPrompts) LogInfo($"Event-triggered decision: {reason}");
         yield return RequestBatchDecisions();
     }
 
@@ -247,7 +256,7 @@ public class LLMController : MonoBehaviour
 
             if (IsReady && VillageState.Instance != null && VillageState.Instance.Villagers.Count > 0)
             {
-                if (logPrompts) Debug.Log("[LLM] Fallback interval triggered batch decision.");
+                if (logPrompts) LogInfo($"Fallback interval triggered batch decision.");
                 yield return RequestBatchDecisions();
             }
         }
@@ -288,7 +297,7 @@ public class LLMController : MonoBehaviour
         OnBatchDecisionMade?.Invoke(_latestBatchDecisions);
 
         if (logPrompts)
-            Debug.Log($"[LLM] Batch decisions made for {_latestBatchDecisions.Count} villagers");
+            LogInfo($"Batch decisions made for {_latestBatchDecisions.Count} villagers");
     }
 
     private List<string> GetAvailableJobNames()
@@ -439,7 +448,7 @@ public class LLMController : MonoBehaviour
             fullPrompt += "\n/think";
 
         if (logPrompts)
-            Debug.Log($"[LLM] Batch Prompt:\n{fullPrompt}");
+            LogInfo($"Batch Prompt:\n{fullPrompt}");
 
         // Start metrics tracking
         var metrics = new LLMMetrics
@@ -473,7 +482,7 @@ public class LLMController : MonoBehaviour
             metrics.loadDuration = chatResponse.LoadSeconds;
 
             if (logResponses)
-                Debug.Log($"[LLM] Batch Response:\n{chatResponse.content}");
+                LogInfo($"Batch Response:\n{chatResponse.content}");
 
             results = ParseBatchDecisions(chatResponse.content, villagers);
             
@@ -487,7 +496,7 @@ public class LLMController : MonoBehaviour
             metrics.responseTime = (DateTime.Now - startTime).TotalSeconds;
             
             if (logErrors)
-                Debug.LogError($"[LLM] Batch Error: {e.Message}");
+                LogError($"Batch Error: {e.Message}");
 
             OnError?.Invoke(e.Message);
 
@@ -515,7 +524,7 @@ public class LLMController : MonoBehaviour
             var match = Regex.Match(response, @"\{[\s\S]*\}");
             if (!match.Success)
             {
-                Debug.LogWarning("[LLM] No JSON found in batch response");
+                LogWarning("No JSON found in batch response");
                 foreach (var v in villagers)
                     if (v != null) results[v.villagerName] = JobDecision.Idle("No JSON");
                 return results;
@@ -541,7 +550,7 @@ public class LLMController : MonoBehaviour
                     results[assignment.villager] = decision;
 
                     if (logPrompts)
-                        Debug.Log($"[LLM] Parsed: {assignment.villager} -> {decision.jobName} at ({decision.targetX},{decision.targetY})");
+                        LogInfo($"Parsed: {assignment.villager} -> {decision.jobName} at ({decision.targetX},{decision.targetY})");
                 }
             }
 
@@ -550,7 +559,7 @@ public class LLMController : MonoBehaviour
                 if (v != null && !results.ContainsKey(v.villagerName))
                 {
                     results[v.villagerName] = JobDecision.Idle("Not in response");
-                    Debug.LogWarning($"[LLM] Villager {v.villagerName} not in batch response");
+                    LogWarning($"Villager {v.villagerName} not in batch response");
                 }
             }
 
@@ -578,13 +587,13 @@ public class LLMController : MonoBehaviour
 
                         if (!Enum.TryParse<ResourceType>(resourceStr, true, out var rt) || rt == ResourceType.None)
                         {
-                            Debug.LogWarning($"[LLM] Could not parse resource type '{g.resource}' for goal '{g.description}' — skipping");
+                            LogWarning($"Could not parse resource type '{g.resource}' for goal '{g.description}' — skipping");
                             continue;
                         }
                         goal.targetResource = rt;
                     }
 
-                    Debug.Log($"[LLM] Goal parsed: {goal.description} | type={goal.type} resource={goal.targetResource} amount={goal.targetAmount} priority={goal.priority}");
+                    LogInfo($"Goal parsed: {goal.description} | type={goal.type} resource={goal.targetResource} amount={goal.targetAmount} priority={goal.priority}");
                     parsedGoals.Add(goal);
                 }
 
@@ -593,7 +602,7 @@ public class LLMController : MonoBehaviour
         }
         catch (Exception e)
         {
-            Debug.LogWarning($"[LLM] Batch parse error: {e.Message}");
+            LogWarning($"Batch parse error: {e.Message}");
             foreach (var v in villagers)
                 if (v != null) results[v.villagerName] = JobDecision.Idle($"Parse error: {e.Message}");
         }
@@ -646,7 +655,7 @@ public class LLMController : MonoBehaviour
             fullPrompt += "\n/think";
 
         if (logPrompts)
-            Debug.Log($"[LLM] Single Prompt:\n{fullPrompt}");
+            LogInfo($"Single Prompt:\n{fullPrompt}");
 
         var metrics = new LLMMetrics
         {
@@ -677,7 +686,7 @@ public class LLMController : MonoBehaviour
             metrics.loadDuration = chatResponse.LoadSeconds;
 
             if (logResponses)
-                Debug.Log($"[LLM] Response:\n{chatResponse.content}");
+                LogInfo($"Response:\n{chatResponse.content}");
 
             var decision = ParseSingleDecision(chatResponse.content);
             
@@ -697,7 +706,7 @@ public class LLMController : MonoBehaviour
             RecordMetrics(metrics);
             
             if (logErrors)
-                Debug.LogError($"[LLM] Error: {e.Message}");
+                LogError($"Error: {e.Message}");
 
             return JobDecision.Idle($"Error: {e.Message}");
         }
@@ -807,7 +816,7 @@ public class LLMController : MonoBehaviour
 
         if (logTokenUsage)
         {
-            Debug.Log($"[LLM Metrics] Type={metrics.requestType}, " +
+            LogInfo($"Metrics: Type={metrics.requestType}, " +
                      $"Tokens={metrics.totalTokens} (prompt={metrics.promptEvalCount}, response={metrics.evalCount}), " +
                      $"Time={metrics.responseTime:F2}s (eval={metrics.evalDuration:F2}s), Success={metrics.success}");
         }
@@ -832,11 +841,11 @@ public class LLMController : MonoBehaviour
             string path = System.IO.Path.Combine(Application.persistentDataPath, metricsFilePath);
             System.IO.File.WriteAllText(path, json);
 
-            Debug.Log($"[LLM] Metrics exported to: {path}");
+            LogInfo($"Metrics exported to: {path}");
         }
         catch (Exception e)
         {
-            Debug.LogError($"[LLM] Failed to export metrics: {e.Message}");
+            LogError($"Failed to export metrics: {e.Message}");
         }
     }
 
@@ -844,7 +853,7 @@ public class LLMController : MonoBehaviour
     {
         _metricsHistory.Clear();
         _sessionStats = new LLMSessionStats();
-        Debug.Log("[LLM] Metrics history cleared");
+        LogInfo("Metrics history cleared");
     }
 
     public string GetMetricsSummary()
@@ -936,7 +945,7 @@ Response Times:
     public void ResetChat()
     {
         Ollama.InitChat();
-        if (logPrompts) Debug.Log("[LLM] Chat reset");
+        if (logPrompts) LogInfo("Chat reset");
     }
 
     public void SetModel(string modelName)

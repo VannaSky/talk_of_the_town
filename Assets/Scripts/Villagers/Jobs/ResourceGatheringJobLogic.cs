@@ -73,7 +73,7 @@ namespace Villagers.Jobs
             {
                 _currentTarget.Reserve();
                 handler.villagerMover.StopMoving();
-                Debug.Log($"[{GetType().Name}] Found {ResourceName} at {_currentTarget.transform.position}");
+                LogInfo($"Found {ResourceName} at {_currentTarget.transform.position}");
                 ChangeState(AnimationState.MovingToTarget, handler);
             }
             else
@@ -90,7 +90,7 @@ namespace Villagers.Jobs
         private void LogResourceSearchDebug(JobHandler handler)
         {
             ResourceNode[] allNodes = GameObject.FindObjectsByType<ResourceNode>(FindObjectsSortMode.None);
-            Debug.Log($"[{GetType().Name}] DEBUG: Looking for {TargetResourceType}, found {allNodes.Length} total ResourceNodes");
+            LogVerbose($"DEBUG: Looking for {TargetResourceType}, found {allNodes.Length} total ResourceNodes");
 
             int matchingType = 0;
             int reserved = 0;
@@ -110,11 +110,11 @@ namespace Villagers.Jobs
 
                 if (debugResourceSearch)
                 {
-                    Debug.Log($"  - {node.name}: type={node.resourceType}, reserved={isReserved}, active={isActive}, match={isCorrectType}");
+                    LogVerbose($"  - {node.name}: type={node.resourceType}, reserved={isReserved}, active={isActive}, match={isCorrectType}");
                 }
             }
 
-            Debug.Log($"[{GetType().Name}] DEBUG: {matchingType} matching type, {reserved} reserved, {available} available");
+            LogVerbose($"DEBUG: {matchingType} matching type, {reserved} reserved, {available} available");
         }
 
         private void ExecuteMovingToTarget(JobHandler handler)
@@ -191,7 +191,7 @@ namespace Villagers.Jobs
         
             if (debugResourceSearch)
             {
-                Debug.Log($"[{GetType().Name}] Searching for {TargetResourceType} among {allNodes.Length} nodes");
+                LogVerbose($"Searching for {TargetResourceType} among {allNodes.Length} nodes");
             }
 
             ResourceNode best = null;
@@ -214,7 +214,7 @@ namespace Villagers.Jobs
                 if (node.resourceType != TargetResourceType)
                 {
                     if (debugResourceSearch)
-                        Debug.Log($"  Skip {node.name}: wrong type ({node.resourceType} != {TargetResourceType})");
+                        LogVerbose($"  Skip {node.name}: wrong type ({node.resourceType} != {TargetResourceType})");
                     continue;
                 }
 
@@ -222,7 +222,7 @@ namespace Villagers.Jobs
                 if (node.isReserved)
                 {
                     if (debugResourceSearch)
-                        Debug.Log($"  Skip {node.name}: reserved");
+                        LogVerbose($"  Skip {node.name}: reserved");
                     continue;
                 }
 
@@ -230,7 +230,7 @@ namespace Villagers.Jobs
                 if (!node.IsMature)
                 {
                     if (debugResourceSearch)
-                        Debug.Log($"  Skip {node.name}: not mature ({node.growthStage})");
+                        LogVerbose($"  Skip {node.name}: not mature ({node.growthStage})");
                     continue;
                 }
 
@@ -238,7 +238,7 @@ namespace Villagers.Jobs
                 if (!node.gameObject.activeInHierarchy)
                 {
                     if (debugResourceSearch)
-                        Debug.Log($"  Skip {node.name}: inactive");
+                        LogVerbose($"  Skip {node.name}: inactive");
                     continue;
                 }
 
@@ -252,7 +252,7 @@ namespace Villagers.Jobs
                     if (distanceToTarget > targetAreaRadius)
                     {
                         if (debugResourceSearch)
-                            Debug.Log($"  Skip {node.name}: too far from target ({distanceToTarget:F1} > {targetAreaRadius})");
+                            LogVerbose($"  Skip {node.name}: too far from target ({distanceToTarget:F1} > {targetAreaRadius})");
                         continue;
                     }
 
@@ -260,7 +260,7 @@ namespace Villagers.Jobs
                 }
 
                 if (debugResourceSearch)
-                    Debug.Log($"  Consider {node.name}: score={score:F1}");
+                    LogVerbose($"  Consider {node.name}: score={score:F1}");
 
                 if (score < bestScore)
                 {
@@ -271,7 +271,7 @@ namespace Villagers.Jobs
 
             if (best == null && targetAreaWorld.HasValue)
             {
-                Debug.Log($"[{GetType().Name}] No {ResourceName} near target area, falling back to nearest anywhere");
+                LogInfo($"No {ResourceName} near target area, falling back to nearest anywhere");
                 return FindNearestResourceAnywhere(handler);
             }
 

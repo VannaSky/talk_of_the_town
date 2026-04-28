@@ -4,6 +4,12 @@ using AnimationState = Villagers.Jobs.AnimationState;
 
 public class JobHandler : MonoBehaviour
 {
+    private const string LogCategory = "JobHandler";
+    void LogError(string msg)   => GameLog.LogError(LogCategory, msg, this);
+    void LogWarning(string msg) => GameLog.LogWarning(LogCategory, msg, this);
+    void LogInfo(string msg)    => GameLog.LogInfo(LogCategory, msg, this);
+    void LogVerbose(string msg) => GameLog.LogVerbose(LogCategory, msg, this);
+
     [Header("Current Job")]
     public JobType currentJob;
 
@@ -89,7 +95,7 @@ public class JobHandler : MonoBehaviour
         if (currentJob != null && currentJob.JobLogic != null)
         {
             currentJob.JobLogic.OnJobStart(this);
-            Debug.Log($"[JobHandler] {gameObject.name} started job: {currentJob.JobName}" +
+            LogInfo($"{gameObject.name} started job: {currentJob.JobName}" +
                       (hasTargetArea ? $" targeting ({targetArea.x},{targetArea.y})" : ""));
         }
 
@@ -123,7 +129,7 @@ public class JobHandler : MonoBehaviour
         {
             currentJobXP -= 100f;
             currentJobLevel++;
-            Debug.Log($"[JobHandler] {gameObject.name} leveled up to {currentJobLevel}!");
+            LogInfo($"{gameObject.name} leveled up to {currentJobLevel}!");
         }
     }
 }
