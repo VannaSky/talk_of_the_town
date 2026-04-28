@@ -23,7 +23,7 @@ GameObject:
   - component: {fileID: 23384486552879834}
   - component: {fileID: 64075838365118106}
   m_Layer: 0
-  m_Name: Stockpule_Lvl1_Finished
+  m_Name: Stockpile_Lvl1_Finished
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
