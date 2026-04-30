@@ -5,8 +5,9 @@ using UnityEngine;
         None = 0,
         Error = 1,
         Warning = 2,
-        Info = 3,
-        Verbose = 4,
+        Event = 3,
+        Info = 4,
+        Verbose = 5,
     }
 
     public static class GameLog
@@ -24,6 +25,12 @@ using UnityEngine;
         {
             if (GlobalLevel < LogLevel.Warning) return;
             Debug.LogWarning(Format(category, message), context);
+        }
+
+        public static void LogEvent(string category, string message, Object context = null)
+        {
+            if (GlobalLevel < LogLevel.Event) return;
+            Debug.Log(Format(category, message), context);
         }
 
         public static void LogInfo(string category, string message, Object context = null)

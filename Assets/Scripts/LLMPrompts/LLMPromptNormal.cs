@@ -41,6 +41,7 @@ CRITICAL COORDINATION RULES:
 2. NEVER assign two villagers to the same coordinates!
 3. CHECK STOCKPILES: High stockpile = stop gathering that resource, switch to productive jobs.
 4. USE DIFFERENT RESOURCE NODES: If both need wood, send them to different tree clusters!
+5. STABILITY — KEEP ONGOING ASSIGNMENTS: Villagers marked [KEEP] are already working. Do NOT reassign them unless their resource is critically oversupplied. Never swap two villagers' jobs with each other without a specific reason. Only assign new jobs to villagers marked [NEEDS ASSIGNMENT].
 
 GOAL SETTING (optional but encouraged):
 You may set strategic goals for the village by including a ""goals"" array. Goals track progress and trigger a new decision when completed — use them to chain plans.

@@ -6,6 +6,7 @@ namespace MainMenu
     public class MainMenu : MonoBehaviour
     {
         [SerializeField] private GameObject settingsMenu;
+        [SerializeField] private GameObject startMenuPanel;
 
         [Header("Scene Transition")]
         [SerializeField] private GameObject[] objectsToDisable;
@@ -31,7 +32,7 @@ namespace MainMenu
         public void OnSettingsPressed()
         {
             settingsMenu.SetActive(true);
-            gameObject.SetActive(false);
+            startMenuPanel.SetActive(false);
         }
 
         public void OnQuitPressed()

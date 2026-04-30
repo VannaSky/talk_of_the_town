@@ -60,6 +60,7 @@ public class LLMController : MonoBehaviour
     // Local helper wrappers (as you use them now)
     void LogError(string msg)   => GameLog.LogError(LogCategory, msg, this);
     void LogWarning(string msg) => GameLog.LogWarning(LogCategory, msg, this);
+    void LogEvent(string msg)   => GameLog.LogEvent(LogCategory, msg, this);
     void LogInfo(string msg)    => GameLog.LogInfo(LogCategory, msg, this);
     void LogVerbose(string msg) => GameLog.LogVerbose(LogCategory, msg, this);
 
@@ -110,7 +111,7 @@ public class LLMController : MonoBehaviour
             OnModelLoaded?.Invoke(defaultModel);
 
             if (logPrompts)
-                LogInfo($"Controller ready with model: {defaultModel}");
+                LogEvent($"Controller ready with model: {defaultModel}");
 
             if (useBatchDecisions)
             {
@@ -297,7 +298,7 @@ public class LLMController : MonoBehaviour
         OnBatchDecisionMade?.Invoke(_latestBatchDecisions);
 
         if (logPrompts)
-            LogInfo($"Batch decisions made for {_latestBatchDecisions.Count} villagers");
+            LogEvent($"Batch decisions made for {_latestBatchDecisions.Count} villagers");
     }
 
     private List<string> GetAvailableJobNames()
@@ -362,7 +363,13 @@ public class LLMController : MonoBehaviour
         {
             if (v == null) continue;
             var d = v.GetData();
-            sb.AppendLine($"- {d.name}: currently at ({d.x},{d.y}), Job={d.currentJob}, Status=\"{d.jobStatus}\"");
+            bool isStuck = d.jobStatus == "Idle"
+                || d.jobStatus.Contains("Waiting")
+                || d.jobStatus.Contains("No ")
+                || d.jobStatus.Contains("found")
+                || d.jobStatus.Contains("Looking");
+            string tag = isStuck ? "[NEEDS ASSIGNMENT]" : "[KEEP]";
+            sb.AppendLine($"- {d.name} {tag}: at ({d.x},{d.y}), Job={d.currentJob}, Status=\"{d.jobStatus}\"");
         }
         sb.AppendLine();
 
@@ -550,7 +557,7 @@ public class LLMController : MonoBehaviour
                     results[assignment.villager] = decision;
 
                     if (logPrompts)
-                        LogInfo($"Parsed: {assignment.villager} -> {decision.jobName} at ({decision.targetX},{decision.targetY})");
+                        LogEvent($"Parsed: {assignment.villager} -> {decision.jobName} at ({decision.targetX},{decision.targetY})");
                 }
             }
 
@@ -593,7 +600,7 @@ public class LLMController : MonoBehaviour
                         goal.targetResource = rt;
                     }
 
-                    LogInfo($"Goal parsed: {goal.description} | type={goal.type} resource={goal.targetResource} amount={goal.targetAmount} priority={goal.priority}");
+                    LogEvent($"Goal parsed: {goal.description} | type={goal.type} resource={goal.targetResource} amount={goal.targetAmount} priority={goal.priority}");
                     parsedGoals.Add(goal);
                 }
 
@@ -816,7 +823,7 @@ public class LLMController : MonoBehaviour
 
         if (logTokenUsage)
         {
-            LogInfo($"Metrics: Type={metrics.requestType}, " +
+            LogEvent($"Metrics: Type={metrics.requestType}, " +
                      $"Tokens={metrics.totalTokens} (prompt={metrics.promptEvalCount}, response={metrics.evalCount}), " +
                      $"Time={metrics.responseTime:F2}s (eval={metrics.evalDuration:F2}s), Success={metrics.success}");
         }

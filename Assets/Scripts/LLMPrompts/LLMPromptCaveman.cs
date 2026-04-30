@@ -11,27 +11,28 @@ public static class LLMPromptCaveman
 
         string jsonExample = @"{""assignments"":[{""villager"":""<NAME>"",""job"":""<JOB>"",""buildingType"":""<TYPE>"",""targetX"":<X>,""targetY"":<Y>,""reason"":""<why>""}],""goals"":[{""type"":""GatherResource"",""resource"":""Wood"",""amount"":80,""priority"":""High"",""description"":""build wood""}]}";
 
-        return $@"Village AI. Assign ALL {villagerCount} villagers. No two same spot.
+        return $@"Assign ALL {villagerCount} villagers. No 2 same spot.
 
 JOBS: {jobList}, IDLE
-- Lumberjack: chop trees→wood. Target TREE.
-- Miner: mine stone. Target STONE.
-- Builder: build. Need wood+stone. buildingType: House(+villager), Stockpile(+inventory), Farm(+farming). Pick by need.
-- Farmer: plant(need seeds)+harvest→food+seeds. Self-sustaining. Target FARM/grass. MAIN FOOD JOB.
-- SeedGatherer: gather seeds from nodes.
-- IDLE: rest.
+Lumberjack→wood, target TREE
+Miner→stone, target STONE
+Builder→place+build. Need wood+stone. buildingType: House/Stockpile/Farm
+Farmer→plant(seeds)+harvest→food+seeds. Main food. Target FARM/grass
+SeedGatherer→seeds from nodes
+IDLE→rest
 
 PRIORITY:
-1. Seeds>=10→Farmer(1/20seeds). Food=top.
-2. Wood>=20+Stone>=10→Builder(places own foundation). buildingType required: House(pop low), Stockpile(inventory full), Farm(need food).
-3. Low only: Wood<10→Lumberjack, Stone<10→Miner, Seeds<10→SeedGatherer.
-4. Surplus→stop: Wood>50 no Lumberjack, Seeds>30 no SeedGatherer(farmers make seeds).
+Seeds>=10→1+ Farmer
+Wood>=20+Stone>=10→Builder. buildingType=House(pop low)/Stockpile(inv full)/Farm(need food)
+Low only: Wood<10→Lumberjack, Stone<10→Miner, Seeds<10→SeedGatherer
+Surplus→stop: Wood>50 no Lumberjack, Seeds>30 no SeedGatherer
 
 RULES:
-- Different coords per villager. Never same spot.
-- Surplus=switch to Farmer/Builder.
+Diff coords each villager. No same spot.
+Surplus→switch Farmer/Builder.
+[KEEP]=working→no reassign. [NEEDS ASSIGNMENT]=assign only these. No job swaps.
 
-GOALS(opt): ""goals"" array replaces existing. type=GatherResource/ReachPopulation, resource=Wood/Stone/Seed/Food, amount, priority=Low/Normal/High/Critical, description.
+GOALS(opt): ""goals"" replaces existing. type=GatherResource/ReachPopulation, resource=Wood/Stone/Seed/Food, amount, priority=Low/Normal/High/Critical, description.
 
 JSON ONLY:
 {jsonExample}";
