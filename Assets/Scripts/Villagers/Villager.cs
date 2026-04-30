@@ -28,6 +28,9 @@ public class Villager : MonoBehaviour
     void Awake()
     {
         _jobHandler = GetComponent<JobHandler>();
+
+        if (string.IsNullOrEmpty(villagerName))
+            villagerName = gameObject.name;
     }
     
     void Start()
