@@ -129,7 +129,7 @@ public class LLMController : MonoBehaviour
             IsReady = true;
             OnModelLoaded?.Invoke(defaultModel);
 
-            LogEvent($"Controller ready with model: {defaultModel}");
+            LogInfo($"Controller ready with model: {defaultModel}");
 
             if (useBatchDecisions)
             {
@@ -257,7 +257,7 @@ public class LLMController : MonoBehaviour
     {
         yield return new WaitForSecondsRealtime(decisionDebounceDelay);
         _pendingDecisionCoroutine = null;
-        LogEvent($"Event-triggered decision: {reason}");
+        LogInfo($"Event-triggered decision: {reason}");
         yield return RequestBatchDecisions();
     }
 
@@ -578,7 +578,7 @@ public class LLMController : MonoBehaviour
         if (includeThinkingPrompt)
             fullPrompt += "\n/think";
         
-        LogEvent($"Batch Prompt [{promptLabel}] for {villagers.Count} villagers:\n{fullPrompt} ");
+        LogVerbose($"Batch Prompt [{promptLabel}] for {villagers.Count} villagers:\n{fullPrompt} ");
 
         // Start metrics tracking
         var metrics = new LLMMetrics
@@ -789,7 +789,7 @@ public class LLMController : MonoBehaviour
         if (includeThinkingPrompt)
             fullPrompt += "\n/think";
 
-        LogEvent($"Single Prompt:\n{fullPrompt}");
+        LogVerbose($"Single Prompt:\n{fullPrompt}");
 
         var metrics = new LLMMetrics
         {
@@ -819,7 +819,7 @@ public class LLMController : MonoBehaviour
             metrics.totalDuration = chatResponse.TotalSeconds;
             metrics.loadDuration = chatResponse.LoadSeconds;
 
-            LogEvent($"Response:\n{chatResponse.content}");
+            LogVerbose($"Response:\n{chatResponse.content}");
 
             var decision = ParseSingleDecision(chatResponse.content);
             
@@ -946,8 +946,8 @@ public class LLMController : MonoBehaviour
 
         OnMetricsRecorded?.Invoke(metrics);
 
-        LogEvent($"Metrics: Type={metrics.requestType}, " +
-                 $"Tokens={metrics.totalTokens} (prompt={metrics.promptEvalCount}, response={metrics.evalCount}), " +
+        LogInfo($"Metrics: Type={metrics.requestType}, " +
+                $"Tokens={metrics.totalTokens} (prompt={metrics.promptEvalCount}, response={metrics.evalCount}), " +
                  $"Time={metrics.responseTime:F2}s (eval={metrics.evalDuration:F2}s), Success={metrics.success}");
 
         if (contextSize > 0 && metrics.promptEvalCount >= contextSize * 0.9f)

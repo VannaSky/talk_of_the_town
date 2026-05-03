@@ -68,7 +68,7 @@ public class FarmerLogic : JobLogic
             _phase = FarmerPhase.Harvesting;
             _targetCrop.Reserve();
             handler.villagerMover.StopMoving();
-            LogEvent($"Found mature crop at {_targetCrop.transform.position}");
+            LogInfo($"Found mature crop at {_targetCrop.transform.position}");
             ChangeState(AnimationState.MovingToTarget, handler);
             return;
         }
@@ -81,7 +81,7 @@ public class FarmerLogic : JobLogic
             {
                 _phase = FarmerPhase.Planting;
                 handler.villagerMover.StopMoving();
-                LogEvent($"Found tile to plant at {_targetTile.GridPos}");
+                LogInfo($"Found tile to plant at {_targetTile.GridPos}");
                 ChangeState(AnimationState.MovingToTarget, handler);
                 return;
             }
@@ -176,7 +176,7 @@ public class FarmerLogic : JobLogic
             }
 
             currentStatus = "Planted a crop!";
-            LogEvent($"Planted crop at {_targetTile.GridPos}");
+            LogInfo($"Planted crop at {_targetTile.GridPos}");
             _targetTile = null;
             ChangeState(AnimationState.FindingTarget, handler);
             return true;
@@ -204,7 +204,7 @@ public class FarmerLogic : JobLogic
                 VillageState.Instance.AddResource(ResourceType.Food, foodProduced);
                 VillageState.Instance.AddResource(ResourceType.Seed, seedsProduced);
                 currentStatus = $"Harvested {foodProduced} food and {seedsProduced} seeds!";
-                LogEvent($"Harvested {foodProduced} food and {seedsProduced} seeds!");
+                LogInfo($"Harvested {foodProduced} food and {seedsProduced} seeds!");
             }
 
             _targetCrop = null;
