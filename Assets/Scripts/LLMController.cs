@@ -33,7 +33,16 @@ public class LLMController : MonoBehaviour
     [Tooltip("Seconds to wait after an event before triggering a decision (collects multiple events into one call)")]
     [SerializeField] private float decisionDebounceDelay = 1f;
 
-    [Header("Debug")]
+    [Header("Context Settings")]
+    [Tooltip("Context window size (tokens). 0 = use model default. Check your model's actual limit.")]
+    [SerializeField] private int contextSize = 0;
+
+    [Header("Memory Settings")]
+    [Tooltip("Number of past user/assistant message pairs to retain. 0 = stateless.")]
+    [SerializeField] private int memoryPairs = 3;
+    [SerializeField] private bool useConversationMemory = true;
+    [Tooltip("Pinned system message sent on every call. Leave empty to omit.")]
+    [SerializeField, TextArea(2, 6)] private string pinnedSystemMessage = "";
 
     [Header("Metrics Tracking")]
     [SerializeField] private bool trackMetrics = true;
@@ -54,7 +63,7 @@ public class LLMController : MonoBehaviour
     public string CurrentModel => defaultModel;
     public bool UseBatchDecisions => useBatchDecisions;
     
-    // Local helper wrappers (as you use them now)
+    
     void LogError(string msg)   => GameLog.LogError(LogCategory, msg, this);
     void LogWarning(string msg) => GameLog.LogWarning(LogCategory, msg, this);
     void LogEvent(string msg)   => GameLog.LogEvent(LogCategory, msg, this);
@@ -76,6 +85,9 @@ public class LLMController : MonoBehaviour
 
     public bool IsBatchProcessing => _isBatchProcessing;
     public float TimeSinceLastBatch => Time.realtimeSinceStartup - _lastBatchDecisionTime;
+
+    // Conversation memory
+    private ollama.ConversationHistory _conversation;
 
     // Metrics tracking
     private List<LLMMetrics> _metricsHistory = new ();
@@ -109,6 +121,10 @@ public class LLMController : MonoBehaviour
             await LoadAvailableModels();
 
             await ApplyModelFromGlobalSettings();
+
+            _conversation = new ollama.ConversationHistory(memoryPairs);
+            if (!string.IsNullOrWhiteSpace(pinnedSystemMessage))
+                _conversation.SetSystemMessage(pinnedSystemMessage);
 
             IsReady = true;
             OnModelLoaded?.Invoke(defaultModel);
@@ -257,7 +273,7 @@ public class LLMController : MonoBehaviour
 
             if (IsReady && VillageState.Instance != null && VillageState.Instance.Villagers.Count > 0)
             {
-                LogEvent($"Fallback interval triggered batch decision.");
+                LogInfo($"Fallback interval triggered batch decision.");
                 yield return RequestBatchDecisions();
             }
         }
@@ -297,7 +313,6 @@ public class LLMController : MonoBehaviour
 
         OnBatchDecisionMade?.Invoke(_latestBatchDecisions);
 
-        LogEvent($"Batch decisions made for {_latestBatchDecisions.Count} villagers");
     }
 
     private List<string> GetAvailableJobNames()
@@ -552,7 +567,13 @@ public class LLMController : MonoBehaviour
             : BuildDeltaContext(villagers, availableJobs);
 
         string promptLabel = fullSnapshot ? "FULL SNAPSHOT" : "DELTA";
-        string fullPrompt = $"{systemPrompt}\n\n{context}\nAssign jobs and locations to ALL villagers:";
+
+        if (useConversationMemory)
+            _conversation.SetSystemMessage(systemPrompt);
+
+        string fullPrompt = useConversationMemory
+            ? $"{context}\nAssign jobs and locations to ALL villagers:"
+            : $"{systemPrompt}\n\n{context}\nAssign jobs and locations to ALL villagers:";
 
         if (includeThinkingPrompt)
             fullPrompt += "\n/think";
@@ -574,7 +595,9 @@ public class LLMController : MonoBehaviour
         try
         {
             // Use the extension method to get full metadata
-            var chatResponse = await OllamaExtensions.ChatWithMetadataExt(defaultModel, fullPrompt, keepAliveSeconds);
+            var chatResponse = useConversationMemory
+                ? await OllamaExtensions.ChatWithMetadataExt(defaultModel, fullPrompt, _conversation, keepAliveSeconds, contextSize)
+                : await OllamaExtensions.ChatWithMetadataExt(defaultModel, fullPrompt, keepAliveSeconds, contextSize);
             
             metrics.responseTime = (DateTime.Now - startTime).TotalSeconds;
             metrics.responseLength = chatResponse.content.Length;
@@ -589,8 +612,8 @@ public class LLMController : MonoBehaviour
             metrics.evalDuration = chatResponse.EvalSeconds;
             metrics.totalDuration = chatResponse.TotalSeconds;
             metrics.loadDuration = chatResponse.LoadSeconds;
-
-            LogEvent($"Batch Response:\n{chatResponse.content}");
+            
+            LogInfo($"Batch Response:\n{chatResponse.content}");
 
             results = ParseBatchDecisions(chatResponse.content, villagers);
 
@@ -662,7 +685,7 @@ public class LLMController : MonoBehaviour
 
                     results[assignment.villager] = decision;
 
-                        LogEvent($"Parsed: {assignment.villager} -> {decision.jobName} at ({decision.targetX},{decision.targetY})");
+                        LogInfo($"Parsed: {assignment.villager} -> {decision.jobName} at ({decision.targetX},{decision.targetY})");
                 }
             }
 
@@ -782,15 +805,15 @@ public class LLMController : MonoBehaviour
 
         try
         {
-            var chatResponse = await OllamaExtensions.ChatWithMetadataExt(defaultModel, fullPrompt, keepAliveSeconds);
+            var chatResponse = await OllamaExtensions.ChatWithMetadataExt(defaultModel, fullPrompt, keepAliveSeconds, contextSize);
 
             metrics.responseTime = (DateTime.Now - startTime).TotalSeconds;
             metrics.responseLength = chatResponse.content.Length;
-            
+
             metrics.promptEvalCount = chatResponse.promptEvalCount;
             metrics.evalCount = chatResponse.evalCount;
             metrics.totalTokens = chatResponse.TotalTokens;
-            
+
             metrics.promptEvalDuration = chatResponse.PromptEvalSeconds;
             metrics.evalDuration = chatResponse.EvalSeconds;
             metrics.totalDuration = chatResponse.TotalSeconds;
@@ -927,6 +950,9 @@ public class LLMController : MonoBehaviour
                  $"Tokens={metrics.totalTokens} (prompt={metrics.promptEvalCount}, response={metrics.evalCount}), " +
                  $"Time={metrics.responseTime:F2}s (eval={metrics.evalDuration:F2}s), Success={metrics.success}");
 
+        if (contextSize > 0 && metrics.promptEvalCount >= contextSize * 0.9f)
+            LogWarning($"Context near limit: {metrics.promptEvalCount}/{contextSize} tokens used ({metrics.promptEvalCount * 100f / contextSize:F0}%)");
+
         if (exportMetricsToFile && _metricsHistory.Count % 10 == 0)
         {
             ExportMetricsToFile();
@@ -1051,11 +1077,29 @@ Response Times:
     public void ResetChat()
     {
         Ollama.InitChat();
+        _conversation?.Clear();
         _lastWood = _lastStone = _lastSeeds = _lastFood = -1;
         _lastAssignedJob.Clear();
         _decisionCount = 0;
         LogInfo("Chat reset");
     }
+
+    private void OnValidate()
+    {
+        if (_conversation != null) _conversation.MaxPairs = memoryPairs;
+    }
+
+    public int MemoryPairs
+    {
+        get => memoryPairs;
+        set
+        {
+            memoryPairs = Mathf.Max(0, value);
+            if (_conversation != null) _conversation.MaxPairs = memoryPairs;
+        }
+    }
+
+    public int CurrentRetainedPairs => _conversation?.PairCount ?? 0;
 
     public void SetModel(string modelName)
     {

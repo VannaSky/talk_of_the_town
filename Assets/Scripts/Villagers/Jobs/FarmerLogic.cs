@@ -21,6 +21,13 @@ public class FarmerLogic : JobLogic
     [Header("Crop Prefab")]
     public GameObject cropPrefab;
 
+    private const string LogCategory = "FarmerLogic";
+    void LogError(string msg)   => GameLog.LogError(LogCategory, msg);
+    void LogWarning(string msg) => GameLog.LogWarning(LogCategory, msg);
+    void LogEvent(string msg)   => GameLog.LogEvent(LogCategory, msg);
+    void LogInfo(string msg)    => GameLog.LogInfo(LogCategory, msg);
+    void LogVerbose(string msg) => GameLog.LogVerbose(LogCategory, msg);
+
     private enum FarmerPhase { Planting, Harvesting }
 
     [NonSerialized] private FarmerPhase _phase;
@@ -68,7 +75,7 @@ public class FarmerLogic : JobLogic
             _phase = FarmerPhase.Harvesting;
             _targetCrop.Reserve();
             handler.villagerMover.StopMoving();
-            Debug.Log($"[Farmer] Found mature crop at {_targetCrop.transform.position}");
+            LogEvent($"Found mature crop at {_targetCrop.transform.position}");
             ChangeState(AnimationState.MovingToTarget, handler);
             return;
         }
@@ -81,7 +88,7 @@ public class FarmerLogic : JobLogic
             {
                 _phase = FarmerPhase.Planting;
                 handler.villagerMover.StopMoving();
-                Debug.Log($"[Farmer] Found tile to plant at {_targetTile.GridPos}");
+                LogEvent($"Found tile to plant at {_targetTile.GridPos}");
                 ChangeState(AnimationState.MovingToTarget, handler);
                 return;
             }
@@ -176,7 +183,7 @@ public class FarmerLogic : JobLogic
             }
 
             currentStatus = "Planted a crop!";
-            Debug.Log($"[Farmer] Planted crop at {_targetTile.GridPos}");
+            LogEvent($"Planted crop at {_targetTile.GridPos}");
             _targetTile = null;
             ChangeState(AnimationState.FindingTarget, handler);
             return true;
@@ -204,7 +211,7 @@ public class FarmerLogic : JobLogic
                 VillageState.Instance.AddResource(ResourceType.Food, foodProduced);
                 VillageState.Instance.AddResource(ResourceType.Seed, seedsProduced);
                 currentStatus = $"Harvested {foodProduced} food and {seedsProduced} seeds!";
-                Debug.Log($"[Farmer] Harvested {foodProduced} food and {seedsProduced} seeds!");
+                LogEvent($"Harvested {foodProduced} food and {seedsProduced} seeds!");
             }
 
             _targetCrop = null;

@@ -16,6 +16,7 @@ namespace ollama
         public List<SimpleChatMessage> messages;
         public bool stream;
         public int keep_alive;
+        public int num_ctx;
     }
 
     [Serializable]
@@ -60,6 +61,76 @@ namespace ollama
         public long load_duration;
     }
 
+    /// <summary>
+    /// Rolling conversation history with a configurable size cap.
+    /// Trims by full user/assistant pairs so the array never ends on a dangling user message.
+    /// System message is pinned and never evicted.
+    /// </summary>
+    public class ConversationHistory
+    {
+        private readonly List<SimpleChatMessage> _messages = new();
+        private SimpleChatMessage _systemMessage;
+
+        /// <summary>How many (user, assistant) pairs to retain. 0 disables memory.</summary>
+        public int MaxPairs { get; set; }
+
+        public IReadOnlyList<SimpleChatMessage> Messages => _messages;
+        public int MessageCount => _messages.Count;
+        public int PairCount
+        {
+            get
+            {
+                int n = 0;
+                foreach (var m in _messages)
+                    if (m.role == "user") n++;
+                return n;
+            }
+        }
+
+        public ConversationHistory(int maxPairs = 5) { MaxPairs = maxPairs; }
+
+        public void SetSystemMessage(string content)
+        {
+            _systemMessage = string.IsNullOrEmpty(content)
+                ? null
+                : new SimpleChatMessage { role = "system", content = content };
+        }
+
+        public void AddUser(string content, string[] images = null)
+        {
+            _messages.Add(new SimpleChatMessage { role = "user", content = content, images = images });
+        }
+
+        public void AddAssistant(string content)
+        {
+            _messages.Add(new SimpleChatMessage { role = "assistant", content = content });
+            TrimToMaxPairs();
+        }
+
+        public void Clear() => _messages.Clear();
+
+        private void TrimToMaxPairs()
+        {
+            if (MaxPairs <= 0) { _messages.Clear(); return; }
+
+            while (PairCount > MaxPairs && _messages.Count >= 2)
+            {
+                if (_messages[0].role == "user") _messages.RemoveAt(0);
+                if (_messages.Count > 0 && _messages[0].role == "assistant") _messages.RemoveAt(0);
+            }
+        }
+
+        /// <summary>Builds the full payload: [system?] + history + currentUser.</summary>
+        public List<SimpleChatMessage> BuildPayload(SimpleChatMessage currentUser)
+        {
+            var list = new List<SimpleChatMessage>();
+            if (_systemMessage != null) list.Add(_systemMessage);
+            list.AddRange(_messages);
+            list.Add(currentUser);
+            return list;
+        }
+    }
+
     public static class OllamaExtensions
     {
         private const string SERVER = "http://localhost:11434/";
@@ -67,9 +138,10 @@ namespace ollama
 
         /// <summary>Chat with full metadata response</summary>
         public static async Task<ChatResponse> ChatWithMetadataExt(
-            string model, 
-            string prompt, 
-            int keep_alive = 300, 
+            string model,
+            string prompt,
+            int keep_alive = 300,
+            int num_ctx = 0,
             Texture2D image = null)
         {
             try
@@ -88,7 +160,8 @@ namespace ollama
                     model = model,
                     messages = new List<SimpleChatMessage> { message },
                     stream = false,
-                    keep_alive = keep_alive
+                    keep_alive = keep_alive,
+                    num_ctx = num_ctx
                 };
 
                 string payload = JsonConvert.SerializeObject(request);
@@ -129,6 +202,94 @@ namespace ollama
                         errorResponse = await reader.ReadToEndAsync();
                 }
                 
+                Debug.LogError($"[OllamaExt] HTTP Error: {webEx.Message}\n{errorResponse}");
+                return CreateErrorResponse(webEx.Message);
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[OllamaExt] Error: {e.Message}\n{e.StackTrace}");
+                return CreateErrorResponse(e.Message);
+            }
+        }
+
+        /// <summary>Chat with metadata response and persistent conversation history.</summary>
+        public static async Task<ChatResponse> ChatWithMetadataExt(
+            string model,
+            string prompt,
+            ConversationHistory history,
+            int keep_alive = 300,
+            int num_ctx = 0,
+            Texture2D image = null)
+        {
+            try
+            {
+                string[] images = image != null ? new[] { Texture2Base64(image) } : null;
+
+                var userMessage = new SimpleChatMessage
+                {
+                    role = "user",
+                    content = prompt,
+                    images = images
+                };
+
+                var messages = history != null
+                    ? history.BuildPayload(userMessage)
+                    : new List<SimpleChatMessage> { userMessage };
+
+                var request = new SimpleChatRequest
+                {
+                    model = model,
+                    messages = messages,
+                    stream = false,
+                    keep_alive = keep_alive,
+                    num_ctx = num_ctx
+                };
+
+                string payload = JsonConvert.SerializeObject(request);
+
+                HttpWebRequest httpWebRequest = (HttpWebRequest)WebRequest.Create($"{SERVER}{CHAT_ENDPOINT}");
+                httpWebRequest.ContentType = "application/json";
+                httpWebRequest.Method = "POST";
+
+                using (var streamWriter = new StreamWriter(await httpWebRequest.GetRequestStreamAsync()))
+                    await streamWriter.WriteAsync(payload);
+
+                string result;
+                using (var httpResponse = await httpWebRequest.GetResponseAsync())
+                using (var streamReader = new StreamReader(httpResponse.GetResponseStream()))
+                    result = await streamReader.ReadToEndAsync();
+
+                var fullResponse = JsonConvert.DeserializeObject<ChatResponseExtended>(result);
+
+                // Commit this turn only after a successful round trip,
+                // so a failed request does not poison the rolling window.
+                if (history != null)
+                {
+                    history.AddUser(prompt, images);
+                    history.AddAssistant(fullResponse.message.content);
+                }
+
+                return new ChatResponse
+                {
+                    content = fullResponse.message.content,
+                    model = fullResponse.model,
+                    promptEvalCount = fullResponse.prompt_eval_count,
+                    promptEvalDuration = fullResponse.prompt_eval_duration,
+                    evalCount = fullResponse.eval_count,
+                    evalDuration = fullResponse.eval_duration,
+                    totalDuration = fullResponse.total_duration,
+                    loadDuration = fullResponse.load_duration
+                };
+            }
+            catch (WebException webEx)
+            {
+                string errorResponse = "";
+                if (webEx.Response != null)
+                {
+                    using (var errorStream = webEx.Response.GetResponseStream())
+                    using (var reader = new StreamReader(errorStream))
+                        errorResponse = await reader.ReadToEndAsync();
+                }
                 Debug.LogError($"[OllamaExt] HTTP Error: {webEx.Message}\n{errorResponse}");
                 return CreateErrorResponse(webEx.Message);
             }

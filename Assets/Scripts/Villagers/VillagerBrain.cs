@@ -18,9 +18,15 @@ public class VillagerBrain : MonoBehaviour
     [SerializeField] private List<JobType> availableJobTypes = new List<JobType>();
 
     [Header("Debug")]
-    [SerializeField] private bool logDecisions = true;
     public JobDecision lastDecision;
     public string currentState = "Initializing";
+
+    private const string LogCategory = "VillagerBrain";
+    void LogError(string msg)   => GameLog.LogError(LogCategory, msg, this);
+    void LogWarning(string msg) => GameLog.LogWarning(LogCategory, msg, this);
+    void LogEvent(string msg)   => GameLog.LogEvent(LogCategory, msg, this);
+    void LogInfo(string msg)    => GameLog.LogInfo(LogCategory, msg, this);
+    void LogVerbose(string msg) => GameLog.LogVerbose(LogCategory, msg, this);
 
     private Villager _villager;
     private JobHandler _jobHandler;
@@ -38,8 +44,7 @@ public class VillagerBrain : MonoBehaviour
         if (availableJobTypes.Count == 0)
         {
             availableJobTypes.AddRange(Resources.LoadAll<JobType>(""));
-            if (logDecisions)
-                Debug.Log($"[VillagerBrain] Loaded {availableJobTypes.Count} job types");
+            LogInfo($"Loaded {availableJobTypes.Count} job types");
         }
 
         // Subscribe to batch decisions
@@ -72,23 +77,18 @@ public class VillagerBrain : MonoBehaviour
         LLMController.Instance.OnBatchDecisionMade -= OnBatchDecisionReceived;
         LLMController.Instance.OnBatchDecisionMade += OnBatchDecisionReceived;
 
-        if (logDecisions)
-            Debug.Log($"[VillagerBrain] {_villager.villagerName} subscribed to batch decisions");
+        LogInfo($"{_villager.villagerName} subscribed to batch decisions");
     }
 
     private void OnBatchDecisionReceived(Dictionary<string, JobDecision> decisions)
     {
         if (decisions.TryGetValue(_villager.villagerName, out var decision))
         {
-            if (logDecisions)
-                Debug.Log($"[VillagerBrain] {_villager.villagerName} received batch decision: {decision.jobName}");
-
             ApplyDecision(decision);
         }
         else
         {
-            if (logDecisions)
-                Debug.LogWarning($"[VillagerBrain] {_villager.villagerName} not in batch decision");
+            LogWarning($"{_villager.villagerName} not in batch decision");
         }
     }
 
@@ -112,8 +112,7 @@ public class VillagerBrain : MonoBehaviour
                     // Request batch (will affect all villagers)
                     if (!LLMController.Instance.IsBatchProcessing)
                     {
-                        if (logDecisions)
-                            Debug.Log($"[VillagerBrain] {_villager.villagerName} triggering batch decision");
+                        LogInfo($"{_villager.villagerName} triggering batch decision");
                         LLMController.Instance.RequestImmediateBatchDecision();
                     }
                 }
@@ -201,11 +200,8 @@ public class VillagerBrain : MonoBehaviour
         lastDecision = decision;
         _lastAppliedDecisionTime = Time.time;
 
-        if (logDecisions)
-        {
-            string targetInfo = decision.hasTargetArea ? $" at ({decision.targetX},{decision.targetY})" : "";
-            Debug.Log($"[VillagerBrain] {_villager.villagerName} -> {decision.jobName}{targetInfo}: {decision.reason}");
-        }
+        string targetInfo = decision.hasTargetArea ? $" at ({decision.targetX},{decision.targetY})" : "";
+        LogEvent($"{_villager.villagerName} -> {decision.jobName}{targetInfo}: {decision.reason}");
 
         if (decision.IsIdle || !decision.success)
         {
@@ -238,15 +234,14 @@ public class VillagerBrain : MonoBehaviour
                     _jobHandler.AssignJob(matchedJob);
                 }
 
-                if (logDecisions)
-                    Debug.Log($"[VillagerBrain] {_villager.villagerName} assigned {matchedJob.JobName}");
+                LogInfo($"{_villager.villagerName} assigned {matchedJob.JobName}");
             }
 
             currentState = $"{matchedJob.JobName}";
         }
         else
         {
-            Debug.LogWarning($"[VillagerBrain] Unknown job: {decision.jobName}");
+            LogWarning($"Unknown job: {decision.jobName}");
             _jobHandler.AssignJob(null);
             currentState = "Unknown job";
         }
