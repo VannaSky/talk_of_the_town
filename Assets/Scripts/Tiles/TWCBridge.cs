@@ -14,6 +14,12 @@ namespace Tiles
 
         private static TWCBridge _instance;
 
+        /// <summary>Fires when map generation or loading begins.</summary>
+        public static event System.Action OnMapLoading;
+
+        /// <summary>Fires once the NavMesh has been baked (or immediately if baking is disabled).</summary>
+        public static event System.Action OnNavMeshReady;
+
         [Header("Refs")]
         [SerializeField] TileWorldCreator tileWorldCreator;
         [SerializeField] private GameObject tileWorldCreatorMap;
@@ -156,6 +162,8 @@ namespace Tiles
                 return;
             }
 
+            OnMapLoading?.Invoke();
+
             if (regenerateTWCMap)
             {
                 // Clean up before regenerating
@@ -270,10 +278,13 @@ namespace Tiles
         async Task RebakeNavMeshAsync()
         {
             if (!rebakeNavMesh || navMeshSurface == null)
+            {
+                OnNavMeshReady?.Invoke();
                 return;
+            }
 
             LogInfo($"Waiting {navMeshBakeDelay}s for physics to settle before NavMesh bake...");
-            
+
             await Task.Delay((int)(navMeshBakeDelay * 1000));
 
             if (!Application.isPlaying || this == null)
@@ -282,6 +293,7 @@ namespace Tiles
             LogInfo("Baking NavMesh...");
             navMeshSurface.BuildNavMesh();
             LogInfo("NavMesh baked successfully.");
+            OnNavMeshReady?.Invoke();
         }
 
         void SyncFromBlueprints()
@@ -701,6 +713,7 @@ namespace Tiles
             }
 
             LogInfo($"Loading map from: {filename}");
+            OnMapLoading?.Invoke();
 
             // Allow the TWC callback chain to run (it's a real regeneration, not a bypass)
             _isLoadedFromFile = false;

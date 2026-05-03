@@ -1,5 +1,7 @@
 using UnityEditor;
 using UnityEngine;
+using UnityEngine.UI;
+using Tiles;
 
 namespace MainMenu
 {
@@ -13,6 +15,36 @@ namespace MainMenu
         [SerializeField] private GameObject[] objectsToEnable;
         [SerializeField] private MonoBehaviour mainMenuCameraScript;
         [SerializeField] private MonoBehaviour gameCameraScript;
+
+        [Header("Start Button")]
+        [SerializeField] private Button startButton;
+
+        void Start()
+        {
+            if (startButton != null)
+                startButton.interactable = false;
+
+            TWCBridge.OnMapLoading += OnMapLoading;
+            TWCBridge.OnNavMeshReady += OnNavMeshReady;
+        }
+
+        void OnDestroy()
+        {
+            TWCBridge.OnMapLoading -= OnMapLoading;
+            TWCBridge.OnNavMeshReady -= OnNavMeshReady;
+        }
+
+        private void OnMapLoading()
+        {
+            if (startButton != null)
+                startButton.interactable = false;
+        }
+
+        private void OnNavMeshReady()
+        {
+            if (startButton != null)
+                startButton.interactable = true;
+        }
 
         public void OnStartPressed()
         {
