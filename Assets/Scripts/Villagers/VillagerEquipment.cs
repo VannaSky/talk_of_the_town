@@ -5,6 +5,13 @@ using AnimationState = Villagers.Jobs.AnimationState;
 
 public class VillagerEquipment : MonoBehaviour
 {
+    private const string LogCategory = "VillagerEquipment";
+    void LogError(string msg)   => GameLog.LogError(LogCategory, msg, this);
+    void LogWarning(string msg) => GameLog.LogWarning(LogCategory, msg, this);
+    void LogEvent(string msg)   => GameLog.LogEvent(LogCategory, msg, this);
+    void LogInfo(string msg)    => GameLog.LogInfo(LogCategory, msg, this);
+    void LogVerbose(string msg) => GameLog.LogVerbose(LogCategory, msg, this);
+
     [Serializable]
     public class JobToolMapping
     {
@@ -28,7 +35,7 @@ public class VillagerEquipment : MonoBehaviour
     {
         _handBone = FindBoneRecursive(transform, handBoneName);
         if (_handBone == null)
-            Debug.LogWarning($"[VillagerEquipment] Could not find bone '{handBoneName}' on {name}");
+            LogWarning($"Could not find bone '{handBoneName}' on {name}");
     }
 
     void Start()

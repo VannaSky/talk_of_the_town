@@ -16,6 +16,13 @@ public class Villager : MonoBehaviour
     [Header("State (Read-Only)")]
     [SerializeField] private Vector2Int currentGridPos;
     
+    private const string LogCategory = "Villager";
+    void LogError(string msg)   => GameLog.LogError(LogCategory, msg, this);
+    void LogWarning(string msg) => GameLog.LogWarning(LogCategory, msg, this);
+    void LogEvent(string msg)   => GameLog.LogEvent(LogCategory, msg, this);
+    void LogInfo(string msg)    => GameLog.LogInfo(LogCategory, msg, this);
+    void LogVerbose(string msg) => GameLog.LogVerbose(LogCategory, msg, this);
+
     // Cached references
     private JobHandler _jobHandler;
     private Tile _currentTile;
@@ -123,8 +130,8 @@ public class Villager : MonoBehaviour
     private void LogState()
     {
         var data = GetData();
-        Debug.Log($"[Villager] {data.name} at ({data.x},{data.y}) on {data.tileType}, " +
-                  $"job={data.currentJob} (lvl {data.jobLevel}), status={data.jobStatus}");
+        LogInfo($"{data.name} at ({data.x},{data.y}) on {data.tileType}, " +
+                $"job={data.currentJob} (lvl {data.jobLevel}), status={data.jobStatus}");
     }
 #endif
 }

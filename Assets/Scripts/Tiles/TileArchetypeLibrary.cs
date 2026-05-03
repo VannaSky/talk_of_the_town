@@ -14,7 +14,7 @@ namespace Tiles
         {
             for (int i = 0; i < entries.Count; i++)
                 if (entries[i].style == s) return entries[i].archetype;
-            Debug.LogError($"No archetype for {s}");
+            GameLog.LogError("TileArchetypeLibrary", $"No archetype for {s}", this);
             return null;
         }
     }

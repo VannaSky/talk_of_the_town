@@ -1135,14 +1135,14 @@ Response Times:
     private void LogResources()
     {
         var resources = GetAllResourceLocations();
-        Debug.Log($"Trees: {resources.treeLocations.Count}, Stone: {resources.stoneLocations.Count}, Crops: {resources.cropLocations.Count}");
+        LogInfo($"Trees: {resources.treeLocations.Count}, Stone: {resources.stoneLocations.Count}, Crops: {resources.cropLocations.Count}");
     }
 
     [ContextMenu("Show Metrics Summary")]
     private void EditorShowMetrics()
     {
         if (Application.isPlaying)
-            Debug.Log(GetMetricsSummary());
+            LogInfo(GetMetricsSummary());
     }
 
     [ContextMenu("Export Metrics to File")]

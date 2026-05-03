@@ -10,6 +10,13 @@ namespace UI
     /// </summary>
     public class MapLoadButton : MonoBehaviour
     {
+        private const string LogCategory = "MapLoadButton";
+        void LogError(string msg)   => GameLog.LogError(LogCategory, msg, this);
+        void LogWarning(string msg) => GameLog.LogWarning(LogCategory, msg, this);
+        void LogEvent(string msg)   => GameLog.LogEvent(LogCategory, msg, this);
+        void LogInfo(string msg)    => GameLog.LogInfo(LogCategory, msg, this);
+        void LogVerbose(string msg) => GameLog.LogVerbose(LogCategory, msg, this);
+
         [Tooltip("Dropdown that lists available saved maps.")]
         [SerializeField] TMP_Dropdown mapDropdown;
 
@@ -25,7 +32,7 @@ namespace UI
         {
             if (mapDropdown == null)
             {
-                Debug.LogWarning("[MapLoadButton] No dropdown assigned.");
+                LogWarning("No dropdown assigned.");
                 return;
             }
 
@@ -57,7 +64,7 @@ namespace UI
         {
             if (mapDropdown == null || mapDropdown.options.Count == 0)
             {
-                Debug.LogError("[MapLoadButton] No map selected.");
+                LogError("No map selected.");
                 return;
             }
 
@@ -67,7 +74,7 @@ namespace UI
             var bridge = FindObjectOfType<TWCBridge>();
             if (bridge == null)
             {
-                Debug.LogError("[MapLoadButton] No TWCBridge found in scene.");
+                LogError("No TWCBridge found in scene.");
                 return;
             }
 

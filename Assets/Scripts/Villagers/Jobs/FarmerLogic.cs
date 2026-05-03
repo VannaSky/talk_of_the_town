@@ -21,13 +21,6 @@ public class FarmerLogic : JobLogic
     [Header("Crop Prefab")]
     public GameObject cropPrefab;
 
-    private const string LogCategory = "FarmerLogic";
-    void LogError(string msg)   => GameLog.LogError(LogCategory, msg);
-    void LogWarning(string msg) => GameLog.LogWarning(LogCategory, msg);
-    void LogEvent(string msg)   => GameLog.LogEvent(LogCategory, msg);
-    void LogInfo(string msg)    => GameLog.LogInfo(LogCategory, msg);
-    void LogVerbose(string msg) => GameLog.LogVerbose(LogCategory, msg);
-
     private enum FarmerPhase { Planting, Harvesting }
 
     [NonSerialized] private FarmerPhase _phase;
