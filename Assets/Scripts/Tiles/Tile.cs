@@ -7,6 +7,13 @@ namespace Tiles
 {
     public sealed class Tile : MonoBehaviour
     {
+        private const string LogCategory = "Tile";
+        void LogError(string msg)   => GameLog.LogError(LogCategory, msg, this);
+        void LogWarning(string msg) => GameLog.LogWarning(LogCategory, msg, this);
+        void LogEvent(string msg)   => GameLog.LogEvent(LogCategory, msg, this);
+        void LogInfo(string msg)    => GameLog.LogInfo(LogCategory, msg, this);
+        void LogVerbose(string msg) => GameLog.LogVerbose(LogCategory, msg, this);
+
         [Header("Identity")]
         [SerializeField] Vector2Int gridPos;
 
@@ -114,9 +121,9 @@ namespace Tiles
         [ContextMenu("Log Instance Info")]
         private void LogInstanceInfo()
         {
-            Debug.Log($"[Tile] {name} instanceID={GetInstanceID()} gridPos={GridPos} " +
-                      $"archetype={Archetype?.name}/{Archetype?.Style} " +
-                      $"path={gameObject.transform.GetHierarchyPath()}");
+            LogInfo($"{name} instanceID={GetInstanceID()} gridPos={GridPos} " +
+                    $"archetype={Archetype?.name}/{Archetype?.Style} " +
+                    $"path={gameObject.transform.GetHierarchyPath()}");
         }
 #endif
         
@@ -133,14 +140,14 @@ namespace Tiles
         {
             if (library == null)
             {
-                Debug.LogWarning($"[Tile] {name} at {gridPos} has no TileArchetypeLibrary; cannot set style {style}.");
+                LogWarning($"{name} at {gridPos} has no TileArchetypeLibrary; cannot set style {style}.");
                 return;
             }
 
             var next = library.Get(style);
             if (next == null)
             {
-                Debug.LogWarning($"[Tile] {name} missing archetype mapping for {style}.");
+                LogWarning($"{name} missing archetype mapping for {style}.");
                 return;
             }
 

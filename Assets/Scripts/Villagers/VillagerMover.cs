@@ -4,6 +4,13 @@ using UnityEngine.AI;
 [RequireComponent(typeof(NavMeshAgent))]
 public class VillagerMover : MonoBehaviour
 {
+    private const string LogCategory = "VillagerMover";
+    void LogError(string msg)   => GameLog.LogError(LogCategory, msg, this);
+    void LogWarning(string msg) => GameLog.LogWarning(LogCategory, msg, this);
+    void LogEvent(string msg)   => GameLog.LogEvent(LogCategory, msg, this);
+    void LogInfo(string msg)    => GameLog.LogInfo(LogCategory, msg, this);
+    void LogVerbose(string msg) => GameLog.LogVerbose(LogCategory, msg, this);
+
     private NavMeshAgent agent;
 
     [Header("Movement Settings")]
@@ -63,7 +70,7 @@ public class VillagerMover : MonoBehaviour
         }
         else
         {
-            Debug.LogError($"{gameObject.name} cannot move! NavMeshAgent is not active or not placed on the NavMesh.");
+            LogError($"{gameObject.name} cannot move! NavMeshAgent is not active or not placed on the NavMesh.");
         }
     }
 

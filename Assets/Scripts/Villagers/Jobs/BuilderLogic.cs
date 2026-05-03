@@ -151,7 +151,7 @@ public class BuilderLogic : JobLogic
         {
             bool finished = _currentTarget.IsFinished();
             if (finished)
-                Debug.Log($"[Builder] Completed building: {GetBuildingName()}");
+                LogEvent($"Completed building: {GetBuildingName()}");
 
             _currentTarget.Unreserve();
             _currentTarget = null;
@@ -175,7 +175,7 @@ public class BuilderLogic : JobLogic
 
         if (!tile.AllowsBuilding(data.constructionType))
         {
-            Debug.LogWarning($"[Builder] Tile {tile.GridPos} does not allow {data.constructionType}");
+            LogWarning($"Tile {tile.GridPos} does not allow {data.constructionType}");
             return null;
         }
 
@@ -197,13 +197,13 @@ public class BuilderLogic : JobLogic
 
         var building = go.GetComponent<Building>();
         if (building == null)
-            Debug.LogWarning($"[Builder] {data.buildingType} prefab has no Building component!");
+            LogWarning($"{data.buildingType} prefab has no Building component!");
 
         // Advance the type index so the next placement cycles to the next building type
         if (buildableTypes != null && buildableTypes.Count > 0)
             _buildingTypeIndex = (_buildingTypeIndex + 1) % buildableTypes.Count;
 
-        Debug.Log($"[Builder] Placed {data.buildingType} foundation at {tile.GridPos}");
+        LogEvent($"Placed {data.buildingType} foundation at {tile.GridPos}");
         return building;
     }
 
@@ -219,7 +219,7 @@ public class BuilderLogic : JobLogic
                 if (data != null && data.buildingType.ToString().Equals(preferred, System.StringComparison.OrdinalIgnoreCase))
                     return data;
             }
-            Debug.LogWarning($"[Builder] LLM requested '{preferred}' but it's not in buildableTypes — falling back to round-robin");
+            LogWarning($"LLM requested '{preferred}' but it's not in buildableTypes — falling back to round-robin");
         }
 
         return buildableTypes[_buildingTypeIndex % buildableTypes.Count];

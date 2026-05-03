@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Environment.Resources;
@@ -32,11 +33,16 @@ public class LLMController : MonoBehaviour
     [Tooltip("Seconds to wait after an event before triggering a decision (collects multiple events into one call)")]
     [SerializeField] private float decisionDebounceDelay = 1f;
 
-    [Header("Debug")]
-    [SerializeField] private bool logPrompts = true;
-    [SerializeField] private bool logResponses = true;
-    [SerializeField] private bool logErrors = true;
-    [SerializeField] private bool logTokenUsage = true;
+    [Header("Context Settings")]
+    [Tooltip("Context window size (tokens). 0 = use model default. Check your model's actual limit.")]
+    [SerializeField] private int contextSize = 0;
+
+    [Header("Memory Settings")]
+    [Tooltip("Number of past user/assistant message pairs to retain. 0 = stateless.")]
+    [SerializeField] private int memoryPairs = 3;
+    [SerializeField] private bool useConversationMemory = true;
+    [Tooltip("Pinned system message sent on every call. Leave empty to omit.")]
+    [SerializeField, TextArea(2, 6)] private string pinnedSystemMessage = "";
 
     [Header("Metrics Tracking")]
     [SerializeField] private bool trackMetrics = true;
@@ -57,9 +63,10 @@ public class LLMController : MonoBehaviour
     public string CurrentModel => defaultModel;
     public bool UseBatchDecisions => useBatchDecisions;
     
-    // Local helper wrappers (as you use them now)
+    
     void LogError(string msg)   => GameLog.LogError(LogCategory, msg, this);
     void LogWarning(string msg) => GameLog.LogWarning(LogCategory, msg, this);
+    void LogEvent(string msg)   => GameLog.LogEvent(LogCategory, msg, this);
     void LogInfo(string msg)    => GameLog.LogInfo(LogCategory, msg, this);
     void LogVerbose(string msg) => GameLog.LogVerbose(LogCategory, msg, this);
 
@@ -70,8 +77,17 @@ public class LLMController : MonoBehaviour
     private float _lastBatchDecisionTime;
     private Coroutine _pendingDecisionCoroutine;
 
+    // State tracking for delta context
+    private int _lastWood = -1, _lastStone = -1, _lastSeeds = -1, _lastFood = -1;
+    private Dictionary<string, string> _lastAssignedJob = new();
+    private int _decisionCount;
+    private const int FullSnapshotInterval = 10;
+
     public bool IsBatchProcessing => _isBatchProcessing;
-    public float TimeSinceLastBatch => Time.time - _lastBatchDecisionTime;
+    public float TimeSinceLastBatch => Time.realtimeSinceStartup - _lastBatchDecisionTime;
+
+    // Conversation memory
+    private ollama.ConversationHistory _conversation;
 
     // Metrics tracking
     private List<LLMMetrics> _metricsHistory = new ();
@@ -106,11 +122,14 @@ public class LLMController : MonoBehaviour
 
             await ApplyModelFromGlobalSettings();
 
+            _conversation = new ollama.ConversationHistory(memoryPairs);
+            if (!string.IsNullOrWhiteSpace(pinnedSystemMessage))
+                _conversation.SetSystemMessage(pinnedSystemMessage);
+
             IsReady = true;
             OnModelLoaded?.Invoke(defaultModel);
 
-            if (logPrompts)
-                LogInfo($"Controller ready with model: {defaultModel}");
+            LogEvent($"Controller ready with model: {defaultModel}");
 
             if (useBatchDecisions)
             {
@@ -141,28 +160,26 @@ public class LLMController : MonoBehaviour
         if (_availableModels.Contains(globalSettings.LLMModel))
         {
             defaultModel = globalSettings.LLMModel;
-            if (logPrompts)
-                LogInfo($"Applied model from GlobalSettings: {defaultModel}");
+            LogEvent($"Applied model from GlobalSettings: {defaultModel}");
         }
         else
         {
-            LogInfo($"Model '{globalSettings.LLMModel}' not found locally. Attempting to pull...");
+            LogWarning($"Model '{globalSettings.LLMModel}' not found locally. Attempting to pull...");
 
             bool success = await Ollama.Pull(globalSettings.LLMModel, (status, progress) =>
             {
-                if (logPrompts)
-                    LogInfo($"Pull '{globalSettings.LLMModel}': {status} ({progress:F1}%)");
+                LogWarning($"Pull '{globalSettings.LLMModel}': {status} ({progress:F1}%)");
             });
 
             if (success)
             {
                 await LoadAvailableModels();
                 defaultModel = globalSettings.LLMModel;
-                LogInfo($"Successfully pulled and applied model: {defaultModel}");
+                LogWarning($"Successfully pulled and applied model: {defaultModel}");
             }
             else
             {
-                LogInfo($"Failed to pull model '{globalSettings.LLMModel}'. Using default: {defaultModel}");
+                LogError($"Failed to pull model '{globalSettings.LLMModel}'. Using default: {defaultModel}");
             }
         }
     }
@@ -238,9 +255,9 @@ public class LLMController : MonoBehaviour
 
     private IEnumerator DebouncedDecision(string reason)
     {
-        yield return new WaitForSeconds(decisionDebounceDelay);
+        yield return new WaitForSecondsRealtime(decisionDebounceDelay);
         _pendingDecisionCoroutine = null;
-        if (logPrompts) LogInfo($"Event-triggered decision: {reason}");
+        LogEvent($"Event-triggered decision: {reason}");
         yield return RequestBatchDecisions();
     }
 
@@ -248,15 +265,15 @@ public class LLMController : MonoBehaviour
 
     private IEnumerator BatchDecisionLoop()
     {
-        yield return new WaitForSeconds(2f);
+        yield return new WaitForSecondsRealtime(2f);
 
         while (true)
         {
-            yield return new WaitForSeconds(batchDecisionInterval);
+            yield return new WaitForSecondsRealtime(batchDecisionInterval);
 
             if (IsReady && VillageState.Instance != null && VillageState.Instance.Villagers.Count > 0)
             {
-                if (logPrompts) LogInfo($"Fallback interval triggered batch decision.");
+                LogEvent($"Fallback interval triggered batch decision.");
                 yield return RequestBatchDecisions();
             }
         }
@@ -291,13 +308,11 @@ public class LLMController : MonoBehaviour
             yield return null;
 
         _latestBatchDecisions = task.Result;
-        _lastBatchDecisionTime = Time.time;
+        _lastBatchDecisionTime = Time.realtimeSinceStartup;
         _isBatchProcessing = false;
 
         OnBatchDecisionMade?.Invoke(_latestBatchDecisions);
 
-        if (logPrompts)
-            LogInfo($"Batch decisions made for {_latestBatchDecisions.Count} villagers");
     }
 
     private List<string> GetAvailableJobNames()
@@ -362,7 +377,13 @@ public class LLMController : MonoBehaviour
         {
             if (v == null) continue;
             var d = v.GetData();
-            sb.AppendLine($"- {d.name}: currently at ({d.x},{d.y}), Job={d.currentJob}, Status=\"{d.jobStatus}\"");
+            bool isStuck = d.jobStatus == "Idle"
+                || d.jobStatus.Contains("Waiting")
+                || d.jobStatus.Contains("No ")
+                || d.jobStatus.Contains("found")
+                || d.jobStatus.Contains("Looking");
+            string tag = isStuck ? "[NEEDS ASSIGNMENT]" : "[KEEP]";
+            sb.AppendLine($"- {d.name} {tag}: at ({d.x},{d.y}), Job={d.currentJob}, Status=\"{d.jobStatus}\"");
         }
         sb.AppendLine();
 
@@ -372,40 +393,52 @@ public class LLMController : MonoBehaviour
         if (resourceLocations.treeLocations.Count > 0)
         {
             sb.Append("TREES: ");
-            sb.AppendLine(FormatLocationsSimple(resourceLocations.treeLocations));
+            sb.AppendLine(FormatLocationsSimple(SortByNearestVillager(resourceLocations.treeLocations, villagers)));
         }
 
         if (resourceLocations.stoneLocations.Count > 0)
         {
             sb.Append("STONE: ");
-            sb.AppendLine(FormatLocationsSimple(resourceLocations.stoneLocations));
+            sb.AppendLine(FormatLocationsSimple(SortByNearestVillager(resourceLocations.stoneLocations, villagers)));
         }
 
         if (resourceLocations.seedLocations.Count > 0)
         {
             sb.Append("SEEDS: ");
-            sb.AppendLine(FormatLocationsSimple(resourceLocations.seedLocations));
+            sb.AppendLine(FormatLocationsSimple(SortByNearestVillager(resourceLocations.seedLocations, villagers)));
         }
 
         if (resourceLocations.buildingLocations.Count > 0)
         {
             sb.Append("UNFINISHED BUILDINGS: ");
-            sb.AppendLine(FormatLocationsSimple(resourceLocations.buildingLocations));
+            sb.AppendLine(FormatLocationsSimple(SortByNearestVillager(resourceLocations.buildingLocations, villagers)));
         }
 
         if (resourceLocations.farmLocations.Count > 0)
         {
             sb.Append("FARMS: ");
-            sb.AppendLine(FormatLocationsSimple(resourceLocations.farmLocations));
+            sb.AppendLine(FormatLocationsSimple(SortByNearestVillager(resourceLocations.farmLocations, villagers)));
         }
 
         if (resourceLocations.cropLocations.Count > 0)
         {
             sb.Append("MATURE CROPS: ");
-            sb.AppendLine(FormatLocationsSimple(resourceLocations.cropLocations));
+            sb.AppendLine(FormatLocationsSimple(SortByNearestVillager(resourceLocations.cropLocations, villagers)));
         }
 
         return sb.ToString();
+    }
+
+    private List<Vector2Int> SortByNearestVillager(List<Vector2Int> locations, IReadOnlyList<Villager> villagers)
+    {
+        if (villagers == null || villagers.Count == 0) return locations.Distinct().ToList();
+
+        return locations
+            .Distinct()
+            .OrderBy(loc => villagers
+                .Where(v => v != null)
+                .Min(v => Mathf.Abs(v.GridPosition.x - loc.x) + Mathf.Abs(v.GridPosition.y - loc.y)))
+            .ToList();
     }
 
     private string FormatLocationsSimple(List<Vector2Int> locations)
@@ -426,6 +459,94 @@ public class LLMController : MonoBehaviour
         return result;
     }
 
+    private bool ShouldUseFullSnapshot()
+    {
+        if (_decisionCount == 0) return true;
+        if (_decisionCount % FullSnapshotInterval == 0) return true;
+        // Only crisis-trigger if food was previously healthy and just dropped — not early game zero
+        if (VillageState.Instance != null && _lastFood >= 5 && VillageState.Instance.Food < 5) return true;
+        return false;
+    }
+
+    private string BuildDeltaContext(IReadOnlyList<Villager> villagers, List<string> availableJobs)
+    {
+        var sb = new System.Text.StringBuilder();
+
+        if (VillageGoals.Instance != null)
+        {
+            sb.AppendLine("=== VILLAGE GOALS ===");
+            sb.AppendLine(VillageGoals.Instance.GetGoalsForPrompt());
+            sb.AppendLine();
+        }
+
+        if (VillageState.Instance != null)
+        {
+            int wood = VillageState.Instance.Wood;
+            int stone = VillageState.Instance.Stone;
+            int seeds = VillageState.Instance.Seeds;
+            int food = VillageState.Instance.Food;
+
+            sb.AppendLine("=== RESOURCE CHANGES ===");
+            sb.AppendLine(FormatDelta("Wood", wood, _lastWood, wood > 50 ? " [SURPLUS]" : wood < 10 ? " [LOW]" : ""));
+            sb.AppendLine(FormatDelta("Stone", stone, _lastStone, stone > 40 ? " [SURPLUS]" : stone < 10 ? " [LOW]" : ""));
+            sb.AppendLine(FormatDelta("Seeds", seeds, _lastSeeds, seeds >= 10 ? " [SUFFICIENT]" : " [LOW]"));
+            sb.AppendLine(FormatDelta("Food", food, _lastFood, food < 10 ? " [LOW]" : ""));
+            sb.AppendLine();
+        }
+
+        sb.AppendLine("=== VILLAGERS ===");
+        foreach (var v in villagers)
+        {
+            if (v == null) continue;
+            var d = v.GetData();
+            bool isStuck = d.jobStatus == "Idle"
+                || d.jobStatus.Contains("Waiting")
+                || d.jobStatus.Contains("No ")
+                || d.jobStatus.Contains("found")
+                || d.jobStatus.Contains("Looking");
+            string tag = isStuck ? "[NEEDS ASSIGNMENT]" : "[KEEP]";
+            string previousJob = _lastAssignedJob.TryGetValue(d.name, out var prev) && prev != d.currentJob
+                ? $", was {prev}"
+                : "";
+            sb.AppendLine($"- {d.name} {tag}: {d.currentJob} at ({d.x},{d.y}){previousJob}, Status=\"{d.jobStatus}\"");
+        }
+        sb.AppendLine();
+
+        sb.AppendLine("=== AVAILABLE RESOURCES ===");
+        var resourceLocations = GetAllResourceLocations();
+        if (resourceLocations.treeLocations.Count > 0)
+            sb.AppendLine($"TREES: {FormatLocationsSimple(SortByNearestVillager(resourceLocations.treeLocations, villagers))}");
+        if (resourceLocations.stoneLocations.Count > 0)
+            sb.AppendLine($"STONE: {FormatLocationsSimple(SortByNearestVillager(resourceLocations.stoneLocations, villagers))}");
+        if (resourceLocations.seedLocations.Count > 0)
+            sb.AppendLine($"SEEDS: {FormatLocationsSimple(SortByNearestVillager(resourceLocations.seedLocations, villagers))}");
+        if (resourceLocations.buildingLocations.Count > 0)
+            sb.AppendLine($"UNFINISHED BUILDINGS: {FormatLocationsSimple(SortByNearestVillager(resourceLocations.buildingLocations, villagers))}");
+        if (resourceLocations.farmLocations.Count > 0)
+            sb.AppendLine($"FARMS: {FormatLocationsSimple(SortByNearestVillager(resourceLocations.farmLocations, villagers))}");
+        if (resourceLocations.cropLocations.Count > 0)
+            sb.AppendLine($"MATURE CROPS: {FormatLocationsSimple(SortByNearestVillager(resourceLocations.cropLocations, villagers))}");
+
+        return sb.ToString();
+    }
+
+    private string FormatDelta(string label, int current, int last, string suffix)
+    {
+        if (last < 0) return $"{label}: {current}{suffix}";
+        int diff = current - last;
+        string change = diff == 0 ? "no change" : diff > 0 ? $"+{diff}" : $"{diff}";
+        return $"{label}: {current} (was {last}, {change}){suffix}";
+    }
+
+    private void UpdateStateSnapshot()
+    {
+        if (VillageState.Instance == null) return;
+        _lastWood = VillageState.Instance.Wood;
+        _lastStone = VillageState.Instance.Stone;
+        _lastSeeds = VillageState.Instance.Seeds;
+        _lastFood = VillageState.Instance.Food;
+    }
+
     #endregion
 
     #region Batch Decision Making
@@ -439,16 +560,25 @@ public class LLMController : MonoBehaviour
         if (!IsReady || villagers.Count == 0)
             return results;
 
+        bool fullSnapshot = ShouldUseFullSnapshot();
         string systemPrompt = BuildBatchSystemPrompt(availableJobs, villagers.Count);
-        string context = BuildBatchContext(villagers, availableJobs);
+        string context = fullSnapshot
+            ? BuildBatchContext(villagers, availableJobs)
+            : BuildDeltaContext(villagers, availableJobs);
 
-        string fullPrompt = $"{systemPrompt}\n\n{context}\nAssign jobs and locations to ALL villagers:";
+        string promptLabel = fullSnapshot ? "FULL SNAPSHOT" : "DELTA";
+
+        if (useConversationMemory)
+            _conversation.SetSystemMessage(systemPrompt);
+
+        string fullPrompt = useConversationMemory
+            ? $"{context}\nAssign jobs and locations to ALL villagers:"
+            : $"{systemPrompt}\n\n{context}\nAssign jobs and locations to ALL villagers:";
 
         if (includeThinkingPrompt)
             fullPrompt += "\n/think";
-
-        if (logPrompts)
-            LogInfo($"Batch Prompt:\n{fullPrompt}");
+        
+        LogVerbose($"Batch Prompt [{promptLabel}] for {villagers.Count} villagers:\n{fullPrompt} ");
 
         // Start metrics tracking
         var metrics = new LLMMetrics
@@ -465,7 +595,9 @@ public class LLMController : MonoBehaviour
         try
         {
             // Use the extension method to get full metadata
-            var chatResponse = await OllamaExtensions.ChatWithMetadataExt(defaultModel, fullPrompt, keepAliveSeconds);
+            var chatResponse = useConversationMemory
+                ? await OllamaExtensions.ChatWithMetadataExt(defaultModel, fullPrompt, _conversation, keepAliveSeconds, contextSize)
+                : await OllamaExtensions.ChatWithMetadataExt(defaultModel, fullPrompt, keepAliveSeconds, contextSize);
             
             metrics.responseTime = (DateTime.Now - startTime).TotalSeconds;
             metrics.responseLength = chatResponse.content.Length;
@@ -480,12 +612,17 @@ public class LLMController : MonoBehaviour
             metrics.evalDuration = chatResponse.EvalSeconds;
             metrics.totalDuration = chatResponse.TotalSeconds;
             metrics.loadDuration = chatResponse.LoadSeconds;
-
-            if (logResponses)
-                LogInfo($"Batch Response:\n{chatResponse.content}");
+            
+            LogEvent($"Batch Response:\n{chatResponse.content}");
 
             results = ParseBatchDecisions(chatResponse.content, villagers);
-            
+
+            // Update state for next delta
+            UpdateStateSnapshot();
+            foreach (var kv in results)
+                _lastAssignedJob[kv.Key] = kv.Value.jobName;
+            _decisionCount++;
+
             metrics.success = true;
             metrics.decisionsCount = results.Count;
         }
@@ -495,8 +632,7 @@ public class LLMController : MonoBehaviour
             metrics.errorMessage = e.Message;
             metrics.responseTime = (DateTime.Now - startTime).TotalSeconds;
             
-            if (logErrors)
-                LogError($"Batch Error: {e.Message}");
+            LogError($"Batch Error: {e.Message}");
 
             OnError?.Invoke(e.Message);
 
@@ -532,7 +668,7 @@ public class LLMController : MonoBehaviour
 
             var raw = JsonUtility.FromJson<RawBatchDecision>(match.Value);
 
-            if (raw.assignments != null)
+            if (raw.assignments != null && raw.assignments.Count > 0)
             {
                 foreach (var assignment in raw.assignments)
                 {
@@ -548,10 +684,13 @@ public class LLMController : MonoBehaviour
                     };
 
                     results[assignment.villager] = decision;
-
-                    if (logPrompts)
-                        LogInfo($"Parsed: {assignment.villager} -> {decision.jobName} at ({decision.targetX},{decision.targetY})");
+                    LogInfo($"Parsed: {assignment.villager} -> {decision.jobName} at ({decision.targetX},{decision.targetY})");
                 }
+            }
+            else
+            {
+                // Fallback: small models sometimes return a flat dict { "VillagerName": { "job": "X", "location": "(x,y)" } }
+                TryParseFlatDictFormat(match.Value, villagers, results);
             }
 
             foreach (var v in villagers)
@@ -593,7 +732,7 @@ public class LLMController : MonoBehaviour
                         goal.targetResource = rt;
                     }
 
-                    LogInfo($"Goal parsed: {goal.description} | type={goal.type} resource={goal.targetResource} amount={goal.targetAmount} priority={goal.priority}");
+                    LogEvent($"Goal parsed: {goal.description} | type={goal.type} resource={goal.targetResource} amount={goal.targetAmount} priority={goal.priority}");
                     parsedGoals.Add(goal);
                 }
 
@@ -608,6 +747,46 @@ public class LLMController : MonoBehaviour
         }
 
         return results;
+    }
+
+    private void TryParseFlatDictFormat(string json, IReadOnlyList<Villager> villagers, Dictionary<string, JobDecision> results)
+    {
+        // Handles: { "VillagerName": { "job": "X", "location": "(x,y)" }, ... }
+        foreach (var v in villagers)
+        {
+            if (v == null) continue;
+
+            var entryMatch = Regex.Match(json,
+                $@"""{Regex.Escape(v.villagerName)}""\s*:\s*\{{([^}}]*)\}}");
+            if (!entryMatch.Success) continue;
+
+            string block = entryMatch.Groups[1].Value;
+
+            var jobMatch = Regex.Match(block, @"""job""\s*:\s*""([^""]+)""");
+            string jobName = jobMatch.Success ? jobMatch.Groups[1].Value : "IDLE";
+
+            int x = 0, y = 0;
+            var locMatch = Regex.Match(block, @"""location""\s*:\s*""\(?\s*(-?\d+)\s*,\s*(-?\d+)\s*\)?""");
+            if (locMatch.Success)
+            {
+                int.TryParse(locMatch.Groups[1].Value, out x);
+                int.TryParse(locMatch.Groups[2].Value, out y);
+            }
+
+            var reasonMatch = Regex.Match(block, @"""reason""\s*:\s*""([^""]*)""");
+
+            results[v.villagerName] = new JobDecision
+            {
+                jobName = jobName,
+                reason = reasonMatch.Success ? reasonMatch.Groups[1].Value : "",
+                success = true,
+                hasTargetArea = x != 0 || y != 0,
+                targetX = x,
+                targetY = y
+            };
+
+            LogInfo($"Parsed (flat): {v.villagerName} -> {jobName} at ({x},{y})");
+        }
     }
 
     #endregion
@@ -654,8 +833,7 @@ public class LLMController : MonoBehaviour
         if (includeThinkingPrompt)
             fullPrompt += "\n/think";
 
-        if (logPrompts)
-            LogInfo($"Single Prompt:\n{fullPrompt}");
+        LogVerbose($"Single Prompt:\n{fullPrompt}");
 
         var metrics = new LLMMetrics
         {
@@ -671,22 +849,21 @@ public class LLMController : MonoBehaviour
 
         try
         {
-            var chatResponse = await OllamaExtensions.ChatWithMetadataExt(defaultModel, fullPrompt, keepAliveSeconds);
+            var chatResponse = await OllamaExtensions.ChatWithMetadataExt(defaultModel, fullPrompt, keepAliveSeconds, contextSize);
 
             metrics.responseTime = (DateTime.Now - startTime).TotalSeconds;
             metrics.responseLength = chatResponse.content.Length;
-            
+
             metrics.promptEvalCount = chatResponse.promptEvalCount;
             metrics.evalCount = chatResponse.evalCount;
             metrics.totalTokens = chatResponse.TotalTokens;
-            
+
             metrics.promptEvalDuration = chatResponse.PromptEvalSeconds;
             metrics.evalDuration = chatResponse.EvalSeconds;
             metrics.totalDuration = chatResponse.TotalSeconds;
             metrics.loadDuration = chatResponse.LoadSeconds;
 
-            if (logResponses)
-                LogInfo($"Response:\n{chatResponse.content}");
+            LogVerbose($"Response:\n{chatResponse.content}");
 
             var decision = ParseSingleDecision(chatResponse.content);
             
@@ -705,8 +882,7 @@ public class LLMController : MonoBehaviour
             
             RecordMetrics(metrics);
             
-            if (logErrors)
-                LogError($"Error: {e.Message}");
+            LogError($"Error: {e.Message}");
 
             return JobDecision.Idle($"Error: {e.Message}");
         }
@@ -814,12 +990,12 @@ public class LLMController : MonoBehaviour
 
         OnMetricsRecorded?.Invoke(metrics);
 
-        if (logTokenUsage)
-        {
-            LogInfo($"Metrics: Type={metrics.requestType}, " +
-                     $"Tokens={metrics.totalTokens} (prompt={metrics.promptEvalCount}, response={metrics.evalCount}), " +
-                     $"Time={metrics.responseTime:F2}s (eval={metrics.evalDuration:F2}s), Success={metrics.success}");
-        }
+        LogEvent($"Metrics: Type={metrics.requestType}, " +
+                $"Tokens={metrics.totalTokens} (prompt={metrics.promptEvalCount}, response={metrics.evalCount}), " +
+                 $"Time={metrics.responseTime:F2}s (eval={metrics.evalDuration:F2}s), Success={metrics.success}");
+
+        if (contextSize > 0 && metrics.promptEvalCount >= contextSize * 0.9f)
+            LogWarning($"Context near limit: {metrics.promptEvalCount}/{contextSize} tokens used ({metrics.promptEvalCount * 100f / contextSize:F0}%)");
 
         if (exportMetricsToFile && _metricsHistory.Count % 10 == 0)
         {
@@ -945,8 +1121,29 @@ Response Times:
     public void ResetChat()
     {
         Ollama.InitChat();
-        if (logPrompts) LogInfo("Chat reset");
+        _conversation?.Clear();
+        _lastWood = _lastStone = _lastSeeds = _lastFood = -1;
+        _lastAssignedJob.Clear();
+        _decisionCount = 0;
+        LogInfo("Chat reset");
     }
+
+    private void OnValidate()
+    {
+        if (_conversation != null) _conversation.MaxPairs = memoryPairs;
+    }
+
+    public int MemoryPairs
+    {
+        get => memoryPairs;
+        set
+        {
+            memoryPairs = Mathf.Max(0, value);
+            if (_conversation != null) _conversation.MaxPairs = memoryPairs;
+        }
+    }
+
+    public int CurrentRetainedPairs => _conversation?.PairCount ?? 0;
 
     public void SetModel(string modelName)
     {
@@ -982,14 +1179,14 @@ Response Times:
     private void LogResources()
     {
         var resources = GetAllResourceLocations();
-        Debug.Log($"Trees: {resources.treeLocations.Count}, Stone: {resources.stoneLocations.Count}, Crops: {resources.cropLocations.Count}");
+        LogInfo($"Trees: {resources.treeLocations.Count}, Stone: {resources.stoneLocations.Count}, Crops: {resources.cropLocations.Count}");
     }
 
     [ContextMenu("Show Metrics Summary")]
     private void EditorShowMetrics()
     {
         if (Application.isPlaying)
-            Debug.Log(GetMetricsSummary());
+            LogInfo(GetMetricsSummary());
     }
 
     [ContextMenu("Export Metrics to File")]

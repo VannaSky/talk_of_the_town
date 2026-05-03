@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.Serialization;
 
 namespace Cameras
@@ -111,7 +112,7 @@ namespace Cameras
                 Cursor.lockState = _wantedMode = CursorLockMode.None;
             }
 
-            if (Input.GetMouseButtonDown(0))
+            if (Input.GetMouseButtonDown(0) && !EventSystem.current.IsPointerOverGameObject())
             {
                 _wantedMode = CursorLockMode.Locked;
             }
@@ -124,7 +125,7 @@ namespace Cameras
 
         private void CalculateCurrentIncrease(bool moving)
         {
-            _currentIncrease = Time.deltaTime;
+            _currentIncrease = Time.unscaledDeltaTime;
 
             if (!enableSpeedAcceleration || (enableSpeedAcceleration && !moving))
             {
@@ -132,8 +133,8 @@ namespace Cameras
                 return;
             }
 
-            _currentIncreaseMem += Time.deltaTime * (speedAccelerationFactor - 1);
-            _currentIncrease = Time.deltaTime + Mathf.Pow(_currentIncreaseMem, 3) * Time.deltaTime;
+            _currentIncreaseMem += Time.unscaledDeltaTime * (speedAccelerationFactor - 1);
+            _currentIncrease = Time.unscaledDeltaTime + Mathf.Pow(_currentIncreaseMem, 3) * Time.unscaledDeltaTime;
         }
 
         private void Update()
@@ -178,7 +179,7 @@ namespace Cameras
             // Translation (zoom in/out)
             if (enableTranslation)
             {
-                transform.Translate(Vector3.forward * Input.mouseScrollDelta.y * Time.deltaTime * translationSpeed);
+                transform.Translate(Vector3.forward * Input.mouseScrollDelta.y * Time.unscaledDeltaTime * translationSpeed);
             }
 
             // Movement

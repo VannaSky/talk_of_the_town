@@ -10,6 +10,13 @@ namespace UI
     /// </summary>
     public class MapSaveButton : MonoBehaviour
     {
+        private const string LogCategory = "MapSaveButton";
+        void LogError(string msg)   => GameLog.LogError(LogCategory, msg, this);
+        void LogWarning(string msg) => GameLog.LogWarning(LogCategory, msg, this);
+        void LogEvent(string msg)   => GameLog.LogEvent(LogCategory, msg, this);
+        void LogInfo(string msg)    => GameLog.LogInfo(LogCategory, msg, this);
+        void LogVerbose(string msg) => GameLog.LogVerbose(LogCategory, msg, this);
+
         [Tooltip("Optional: MapLoadButton to refresh its dropdown after saving.")]
         [SerializeField] private MapLoadButton mapLoadButton;
 
@@ -20,14 +27,14 @@ namespace UI
             _twcBridge = FindFirstObjectByType<TWCBridge>();
 
             if (_twcBridge == null)
-                Debug.LogWarning("[MapSaveButton] TWCBridge not found in scene. Save button will not work.");
+                LogWarning("TWCBridge not found in scene. Save button will not work.");
         }
 
         public void SaveMap()
         {
             if (_twcBridge == null)
             {
-                Debug.LogError("[MapSaveButton] TWCBridge is null. Cannot save map.");
+                LogError("TWCBridge is null. Cannot save map.");
                 return;
             }
 

@@ -5,6 +5,12 @@ public class GlobalSettings : MonoBehaviour
     public static GlobalSettings Instance { get; private set; }
 
     [SerializeField] private LogLevel logLevel = LogLevel.Warning;
+
+    public LogLevel LogLevel
+    {
+        get => logLevel;
+        set { logLevel = value; GameLog.GlobalLevel = value; }
+    }
     [SerializeField] private string llmModel = "";
     [SerializeField] private bool useCavemanPrompt = false;
 
@@ -33,6 +39,11 @@ public class GlobalSettings : MonoBehaviour
             return;
         }
 
+        GameLog.GlobalLevel = logLevel;
+    }
+
+    private void OnValidate()
+    {
         GameLog.GlobalLevel = logLevel;
     }
 }

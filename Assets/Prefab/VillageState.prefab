@@ -1,0 +1,83 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!1 &4370084516345042310
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 7486694676169676625}
+  - component: {fileID: 6563757467365591586}
+  - component: {fileID: 4412592464768842206}
+  m_Layer: 0
+  m_Name: VillageState
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 0
+--- !u!4 &7486694676169676625
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4370084516345042310}
+  serializedVersion: 2
+  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
+  m_LocalPosition: {x: 5.7884216, y: 0.49997, z: -7.8695097}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &6563757467365591586
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4370084516345042310}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 2501118100003744894308b3fe831c3c, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: '::'
+  tileGrid: {fileID: 0}
+  wood: 0
+  stone: 0
+  seeds: 0
+  iron: 0
+  food: 0
+  gameSpeed: 1
+  populationCap: 5
+  inventoryCapacity: 100
+  villagerPrefab: {fileID: 5758365978611229494, guid: 8d7b7dfb3b1119c7798da3637ada878a, type: 3}
+  villagerNamePool:
+  - Walter
+  - Robert
+  - Siegfried
+  - Herbert
+  - Rudolf
+  - Gieselbert
+  - Horst
+  - "J\xFCrgen"
+  - Werner
+  - Norbert
+  - "J\xF6rg"
+  villagers: []
+--- !u!114 &4412592464768842206
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4370084516345042310}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9b6f300578874cc4f9debcd697ae72fd, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::AmbientAudioController
+  audioData: {fileID: 11400000, guid: 98478b6aab18686489eacf6cbbc423ab, type: 2}

@@ -6,6 +6,13 @@ namespace Tiles
 {
     public sealed class TileGrid : MonoBehaviour
     {
+        private const string LogCategory = "TileGrid";
+        void LogError(string msg)   => GameLog.LogError(LogCategory, msg, this);
+        void LogWarning(string msg) => GameLog.LogWarning(LogCategory, msg, this);
+        void LogEvent(string msg)   => GameLog.LogEvent(LogCategory, msg, this);
+        void LogInfo(string msg)    => GameLog.LogInfo(LogCategory, msg, this);
+        void LogVerbose(string msg) => GameLog.LogVerbose(LogCategory, msg, this);
+
         private readonly Dictionary<Vector2Int, Tile> _tiles = new();
 
         void Awake()
@@ -87,7 +94,7 @@ namespace Tiles
         string json = ExportToJsonCompact();
         string path = Path.Combine(Application.persistentDataPath, filename);
         File.WriteAllText(path, json);
-        Debug.Log($"Compact grid saved to: {path}");
+        LogInfo($"Compact grid saved to: {path}");
     }
     
     /// <summary>Get compact summary for LLM (smaller token count)</summary>
