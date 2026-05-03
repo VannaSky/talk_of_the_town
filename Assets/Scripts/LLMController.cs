@@ -129,7 +129,7 @@ public class LLMController : MonoBehaviour
             IsReady = true;
             OnModelLoaded?.Invoke(defaultModel);
 
-            LogInfo($"Controller ready with model: {defaultModel}");
+            LogEvent($"Controller ready with model: {defaultModel}");
 
             if (useBatchDecisions)
             {
@@ -160,7 +160,7 @@ public class LLMController : MonoBehaviour
         if (_availableModels.Contains(globalSettings.LLMModel))
         {
             defaultModel = globalSettings.LLMModel;
-            LogInfo($"Applied model from GlobalSettings: {defaultModel}");
+            LogEvent($"Applied model from GlobalSettings: {defaultModel}");
         }
         else
         {
@@ -257,7 +257,7 @@ public class LLMController : MonoBehaviour
     {
         yield return new WaitForSecondsRealtime(decisionDebounceDelay);
         _pendingDecisionCoroutine = null;
-        LogInfo($"Event-triggered decision: {reason}");
+        LogEvent($"Event-triggered decision: {reason}");
         yield return RequestBatchDecisions();
     }
 
@@ -273,7 +273,7 @@ public class LLMController : MonoBehaviour
 
             if (IsReady && VillageState.Instance != null && VillageState.Instance.Villagers.Count > 0)
             {
-                LogInfo($"Fallback interval triggered batch decision.");
+                LogEvent($"Fallback interval triggered batch decision.");
                 yield return RequestBatchDecisions();
             }
         }
@@ -613,7 +613,7 @@ public class LLMController : MonoBehaviour
             metrics.totalDuration = chatResponse.TotalSeconds;
             metrics.loadDuration = chatResponse.LoadSeconds;
             
-            LogInfo($"Batch Response:\n{chatResponse.content}");
+            LogEvent($"Batch Response:\n{chatResponse.content}");
 
             results = ParseBatchDecisions(chatResponse.content, villagers);
 
@@ -668,7 +668,7 @@ public class LLMController : MonoBehaviour
 
             var raw = JsonUtility.FromJson<RawBatchDecision>(match.Value);
 
-            if (raw.assignments != null)
+            if (raw.assignments != null && raw.assignments.Count > 0)
             {
                 foreach (var assignment in raw.assignments)
                 {
@@ -684,9 +684,13 @@ public class LLMController : MonoBehaviour
                     };
 
                     results[assignment.villager] = decision;
-
-                        LogInfo($"Parsed: {assignment.villager} -> {decision.jobName} at ({decision.targetX},{decision.targetY})");
+                    LogInfo($"Parsed: {assignment.villager} -> {decision.jobName} at ({decision.targetX},{decision.targetY})");
                 }
+            }
+            else
+            {
+                // Fallback: small models sometimes return a flat dict { "VillagerName": { "job": "X", "location": "(x,y)" } }
+                TryParseFlatDictFormat(match.Value, villagers, results);
             }
 
             foreach (var v in villagers)
@@ -743,6 +747,46 @@ public class LLMController : MonoBehaviour
         }
 
         return results;
+    }
+
+    private void TryParseFlatDictFormat(string json, IReadOnlyList<Villager> villagers, Dictionary<string, JobDecision> results)
+    {
+        // Handles: { "VillagerName": { "job": "X", "location": "(x,y)" }, ... }
+        foreach (var v in villagers)
+        {
+            if (v == null) continue;
+
+            var entryMatch = Regex.Match(json,
+                $@"""{Regex.Escape(v.villagerName)}""\s*:\s*\{{([^}}]*)\}}");
+            if (!entryMatch.Success) continue;
+
+            string block = entryMatch.Groups[1].Value;
+
+            var jobMatch = Regex.Match(block, @"""job""\s*:\s*""([^""]+)""");
+            string jobName = jobMatch.Success ? jobMatch.Groups[1].Value : "IDLE";
+
+            int x = 0, y = 0;
+            var locMatch = Regex.Match(block, @"""location""\s*:\s*""\(?\s*(-?\d+)\s*,\s*(-?\d+)\s*\)?""");
+            if (locMatch.Success)
+            {
+                int.TryParse(locMatch.Groups[1].Value, out x);
+                int.TryParse(locMatch.Groups[2].Value, out y);
+            }
+
+            var reasonMatch = Regex.Match(block, @"""reason""\s*:\s*""([^""]*)""");
+
+            results[v.villagerName] = new JobDecision
+            {
+                jobName = jobName,
+                reason = reasonMatch.Success ? reasonMatch.Groups[1].Value : "",
+                success = true,
+                hasTargetArea = x != 0 || y != 0,
+                targetX = x,
+                targetY = y
+            };
+
+            LogInfo($"Parsed (flat): {v.villagerName} -> {jobName} at ({x},{y})");
+        }
     }
 
     #endregion
@@ -946,7 +990,7 @@ public class LLMController : MonoBehaviour
 
         OnMetricsRecorded?.Invoke(metrics);
 
-        LogInfo($"Metrics: Type={metrics.requestType}, " +
+        LogEvent($"Metrics: Type={metrics.requestType}, " +
                 $"Tokens={metrics.totalTokens} (prompt={metrics.promptEvalCount}, response={metrics.evalCount}), " +
                  $"Time={metrics.responseTime:F2}s (eval={metrics.evalDuration:F2}s), Success={metrics.success}");
 

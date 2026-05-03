@@ -71,7 +71,7 @@ namespace UI
             string selected = mapDropdown.options[mapDropdown.value].text;
             if (selected == "No saved maps") return;
 
-            var bridge = FindObjectOfType<TWCBridge>();
+            var bridge = FindFirstObjectByType<TWCBridge>();
             if (bridge == null)
             {
                 LogError("No TWCBridge found in scene.");
