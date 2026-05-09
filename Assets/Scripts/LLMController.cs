@@ -403,43 +403,58 @@ public class LLMController : MonoBehaviour
         }
         sb.AppendLine();
 
+        // Build occupied-position map from villagers who are actively working ([KEEP])
+        var takenPositions = new Dictionary<Vector2Int, string>();
+        foreach (var v in villagers)
+        {
+            if (v == null) continue;
+            var d = v.GetData();
+            bool isStuck = d.jobStatus == "Idle"
+                || d.jobStatus.Contains("Waiting")
+                || d.jobStatus.Contains("No ")
+                || d.jobStatus.Contains("found")
+                || d.jobStatus.Contains("Looking");
+            if (!isStuck)
+                takenPositions[new Vector2Int(d.x, d.y)] = d.name;
+        }
+
         sb.AppendLine("=== AVAILABLE RESOURCES (assign villagers to DIFFERENT locations!) ===");
         var resourceLocations = GetAllResourceLocations();
 
         if (resourceLocations.treeLocations.Count > 0)
         {
             sb.Append("TREES: ");
-            sb.AppendLine(FormatLocationsSimple(SortByNearestVillager(resourceLocations.treeLocations, villagers)));
+            sb.AppendLine(FormatLocationsWithTaken(SortByNearestVillager(resourceLocations.treeLocations, villagers), takenPositions));
         }
 
         if (resourceLocations.stoneLocations.Count > 0)
         {
             sb.Append("STONE: ");
-            sb.AppendLine(FormatLocationsSimple(SortByNearestVillager(resourceLocations.stoneLocations, villagers)));
+            sb.AppendLine(FormatLocationsWithTaken(SortByNearestVillager(resourceLocations.stoneLocations, villagers), takenPositions));
         }
 
         if (resourceLocations.seedLocations.Count > 0)
         {
             sb.Append("SEEDS: ");
-            sb.AppendLine(FormatLocationsSimple(SortByNearestVillager(resourceLocations.seedLocations, villagers)));
+            sb.AppendLine(FormatLocationsWithTaken(SortByNearestVillager(resourceLocations.seedLocations, villagers), takenPositions));
         }
 
         if (resourceLocations.buildingLocations.Count > 0)
         {
             sb.Append("UNFINISHED BUILDINGS: ");
-            sb.AppendLine(FormatLocationsSimple(SortByNearestVillager(resourceLocations.buildingLocations, villagers)));
+            sb.AppendLine(FormatLocationsWithTaken(SortByNearestVillager(resourceLocations.buildingLocations, villagers), takenPositions));
         }
 
         if (resourceLocations.farmLocations.Count > 0)
         {
             sb.Append("FARMS: ");
-            sb.AppendLine(FormatLocationsSimple(SortByNearestVillager(resourceLocations.farmLocations, villagers)));
+            sb.AppendLine(FormatLocationsWithTaken(SortByNearestVillager(resourceLocations.farmLocations, villagers), takenPositions));
         }
 
         if (resourceLocations.cropLocations.Count > 0)
         {
             sb.Append("MATURE CROPS: ");
-            sb.AppendLine(FormatLocationsSimple(SortByNearestVillager(resourceLocations.cropLocations, villagers)));
+            sb.AppendLine(FormatLocationsWithTaken(SortByNearestVillager(resourceLocations.cropLocations, villagers), takenPositions));
         }
 
         if (VillageState.Instance != null)
@@ -481,6 +496,23 @@ public class LLMController : MonoBehaviour
                 .Where(v => v != null)
                 .Min(v => Mathf.Abs(v.GridPosition.x - loc.x) + Mathf.Abs(v.GridPosition.y - loc.y)))
             .ToList();
+    }
+
+    private string FormatLocationsWithTaken(List<Vector2Int> locations, Dictionary<Vector2Int, string> taken)
+    {
+        var parts = new List<string>();
+        int count = Mathf.Min(locations.Count, maxResourceLocationsToShow);
+
+        for (int i = 0; i < count; i++)
+        {
+            var loc = locations[i];
+            if (taken != null && taken.TryGetValue(loc, out string occupant))
+                parts.Add($"({loc.x},{loc.y})[TAKEN by {occupant}]");
+            else
+                parts.Add($"({loc.x},{loc.y})");
+        }
+
+        return string.Join(", ", parts);
     }
 
     private string FormatLocationsSimple(List<Vector2Int> locations)
