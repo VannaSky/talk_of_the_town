@@ -33,6 +33,13 @@ namespace Buildings
         public void Reserve() => isReserved = true;
         public void Unreserve() => isReserved = false;
 
+        [Header("Occupancy (Houses only)")]
+        public int maxOccupants = 1;
+        private int occupantCount = 0;
+        public bool HasFreeSlot() => occupantCount < maxOccupants;
+        public bool OccupySlot() { if (!HasFreeSlot()) return false; occupantCount++; return true; }
+        public void ReleaseSlot() { if (occupantCount > 0) occupantCount--; }
+
         private class RuntimeLevel
         {
             public List<GameObject> stageInstances = new List<GameObject>();
@@ -61,6 +68,9 @@ namespace Buildings
                 levelCompleted = true;
                 ShowFinalForLevel(finishedLevel);
                 ApplyLevelBonuses(finishedLevel);
+
+                if (IsFinished() && buildingData != null && buildingData.buildingType == BuildingType.House)
+                    VillageState.Instance?.RegisterCompletedHouse(this);
             }
             UpdateVisuals();
             return levelCompleted;

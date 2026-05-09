@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Buildings;
 using Tiles;
 using UnityEngine;
 using Random = UnityEngine.Random;
@@ -44,6 +45,13 @@ public class VillageState : MonoBehaviour
 
     [Header("Registered Villagers")]
     [SerializeField] private List<Villager> villagers = new List<Villager>();
+
+    private List<Building> _completedHouses = new List<Building>();
+
+    private const int GrowthCostWood  = 5;
+    private const int GrowthCostStone = 5;
+    private const int GrowthCostSeeds = 5;
+    private const int GrowthCostFood  = 10;
     
     // Public accessors
     public TileGrid TileGrid => tileGrid;
@@ -222,8 +230,7 @@ public class VillageState : MonoBehaviour
         switch (bonus.type)
         {
             case BuildingBonusType.NewVillager:
-                for (int i = 0; i < bonus.value; i++)
-                    SpawnVillager(spawnPosition);
+                // House registers itself via Building.RegisterCompletedHouse — no auto-spawn here.
                 break;
             case BuildingBonusType.InventoryCapacity:
                 inventoryCapacity += bonus.value;
@@ -265,7 +272,65 @@ public class VillageState : MonoBehaviour
     }
 
     #endregion
-    
+
+    #region Village Growth
+
+    public void RegisterCompletedHouse(Building house)
+    {
+        if (house == null || _completedHouses.Contains(house)) return;
+        _completedHouses.Add(house);
+        LogInfo($"House registered — available slots: {GetAvailableHouseSlots()}");
+    }
+
+    public int GetAvailableHouseSlots()
+    {
+        int count = 0;
+        foreach (var house in _completedHouses)
+            if (house != null && house.HasFreeSlot()) count++;
+        return count;
+    }
+
+    public bool CanSpawnVillager()
+    {
+        return GetAvailableHouseSlots() > 0
+            && HasResource(ResourceType.Wood,  GrowthCostWood)
+            && HasResource(ResourceType.Stone, GrowthCostStone)
+            && HasResource(ResourceType.Seed,  GrowthCostSeeds)
+            && HasResource(ResourceType.Food,  GrowthCostFood);
+    }
+
+    public bool TryGrowVillage()
+    {
+        if (!CanSpawnVillager())
+        {
+            LogWarning("Cannot grow village: missing resources or no free house slot.");
+            return false;
+        }
+
+        Building targetHouse = null;
+        foreach (var house in _completedHouses)
+        {
+            if (house != null && house.HasFreeSlot())
+            {
+                targetHouse = house;
+                break;
+            }
+        }
+
+        if (targetHouse == null) return false;
+
+        TrySpendResource(ResourceType.Wood,  GrowthCostWood);
+        TrySpendResource(ResourceType.Stone, GrowthCostStone);
+        TrySpendResource(ResourceType.Seed,  GrowthCostSeeds);
+        TrySpendResource(ResourceType.Food,  GrowthCostFood);
+
+        targetHouse.OccupySlot();
+        SpawnVillager(targetHouse.transform.position);
+        return true;
+    }
+
+    #endregion
+
     #region LLM Data Export
     
     /// <summary>

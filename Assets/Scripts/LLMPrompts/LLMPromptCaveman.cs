@@ -9,7 +9,7 @@ public static class LLMPromptCaveman
     {
         string jobList = string.Join(", ", availableJobs);
 
-        string jsonExample = @"{""assignments"":[{""villager"":""<NAME>"",""job"":""<JOB>"",""buildingType"":""<TYPE>"",""targetX"":<X>,""targetY"":<Y>,""reason"":""<why>""}],""goals"":[{""type"":""GatherResource"",""resource"":""Wood"",""amount"":80,""priority"":""High"",""description"":""build wood""}]}";
+        string jsonExample = @"{""assignments"":[{""villager"":""<NAME>"",""job"":""<JOB>"",""buildingType"":""<TYPE>"",""targetX"":<X>,""targetY"":<Y>,""reason"":""<why>""}],""village_actions"":[""grow_villager""],""goals"":[{""type"":""GatherResource"",""resource"":""Wood"",""amount"":80,""priority"":""High"",""description"":""build wood""}]}";
 
         return $@"Assign ALL {villagerCount} villagers. No 2 same spot.
 
@@ -33,6 +33,7 @@ Surplus→switch Farmer/Builder.
 [KEEP]=working→no reassign. [NEEDS ASSIGNMENT]=assign only these. No job swaps.
 
 GOALS(opt): ""goals"" replaces existing. type=GatherResource/ReachPopulation, resource=Wood/Stone/Seed/Food, amount, priority=Low/Normal/High/Critical, description.
+VILLAGE_ACTIONS(opt): ""grow_villager""→spend 5W+5S+5Se+10F, new villager in free house. Only if context says VILLAGE ACTION AVAILABLE. Only if more workers truly needed.
 
 JSON ONLY:
 {jsonExample}";

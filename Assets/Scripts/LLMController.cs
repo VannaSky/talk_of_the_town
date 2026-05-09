@@ -44,6 +44,10 @@ public class LLMController : MonoBehaviour
     [Tooltip("Pinned system message sent on every call. Leave empty to omit.")]
     [SerializeField, TextArea(2, 6)] private string pinnedSystemMessage = "";
 
+    [Header("Testing / Debug")]
+    [Tooltip("When enabled, injects a CRITICAL goal into every prompt to force the LLM to grow the village population as soon as possible.")]
+    [SerializeField] private bool forceGrowthGoalForTesting = false;
+
     [Header("Metrics Tracking")]
     [SerializeField] private bool trackMetrics = true;
     [SerializeField] private bool exportMetricsToFile = false;
@@ -350,7 +354,19 @@ public class LLMController : MonoBehaviour
     {
         var sb = new System.Text.StringBuilder();
 
-        if (VillageGoals.Instance != null)
+        if (forceGrowthGoalForTesting && VillageState.Instance != null)
+        {
+            sb.AppendLine("=== VILLAGE GOALS ===");
+            sb.AppendLine("ACTIVE VILLAGE GOALS (prioritize these!):");
+            int currentPop = VillageState.Instance.Villagers.Count;
+            sb.AppendLine($"- [CRITICAL] Grow village to {currentPop + 1} villagers ({currentPop}/{currentPop + 1})");
+            if (VillageState.Instance.CanSpawnVillager())
+                sb.AppendLine("  \u2192 Resources and a free house are available. Use grow_villager THIS turn!");
+            else
+                sb.AppendLine("  \u2192 Build a House and gather resources first, then use grow_villager.");
+            sb.AppendLine();
+        }
+        else if (VillageGoals.Instance != null)
         {
             sb.AppendLine("=== VILLAGE GOALS ===");
             sb.AppendLine(VillageGoals.Instance.GetGoalsForPrompt());
@@ -424,6 +440,32 @@ public class LLMController : MonoBehaviour
         {
             sb.Append("MATURE CROPS: ");
             sb.AppendLine(FormatLocationsSimple(SortByNearestVillager(resourceLocations.cropLocations, villagers)));
+        }
+
+        if (VillageState.Instance != null)
+        {
+            sb.AppendLine();
+            sb.AppendLine("=== VILLAGE GROWTH ===");
+            int pop = VillageState.Instance.Villagers.Count;
+            int cap = VillageState.Instance.PopulationCap;
+            int freeSlots = VillageState.Instance.GetAvailableHouseSlots();
+            sb.AppendLine($"Population: {pop}/{cap}");
+            sb.AppendLine($"Free house slots: {freeSlots}");
+
+            if (VillageState.Instance.CanSpawnVillager())
+            {
+                sb.AppendLine("VILLAGE ACTION AVAILABLE: grow_villager");
+                sb.AppendLine("  Cost: 5 Wood, 5 Stone, 5 Seeds, 10 Food");
+                sb.AppendLine("  A new villager will move into a free house. Only choose this if the village needs more workers.");
+            }
+            else if (freeSlots == 0)
+            {
+                sb.AppendLine("No free house slots — build a House first before growing the population.");
+            }
+            else
+            {
+                sb.AppendLine("Not enough resources to grow (need 5 Wood, 5 Stone, 5 Seeds, 10 Food).");
+            }
         }
 
         return sb.ToString();
@@ -737,6 +779,18 @@ public class LLMController : MonoBehaviour
                 }
 
                 VillageGoals.Instance.SetGoalsFromLLM(parsedGoals);
+            }
+
+            if (raw.village_actions != null && VillageState.Instance != null)
+            {
+                foreach (var action in raw.village_actions)
+                {
+                    if (string.Equals(action, "grow_villager", StringComparison.OrdinalIgnoreCase))
+                    {
+                        bool grew = VillageState.Instance.TryGrowVillage();
+                        LogInfo($"Village action 'grow_villager': {(grew ? "success" : "failed (conditions not met)")}");
+                    }
+                }
             }
         }
         catch (Exception e)
@@ -1211,6 +1265,7 @@ Response Times:
 public class RawBatchDecision
 {
     public List<RawSingleAssignment> assignments;
+    public List<string> village_actions;
     public List<RawGoalDecision> goals;
 }
 

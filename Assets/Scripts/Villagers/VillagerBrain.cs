@@ -88,7 +88,11 @@ public class VillagerBrain : MonoBehaviour
         }
         else
         {
-            LogWarning($"{_villager.villagerName} not in batch decision");
+            // Not included — likely spawned after the batch was built. Fast-track the idle
+            // timer so MonitorLoop requests a new batch on the very next tick.
+            LogVerbose($"{_villager.villagerName} not in batch decision (newly spawned), requesting next batch");
+            if (_jobHandler.currentJob == null)
+                _idleTime = idleTimeout;
         }
     }
 
