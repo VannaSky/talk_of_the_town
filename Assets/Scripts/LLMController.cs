@@ -564,10 +564,20 @@ public class LLMController : MonoBehaviour
         sb.AppendLine($"Houses: {houses} completed ({freeSlots} free slot(s))");
         sb.AppendLine($"Stockpiles: {stockpiles}");
 
-        string farmNote = farms >= 3
-            ? $" [SUFFICIENT — crops regrow, {farms} farms is already plenty. DO NOT build more farms.]"
-            : farms >= 2 ? " [probably enough unless food is critically low]" : "";
+        int fieldCap = VillageState.Instance?.FieldCapacity ?? 0;
+        int currentCrops = CountAllCrops();
+        string farmNote;
+        if (farms == 0)
+            farmNote = " [REQUIRED — farmers cannot plant any fields without a Farm building!]";
+        else if (fieldCap > 0 && currentCrops >= fieldCap)
+            farmNote = $" [field limit reached: {currentCrops}/{fieldCap} — build another Farm to expand]";
+        else if (farms >= 3)
+            farmNote = $" [SUFFICIENT — crops regrow within each farm's radius. Avoid building more unless field limit is hit.]";
+        else
+            farmNote = " [each Farm lets farmers plant fields within its radius — build near where you want fields]";
         sb.AppendLine($"Farms: {farms}{farmNote}");
+        if (fieldCap > 0)
+            sb.AppendLine($"Fields: {currentCrops}/{fieldCap} planted (capacity from Farm bonuses)");
 
         if (unfinished > 0)
             sb.AppendLine($"Under construction: {unfinished} building(s)");
@@ -1194,6 +1204,15 @@ Response Times:
     #endregion
 
     #region Resource Location Helpers
+
+    private int CountAllCrops()
+    {
+        int count = 0;
+        var nodes = UnityEngine.Object.FindObjectsByType<ResourceNode>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+        foreach (var n in nodes)
+            if (n != null && n.resourceType == ResourceNode.ResourceType.Crop) count++;
+        return count;
+    }
 
     private ResourceLocations GetAllResourceLocations()
     {

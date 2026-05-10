@@ -3,7 +3,7 @@ using Buildings;
 using Tiles;
 using UnityEngine;
 
-public enum BuildingBonusType { NewVillager, InventoryCapacity }
+public enum BuildingBonusType { NewVillager, InventoryCapacity, FieldCapacity }
 
 [System.Serializable]
 public class BuildingBonus
@@ -41,4 +41,8 @@ public class BuildingData : ScriptableObject
     [Header("Villager Spawning (House only)")]
     [Tooltip("Seconds after completion before a villager appears")]
     public float villagerSpawnDelay = 5f;
+
+    [Header("Farm Fields (Farm only)")]
+    [Tooltip("World-unit radius around this farm in which farmers are allowed to plant fields")]
+    public float fieldRadius = 8f;
 }

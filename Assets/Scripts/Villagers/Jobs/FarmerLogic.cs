@@ -283,18 +283,56 @@ public class FarmerLogic : JobLogic
         if (VillageState.Instance == null || VillageState.Instance.TileGrid == null)
             return null;
 
+        // Collect all completed Farm buildings and their planting radii
+        var farms = UnityEngine.Object.FindObjectsByType<Buildings.Building>(FindObjectsSortMode.None);
+        var farmCoverage = new List<(Vector3 pos, float radius)>();
+        foreach (var b in farms)
+        {
+            if (b == null || !b.IsFinished()) continue;
+            if (b.buildingData == null || b.buildingData.buildingType != Buildings.BuildingType.Farm) continue;
+            farmCoverage.Add((b.transform.position, b.buildingData.fieldRadius));
+        }
+
+        // Without any farm buildings, planting is not allowed
+        if (farmCoverage.Count == 0)
+        {
+            currentStatus = "No farm buildings — cannot plant fields";
+            return null;
+        }
+
+        // Check field capacity (set by FieldCapacity bonuses on Farm buildings)
+        if (VillageState.Instance != null && VillageState.Instance.FieldCapacity > 0)
+        {
+            int currentCrops = CountPlantedCrops();
+            if (currentCrops >= VillageState.Instance.FieldCapacity)
+            {
+                currentStatus = $"Field limit reached ({currentCrops}/{VillageState.Instance.FieldCapacity}) — build more farms";
+                return null;
+            }
+        }
+
         Vector3 origin = handler.transform.position;
 
-        Vector2Int centerGrid;
-        Vector2Int? preferredCenter = handler.PreferredTargetArea;
-        if (preferredCenter.HasValue)
+        // Find tiles that are within at least one farm's coverage radius
+        bool IsInFarmRange(Tile tile)
         {
-            centerGrid = preferredCenter.Value;
+            Vector3 tilePos = tile.transform.position;
+            foreach (var (farmPos, radius) in farmCoverage)
+            {
+                if (Vector3.Distance(farmPos, tilePos) <= radius)
+                    return true;
+            }
+            return false;
+        }
+
+        // Use preferred target area as search center if the LLM provided one, else use farmer position
+        Vector2Int centerGrid;
+        if (handler.PreferredTargetArea.HasValue)
+        {
+            centerGrid = handler.PreferredTargetArea.Value;
         }
         else
         {
-            // Use the grid's own tile data to find the correct grid center
-            // instead of manual coordinate conversion (which can be wrong if the grid has an origin offset)
             var nearestTile = VillageState.Instance.TileGrid.FindNearestTile(origin);
             centerGrid = nearestTile != null ? nearestTile.GridPos : Vector2Int.zero;
         }
@@ -306,21 +344,17 @@ public class FarmerLogic : JobLogic
                     && !tile.HasBuilding
                     && !tile.HasResource
                     && !HasResourceNodeOnTile(tile)
+                    && IsInFarmRange(tile)
         );
 
         if (candidates.Count == 0) return null;
 
-        // Pick the closest one
         Tile best = null;
         float bestDist = float.MaxValue;
         foreach (var tile in candidates)
         {
             float d = Vector3.Distance(origin, tile.transform.position);
-            if (d < bestDist)
-            {
-                bestDist = d;
-                best = tile;
-            }
+            if (d < bestDist) { bestDist = d; best = tile; }
         }
         return best;
     }
@@ -328,6 +362,15 @@ public class FarmerLogic : JobLogic
     private bool HasResourceNodeOnTile(Tile tile)
     {
         return tile.GetComponentInChildren<ResourceNode>() != null;
+    }
+
+    private int CountPlantedCrops()
+    {
+        int count = 0;
+        var nodes = UnityEngine.Object.FindObjectsByType<ResourceNode>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+        foreach (var n in nodes)
+            if (n != null && n.resourceType == ResourceNode.ResourceType.Crop) count++;
+        return count;
     }
 
     private bool HasRequiredSeeds()

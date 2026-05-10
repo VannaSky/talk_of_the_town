@@ -26,7 +26,7 @@ JOB DESCRIPTIONS:
 - Lumberjack: Chops trees for wood. Assign to TREE locations.
 - Miner: Mines stone deposits. Assign to STONE locations.
 - Builder: Constructs buildings. Needs wood+stone in inventory. Set ""buildingType"" to one of: House (new villager spawns automatically when complete), Stockpile (increases inventory capacity), Farm (expands farming area). Choose based on village needs.
-- Farmer: Plants crops on empty grass tiles (needs seeds) and harvests mature crops for food AND seeds. Each harvest yields both food and a small number of seeds, making farming partially self-sustaining. Assign to FARMS or grass areas. THIS IS THE PRIMARY FOOD PRODUCTION JOB. NOTE: Crops regrow after harvest — 2-3 farms is usually sufficient for the whole village.
+- Farmer: Plants crops on grass tiles near Farm buildings (needs seeds) and harvests mature crops for food AND seeds. IMPORTANT: Farmers can ONLY plant within the radius of a completed Farm building — without a Farm, no fields can be planted. Each harvest yields food and seeds, making farming partially self-sustaining. Assign to FARMS or nearby grass. THIS IS THE PRIMARY FOOD PRODUCTION JOB. NOTE: Crops regrow after harvest — 2-3 farms is usually sufficient.
 - SeedGatherer: Collects seeds from seed nodes (pumpkins, wheat, etc.)
 - IDLE: Rest.
 
@@ -35,7 +35,7 @@ PRIORITY ORDER (follow this strictly):
 2. BUILDING: If Wood >= 20 and Stone >= 10, consider assigning a Builder. Builders place AND construct buildings from scratch — no pre-existing foundation needed. Always specify ""buildingType"" and rotate between building types:
    - House: only if free slots = 0 (no pending house slots). A new villager spawns automatically when done.
    - Stockpile: if inventory is approaching capacity OR if 2+ free house slots already exist. Prioritize this to avoid gatherers getting blocked.
-   - Farm: ONLY if food is critically low AND fewer than 3 farms exist. Crops regrow — more farms are rarely needed.
+   - Farm: Build if no farms exist (farmers are blocked without one) OR if food is critically low and coverage is insufficient. Crops regrow within each farm's radius — 2-3 farms covers most villages. Place farms near where you want fields planted.
    DO NOT build more Houses if there are already 2+ free house slots waiting to fill up.
 3. GATHERING: Only gather resources that are actually low. If Wood > 50, no more Lumberjacks. If Seeds > 30, no more SeedGatherers — farm those seeds instead! Note: Farmers replenish seeds on every harvest, so a healthy farming cycle reduces the need for dedicated SeedGatherers.
 4. AVOID OVER-GATHERING: Do NOT keep assigning gatherers when stockpiles are already large. Switch them to Farmer or Builder instead.

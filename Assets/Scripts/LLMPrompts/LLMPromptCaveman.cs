@@ -17,13 +17,13 @@ JOBS: {jobList}, IDLE
 Lumberjack→wood, target TREE
 Miner→stone, target STONE
 Builder→place+build. Need wood+stone. buildingType: House(villager auto-spawns on finish)/Stockpile/Farm
-Farmer→plant(seeds)+harvest→food+seeds. Main food. Target FARM/grass. Crops regrow→2-3 farms enough.
+Farmer→plant(seeds near Farm)+harvest→food+seeds. NEEDS Farm building to plant! No farm=no fields. Crops regrow→2-3 farms enough.
 SeedGatherer→seeds from nodes
 IDLE→rest
 
 PRIORITY:
 1. Seeds>=10→1+ Farmer. Farmer harvest→food+seeds(self-sustaining). Healthy farm cycle→less SeedGatherers needed.
-2. Wood>=20+Stone>=10→Builder. buildingType: House(auto-spawns villager)/Stockpile(inv near full or 2+ free slots)/Farm(need food). ROTATE: if 2+ free house slots exist→build Stockpile/Farm, not more Houses.
+2. Wood>=20+Stone>=10→Builder. buildingType: House(auto-spawns villager)/Stockpile(inv near full or 2+ free slots)/Farm(REQUIRED if 0 farms exist, else only if food critically low). ROTATE: if 2+ free house slots→Stockpile/Farm not more Houses.
 3. Low only: Wood<10→Lumberjack, Stone<10→Miner, Seeds<10→SeedGatherer
 4. Surplus→stop: Wood>50 no Lumberjack, Seeds>30 no SeedGatherer→farm instead.
 

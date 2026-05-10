@@ -31,6 +31,7 @@ public class VillageState : MonoBehaviour
     [Header("Village Capacity")]
     [SerializeField] private int populationCap = 5;
     [SerializeField] private int inventoryCapacity = 100;
+    private int _fieldCapacity = 0;
 
     [Header("Villager Spawning")]
     [SerializeField] private GameObject villagerPrefab;
@@ -60,6 +61,7 @@ public class VillageState : MonoBehaviour
     public IReadOnlyList<Villager> Villagers => villagers;
     public int PopulationCap => populationCap;
     public int InventoryCapacity => inventoryCapacity;
+    public int FieldCapacity => _fieldCapacity;
     public float GameSpeed => gameSpeed;
     
     // Resource accessors
@@ -237,6 +239,10 @@ public class VillageState : MonoBehaviour
             case BuildingBonusType.InventoryCapacity:
                 inventoryCapacity += bonus.value;
                 LogInfo($"Inventory capacity increased by {bonus.value} (now {inventoryCapacity})");
+                break;
+            case BuildingBonusType.FieldCapacity:
+                _fieldCapacity += bonus.value;
+                LogInfo($"Field capacity increased by {bonus.value} (now {_fieldCapacity})");
                 break;
         }
     }
