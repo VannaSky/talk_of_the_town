@@ -471,7 +471,7 @@ public class LLMController : MonoBehaviour
             {
                 sb.AppendLine("VILLAGE ACTION AVAILABLE: grow_villager");
                 sb.AppendLine("  Cost: 5 Wood, 5 Stone, 5 Seeds, 10 Food");
-                sb.AppendLine("  A new villager will move into a free house. Only choose this if the village needs more workers.");
+                sb.AppendLine("  RECOMMENDED: Grow your population now — more workers means faster resource gathering and building. Include grow_villager in village_actions this turn.");
             }
             else if (freeSlots == 0)
             {

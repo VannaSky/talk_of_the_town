@@ -55,7 +55,7 @@ If you include goals, they replace existing goals. Omit the array to leave goals
 
 VILLAGE ACTIONS (optional):
 You may include a ""village_actions"" array for village-level decisions that are not tied to a specific villager.
-- ""grow_villager"": Spend 5 Wood, 5 Stone, 5 Seeds, 10 Food to welcome a new villager into a free house. Only include this when the context shows ""VILLAGE ACTION AVAILABLE: grow_villager"". Do not include it otherwise. Only grow the population if the village genuinely needs more workers.
+- ""grow_villager"": Spend 5 Wood, 5 Stone, 5 Seeds, 10 Food to welcome a new villager into a free house. Only include this when the context shows ""VILLAGE ACTION AVAILABLE: grow_villager"". Do not include it otherwise. More workers means faster production — grow the population whenever resources allow it.
 
 RESPONSE FORMAT (JSON only, assign ALL villagers):
 {jsonExample}

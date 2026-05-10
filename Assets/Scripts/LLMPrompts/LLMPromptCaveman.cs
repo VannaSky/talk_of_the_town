@@ -22,10 +22,10 @@ SeedGatherer→seeds from nodes
 IDLE→rest
 
 PRIORITY:
-Seeds>=10→1+ Farmer
-Wood>=20+Stone>=10→Builder. buildingType=House(pop low)/Stockpile(inv full)/Farm(need food)
-Low only: Wood<10→Lumberjack, Stone<10→Miner, Seeds<10→SeedGatherer
-Surplus→stop: Wood>50 no Lumberjack, Seeds>30 no SeedGatherer
+1. Seeds>=10→1+ Farmer. Farmer harvest→food+seeds(self-sustaining). Healthy farm cycle→less SeedGatherers needed.
+2. Wood>=20+Stone>=10→Builder. buildingType: House(pop near cap→more slots), Stockpile(inv near full), Farm(need food). Pop near cap→prioritize House.
+3. Low only: Wood<10→Lumberjack, Stone<10→Miner, Seeds<10→SeedGatherer
+4. Surplus→stop: Wood>50 no Lumberjack, Seeds>30 no SeedGatherer→farm instead.
 
 RULES:
 Diff coords each villager. No same spot.
@@ -33,7 +33,7 @@ Surplus→switch Farmer/Builder.
 [KEEP]=working→no reassign. [NEEDS ASSIGNMENT]=assign only these. No job swaps.
 
 GOALS(opt): ""goals"" replaces existing. type=GatherResource/ReachPopulation, resource=Wood/Stone/Seed/Food, amount, priority=Low/Normal/High/Critical, description.
-VILLAGE_ACTIONS(opt): ""grow_villager""→spend 5W+5S+5Se+10F, new villager in free house. Only if context says VILLAGE ACTION AVAILABLE. Only if more workers truly needed.
+VILLAGE_ACTIONS(opt): ""grow_villager""→spend 5W+5S+5Se+10F, new villager in free house. Only if context says VILLAGE ACTION AVAILABLE. More workers=more production→grow whenever resources allow.
 
 JSON ONLY:
 {jsonExample}";
