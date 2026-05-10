@@ -13,7 +13,6 @@ public static class LLMPromptNormal
     ""assignments"": [
         { ""villager"": ""<NAME>"", ""job"": ""<JOB>"", ""buildingType"": ""<TYPE>"", ""targetX"": <X>, ""targetY"": <Y>, ""reason"": ""<why>"" }
     ],
-    ""village_actions"": [""grow_villager""],
     ""goals"": [
         { ""type"": ""GatherResource"", ""resource"": ""Wood"", ""amount"": 80, ""priority"": ""High"", ""description"": ""Build wood reserves"" }
     ]
@@ -26,14 +25,18 @@ AVAILABLE JOBS: {jobList}, IDLE
 JOB DESCRIPTIONS:
 - Lumberjack: Chops trees for wood. Assign to TREE locations.
 - Miner: Mines stone deposits. Assign to STONE locations.
-- Builder: Constructs buildings. Needs wood+stone in inventory. Set ""buildingType"" to one of: House (unlocks new villager slot), Stockpile (increases inventory capacity), Farm (expands farming area). Choose based on village needs.
-- Farmer: Plants crops on empty grass tiles (needs seeds) and harvests mature crops for food AND seeds. Each harvest yields both food and a small number of seeds, making farming partially self-sustaining. Assign to FARMS or grass areas. THIS IS THE PRIMARY FOOD PRODUCTION JOB.
+- Builder: Constructs buildings. Needs wood+stone in inventory. Set ""buildingType"" to one of: House (new villager spawns automatically when complete), Stockpile (increases inventory capacity), Farm (expands farming area). Choose based on village needs.
+- Farmer: Plants crops on empty grass tiles (needs seeds) and harvests mature crops for food AND seeds. Each harvest yields both food and a small number of seeds, making farming partially self-sustaining. Assign to FARMS or grass areas. THIS IS THE PRIMARY FOOD PRODUCTION JOB. NOTE: Crops regrow after harvest — 2-3 farms is usually sufficient for the whole village.
 - SeedGatherer: Collects seeds from seed nodes (pumpkins, wheat, etc.)
 - IDLE: Rest.
 
 PRIORITY ORDER (follow this strictly):
 1. FARMING FIRST: If Seeds >= 10, assign at least one villager as Farmer. Farming is the most important job — food sustains the village. More seeds = more farmers needed!
-2. BUILDING: If Wood >= 20 and Stone >= 10, consider assigning a Builder. Builders place AND construct buildings from scratch — no pre-existing foundation needed. Always specify ""buildingType"": prioritize House if population is near cap, Stockpile if inventory is near full, Farm to expand food production.
+2. BUILDING: If Wood >= 20 and Stone >= 10, consider assigning a Builder. Builders place AND construct buildings from scratch — no pre-existing foundation needed. Always specify ""buildingType"" and rotate between building types:
+   - House: only if free slots = 0 (no pending house slots). A new villager spawns automatically when done.
+   - Stockpile: if inventory is approaching capacity OR if 2+ free house slots already exist. Prioritize this to avoid gatherers getting blocked.
+   - Farm: ONLY if food is critically low AND fewer than 3 farms exist. Crops regrow — more farms are rarely needed.
+   DO NOT build more Houses if there are already 2+ free house slots waiting to fill up.
 3. GATHERING: Only gather resources that are actually low. If Wood > 50, no more Lumberjacks. If Seeds > 30, no more SeedGatherers — farm those seeds instead! Note: Farmers replenish seeds on every harvest, so a healthy farming cycle reduces the need for dedicated SeedGatherers.
 4. AVOID OVER-GATHERING: Do NOT keep assigning gatherers when stockpiles are already large. Switch them to Farmer or Builder instead.
 
@@ -52,10 +55,6 @@ You may set strategic goals for the village by including a ""goals"" array. Goal
 - priority: ""Low"", ""Normal"", ""High"", or ""Critical""
 - description: short readable label shown in the UI
 If you include goals, they replace existing goals. Omit the array to leave goals unchanged.
-
-VILLAGE ACTIONS (optional):
-You may include a ""village_actions"" array for village-level decisions that are not tied to a specific villager.
-- ""grow_villager"": Spend 5 Wood, 5 Stone, 5 Seeds, 10 Food to welcome a new villager into a free house. Only include this when the context shows ""VILLAGE ACTION AVAILABLE: grow_villager"". Do not include it otherwise. More workers means faster production — grow the population whenever resources allow it.
 
 RESPONSE FORMAT (JSON only, assign ALL villagers):
 {jsonExample}

@@ -190,7 +190,9 @@ public class BuilderLogic : JobLogic
         }
 
         Vector3 spawnPos = tile.transform.position + new Vector3(1f, 0.5f, 1f);
-        var go = UnityEngine.Object.Instantiate(data.foundationPrefab, spawnPos, Quaternion.identity, buildingContainer);
+        int rotSteps = UnityEngine.Random.Range(0, 4);
+        var rotation = Quaternion.Euler(0f, rotSteps * 90f, 0f);
+        var go = UnityEngine.Object.Instantiate(data.foundationPrefab, spawnPos, rotation, buildingContainer);
         go.name = $"{data.buildingType}_{tile.GridPos.x}_{tile.GridPos.y}";
 
         tile.TrySetBuilding(new ConstructionInstance(data.constructionType, 0f, false));
@@ -288,6 +290,7 @@ public class BuilderLogic : JobLogic
         Vector3 origin = handler.transform.position;
         Vector2Int? preferred = handler.PreferredTargetArea;
 
+        // Use LLM target if provided, otherwise fall back to village core (not builder position)
         Vector2Int centerGrid;
         if (preferred.HasValue)
         {
@@ -295,8 +298,7 @@ public class BuilderLogic : JobLogic
         }
         else
         {
-            var nearest = VillageState.Instance.TileGrid.FindNearestTile(origin);
-            centerGrid = nearest != null ? nearest.GridPos : Vector2Int.zero;
+            centerGrid = VillageState.Instance.GetVillageCore();
         }
 
         var ct = data.constructionType;
@@ -312,16 +314,23 @@ public class BuilderLogic : JobLogic
 
         if (candidates.Count == 0) return null;
 
-        // Score: distance from builder + bias toward tiles near existing buildings
+        // Score: proximity to village core is primary, distance from builder is secondary
+        Vector3? coreWorld = null;
+        if (VillageState.Instance.TileGrid.TryGet(centerGrid, out var coreTile))
+            coreWorld = coreTile.transform.position;
+
         Tile best = null;
         float bestScore = float.MaxValue;
 
         foreach (var tile in candidates)
         {
-            float dist = Vector3.Distance(origin, tile.transform.position);
+            float distToCore = coreWorld.HasValue
+                ? Vector3.Distance(coreWorld.Value, tile.transform.position)
+                : 0f;
             float buildingProximity = GetNearestBuildingDistance(tile);
-            // Prefer tiles close to the builder and close to existing buildings
-            float score = dist + buildingProximity * 0.5f;
+            float distToBuilder = Vector3.Distance(origin, tile.transform.position);
+            // Primary: close to existing buildings / village core. Secondary: close to builder.
+            float score = distToCore * 1.5f + buildingProximity * 1.5f + distToBuilder * 0.3f;
 
             if (score < bestScore)
             {

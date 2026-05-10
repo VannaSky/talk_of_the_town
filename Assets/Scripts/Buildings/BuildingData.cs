@@ -37,4 +37,8 @@ public class BuildingData : ScriptableObject
     }
 
     public List<LevelData> levels = new List<LevelData>();
+
+    [Header("Villager Spawning (House only)")]
+    [Tooltip("Seconds after completion before a villager appears")]
+    public float villagerSpawnDelay = 5f;
 }

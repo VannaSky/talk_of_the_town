@@ -61,6 +61,20 @@ public class FarmerLogic : JobLogic
 
     private void ExecuteFindingTarget(JobHandler handler)
     {
+        // Stop if both farming outputs (food and seeds) are at capacity
+        if (VillageState.Instance != null)
+        {
+            int cap = VillageState.Instance.InventoryCapacity;
+            bool foodFull  = VillageState.Instance.Food  >= cap;
+            bool seedsFull = VillageState.Instance.Seeds >= cap;
+            if (foodFull && seedsFull)
+            {
+                currentStatus = "Storage full (food & seeds)";
+                ChangeState(AnimationState.Idle, handler);
+                return;
+            }
+        }
+
         // Phase 1: Look for mature crops to harvest
         _targetCrop = FindMatureCrop(handler);
         if (_targetCrop != null)

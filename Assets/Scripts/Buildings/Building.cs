@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -70,7 +71,10 @@ namespace Buildings
                 ApplyLevelBonuses(finishedLevel);
 
                 if (IsFinished() && buildingData != null && buildingData.buildingType == BuildingType.House)
+                {
                     VillageState.Instance?.RegisterCompletedHouse(this);
+                    StartCoroutine(SpawnVillagerDelayed(buildingData.villagerSpawnDelay));
+                }
             }
             UpdateVisuals();
             return levelCompleted;
@@ -187,6 +191,15 @@ namespace Buildings
                 foreach (var go in rl.stageInstances) if (go != null) go.SetActive(false);
             }
             if (rl.finalInstance != null) rl.finalInstance.SetActive(true);
+        }
+
+        private IEnumerator SpawnVillagerDelayed(float delay)
+        {
+            yield return new WaitForSeconds(delay);
+            if (VillageState.Instance == null) yield break;
+            // Spawn in front of the building, respecting its rotation
+            Vector3 spawnPos = transform.position + transform.forward * 2f;
+            VillageState.Instance.SpawnVillager(spawnPos);
         }
     }
 }

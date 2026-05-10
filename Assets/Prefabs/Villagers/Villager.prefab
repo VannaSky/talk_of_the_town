@@ -414,7 +414,6 @@ MonoBehaviour:
   checkInterval: 1
   idleTimeout: 3
   availableJobTypes: []
-  logDecisions: 1
   lastDecision:
     jobName: 
     buildingType: 

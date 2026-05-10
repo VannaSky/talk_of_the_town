@@ -241,7 +241,7 @@ public class VillageState : MonoBehaviour
         }
     }
 
-    private void SpawnVillager(Vector3 nearPosition)
+    public void SpawnVillager(Vector3 nearPosition)
     {
         if (villagerPrefab == null)
         {
@@ -297,8 +297,12 @@ public class VillageState : MonoBehaviour
     {
         if (house == null || _completedHouses.Contains(house)) return;
         _completedHouses.Add(house);
-        LogInfo($"House registered — available slots: {GetAvailableHouseSlots()}");
+        int slots = GetAvailableHouseSlots();
+        LogInfo($"House registered — available slots: {slots}");
+        LLMController.Instance?.AddRecentEvent($"House completed — {slots} free slot(s) now available, villager spawning soon");
     }
+
+    public int CompletedHouseCount => _completedHouses.Count;
 
     public int GetAvailableHouseSlots()
     {
@@ -345,6 +349,58 @@ public class VillageState : MonoBehaviour
         targetHouse.OccupySlot();
         SpawnVillager(targetHouse.transform.position);
         return true;
+    }
+
+    #endregion
+
+    #region Village Core
+
+    /// <summary>
+    /// Returns the grid-space center of the village.
+    /// Uses the authoritative spawn position if available, otherwise falls back to
+    /// the centroid of placed buildings, then villager positions.
+    /// </summary>
+    public Vector2Int GetVillageCore()
+    {
+        // Primary: use the position chosen by VillageSpawner (most reliable)
+        if (Tiles.VillageSpawner.SpawnedCoreGridPos.HasValue)
+            return Tiles.VillageSpawner.SpawnedCoreGridPos.Value;
+
+        // Fallback: centroid of Building components in scene
+        var buildings = UnityEngine.Object.FindObjectsByType<Buildings.Building>(FindObjectsSortMode.None);
+        float sumX = 0f, sumZ = 0f;
+        int count = 0;
+
+        foreach (var b in buildings)
+        {
+            if (b == null) continue;
+            var pos = b.transform.position;
+            sumX += pos.x;
+            sumZ += pos.z;
+            count++;
+        }
+
+        if (count > 0)
+        {
+            float cellSize = 2f;
+            int gx = Mathf.RoundToInt(sumX / count / cellSize);
+            int gz = Mathf.RoundToInt(sumZ / count / cellSize);
+            return new Vector2Int(gx, gz);
+        }
+
+        // Last resort: centroid of villager positions
+        foreach (var v in villagers)
+        {
+            if (v == null) continue;
+            sumX += v.GridPosition.x;
+            sumZ += v.GridPosition.y;
+            count++;
+        }
+
+        if (count > 0)
+            return new Vector2Int(Mathf.RoundToInt(sumX / count), Mathf.RoundToInt(sumZ / count));
+
+        return Vector2Int.zero;
     }
 
     #endregion
