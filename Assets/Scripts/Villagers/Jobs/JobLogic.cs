@@ -91,6 +91,8 @@ public abstract class JobLogic
     }
 
     public string GetCurrentStatus() => currentStatus;
-    
+
     public AnimationState GetCurrentState() => _currentState;
+
+    public JobLogic Clone() => (JobLogic)MemberwiseClone();
 }

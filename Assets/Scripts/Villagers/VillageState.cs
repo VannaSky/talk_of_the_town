@@ -34,6 +34,8 @@ public class VillageState : MonoBehaviour
 
     [Header("Villager Spawning")]
     [SerializeField] private GameObject villagerPrefab;
+    [SerializeField] private GameObject villagerUIPrefab;
+    [SerializeField] private Transform villagerUIContainer;
     [SerializeField] private List<string> villagerNamePool = new List<string>();
     private int _villagerSpawnCount = 0;
     
@@ -259,6 +261,17 @@ public class VillageState : MonoBehaviour
             RegisterVillager(villager);
         }
 
+        if (villagerUIPrefab != null && villagerUIContainer != null)
+        {
+            var uiGo = Instantiate(villagerUIPrefab, villagerUIContainer);
+            uiGo.name = go.name;
+            var textManager = uiGo.GetComponent<UI.VillagerTextManager>();
+            if (textManager != null)
+            {
+                textManager.SetVillager(go.GetComponent<Villager>(), go.GetComponent<VillagerBrain>());
+            }
+        }
+
         populationCap++;
         LogInfo($"Spawned new villager '{go.name}' (population cap now {populationCap})");
     }
@@ -266,8 +279,13 @@ public class VillageState : MonoBehaviour
     private string GetNextVillagerName()
     {
         _villagerSpawnCount++;
-        if (villagerNamePool != null && _villagerSpawnCount <= villagerNamePool.Count)
-            return villagerNamePool[_villagerSpawnCount - 1];
+        if (villagerNamePool != null && villagerNamePool.Count > 0)
+        {
+            int index = Random.Range(0, villagerNamePool.Count);
+            string name = villagerNamePool[index];
+            villagerNamePool.RemoveAt(index);
+            return name;
+        }
         return $"Villager {_villagerSpawnCount}";
     }
 
@@ -469,9 +487,12 @@ public class VillageState : MonoBehaviour
     
     [ContextMenu("Add 10 Wood (Test)")]
     private void TestAddWood() => AddResource(ResourceType.Wood, 10);
-    
+
     [ContextMenu("Add 10 Stone (Test)")]
     private void TestAddStone() => AddResource(ResourceType.Stone, 10);
+
+    [ContextMenu("Spawn Villager (Test)")]
+    private void TestSpawnVillager() => TryGrowVillage();
 #endif
 }
 

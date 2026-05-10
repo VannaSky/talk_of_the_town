@@ -146,7 +146,7 @@ public class VillagerBrain : MonoBehaviour
         }
 
         // Check job status
-        string status = _jobHandler.currentJob.JobLogic?.GetCurrentStatus() ?? "Idle";
+        string status = _jobHandler.ActiveJobLogic?.GetCurrentStatus() ?? "Idle";
 
         // Job is waiting/stuck
         if (status.Contains("Waiting") || status.Contains("No ") || status.Contains("found"))
@@ -174,7 +174,7 @@ public class VillagerBrain : MonoBehaviour
         }
         else
         {
-            currentState = _jobHandler.currentJob.JobLogic?.GetCurrentStatus() ?? "Working";
+            currentState = _jobHandler.ActiveJobLogic?.GetCurrentStatus() ?? "Working";
         }
     }
 
