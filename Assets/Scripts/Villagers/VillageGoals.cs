@@ -218,6 +218,19 @@ public class VillageGoals : MonoBehaviour
             description = "Gather 30 Stone"
         });
     }
+
+    [ContextMenu("Add Goal: Reach Population 4")]
+    private void TestAddPopulationGoal()
+    {
+        int target = VillageState.Instance != null ? VillageState.Instance.Villagers.Count + 1 : 4;
+        AddGoal(new VillageGoal
+        {
+            type = GoalType.ReachPopulation,
+            targetAmount = target,
+            priority = GoalPriority.High,
+            description = $"Grow village to {target} villagers"
+        });
+    }
 #endif
 }
 

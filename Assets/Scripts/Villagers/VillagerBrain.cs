@@ -88,7 +88,11 @@ public class VillagerBrain : MonoBehaviour
         }
         else
         {
-            LogWarning($"{_villager.villagerName} not in batch decision");
+            // Not included — likely spawned after the batch was built. Fast-track the idle
+            // timer so MonitorLoop requests a new batch on the very next tick.
+            LogVerbose($"{_villager.villagerName} not in batch decision (newly spawned), requesting next batch");
+            if (_jobHandler.currentJob == null)
+                _idleTime = idleTimeout;
         }
     }
 
@@ -142,7 +146,7 @@ public class VillagerBrain : MonoBehaviour
         }
 
         // Check job status
-        string status = _jobHandler.currentJob.JobLogic?.GetCurrentStatus() ?? "Idle";
+        string status = _jobHandler.ActiveJobLogic?.GetCurrentStatus() ?? "Idle";
 
         // Job is waiting/stuck
         if (status.Contains("Waiting") || status.Contains("No ") || status.Contains("found"))
@@ -170,7 +174,7 @@ public class VillagerBrain : MonoBehaviour
         }
         else
         {
-            currentState = _jobHandler.currentJob.JobLogic?.GetCurrentStatus() ?? "Working";
+            currentState = _jobHandler.ActiveJobLogic?.GetCurrentStatus() ?? "Working";
         }
     }
 

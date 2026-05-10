@@ -103,9 +103,9 @@ public class Villager : MonoBehaviour
     /// </summary>
     public string GetCurrentJobStatus()
     {
-        if (_jobHandler == null || _jobHandler.currentJob == null || _jobHandler.currentJob.JobLogic == null)
+        if (_jobHandler == null || _jobHandler.ActiveJobLogic == null)
             return "Idle";
-        return _jobHandler.currentJob.JobLogic.GetCurrentStatus();
+        return _jobHandler.ActiveJobLogic.GetCurrentStatus();
     }
     
     /// <summary>

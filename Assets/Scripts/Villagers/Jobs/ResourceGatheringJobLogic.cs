@@ -71,7 +71,6 @@ namespace Villagers.Jobs
             _currentTarget = FindBestResource(handler);
             if (_currentTarget != null)
             {
-                _currentTarget.Reserve();
                 handler.villagerMover.StopMoving();
                 LogInfo($"Found {ResourceName} at {_currentTarget.transform.position}");
                 ChangeState(AnimationState.MovingToTarget, handler);
@@ -275,6 +274,7 @@ namespace Villagers.Jobs
                 return FindNearestResourceAnywhere(handler);
             }
 
+            best?.Reserve();
             return best;
         }
 
@@ -300,6 +300,7 @@ namespace Villagers.Jobs
                     nearest = node;
                 }
             }
+            nearest?.Reserve();
             return nearest;
         }
 

@@ -17,7 +17,12 @@ namespace UI
         [SerializeField] private VillagerBrain _villagerBrain;
         [SerializeField] private Villager _villager;
 
-        
+        public void SetVillager(Villager villager, VillagerBrain brain)
+        {
+            _villager = villager;
+            _villagerBrain = brain;
+        }
+
         [SerializeField] private TextMeshProUGUI villagerNameText;
         [SerializeField] private TextMeshProUGUI jobNameText;
         [SerializeField] private TextMeshProUGUI promptReasonText;

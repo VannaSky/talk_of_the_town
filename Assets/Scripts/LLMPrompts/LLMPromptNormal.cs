@@ -13,6 +13,7 @@ public static class LLMPromptNormal
     ""assignments"": [
         { ""villager"": ""<NAME>"", ""job"": ""<JOB>"", ""buildingType"": ""<TYPE>"", ""targetX"": <X>, ""targetY"": <Y>, ""reason"": ""<why>"" }
     ],
+    ""village_actions"": [""grow_villager""],
     ""goals"": [
         { ""type"": ""GatherResource"", ""resource"": ""Wood"", ""amount"": 80, ""priority"": ""High"", ""description"": ""Build wood reserves"" }
     ]
@@ -51,6 +52,10 @@ You may set strategic goals for the village by including a ""goals"" array. Goal
 - priority: ""Low"", ""Normal"", ""High"", or ""Critical""
 - description: short readable label shown in the UI
 If you include goals, they replace existing goals. Omit the array to leave goals unchanged.
+
+VILLAGE ACTIONS (optional):
+You may include a ""village_actions"" array for village-level decisions that are not tied to a specific villager.
+- ""grow_villager"": Spend 5 Wood, 5 Stone, 5 Seeds, 10 Food to welcome a new villager into a free house. Only include this when the context shows ""VILLAGE ACTION AVAILABLE: grow_villager"". Do not include it otherwise. More workers means faster production — grow the population whenever resources allow it.
 
 RESPONSE FORMAT (JSON only, assign ALL villagers):
 {jsonExample}

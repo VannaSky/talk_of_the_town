@@ -12,6 +12,8 @@ public class JobHandler : MonoBehaviour
 
     [Header("Current Job")]
     public JobType currentJob;
+    private JobLogic _jobLogicInstance;
+    public JobLogic ActiveJobLogic => _jobLogicInstance;
 
     [Header("Target Area (from LLM)")]
     [SerializeField] private bool hasTargetArea;
@@ -54,9 +56,9 @@ public class JobHandler : MonoBehaviour
 
     void Update()
     {
-        if (currentJob != null && currentJob.JobLogic != null)
+        if (currentJob != null && _jobLogicInstance != null)
         {
-            bool completed = currentJob.JobLogic.Execute(this);
+            bool completed = _jobLogicInstance.Execute(this);
             if (completed)
             {
                 AddJobXP(10f);
@@ -81,10 +83,10 @@ public class JobHandler : MonoBehaviour
 
     private void AssignJobInternal(JobType newJob, bool withTarget, Vector2Int target, string buildingType)
     {
-        if (currentJob != null && currentJob.JobLogic != null)
+        if (_jobLogicInstance != null)
         {
-            currentJob.JobLogic.OnJobEnd(this);
-            currentJob.JobLogic.ResetState();
+            _jobLogicInstance.OnJobEnd(this);
+            _jobLogicInstance.ResetState();
         }
 
         currentJob = newJob;
@@ -94,9 +96,15 @@ public class JobHandler : MonoBehaviour
 
         if (currentJob != null && currentJob.JobLogic != null)
         {
-            currentJob.JobLogic.OnJobStart(this);
+            _jobLogicInstance = currentJob.JobLogic.Clone();
+            _jobLogicInstance.ResetState();
+            _jobLogicInstance.OnJobStart(this);
             LogInfo($"{gameObject.name} started job: {currentJob.JobName}" +
                       (hasTargetArea ? $" targeting ({targetArea.x},{targetArea.y})" : ""));
+        }
+        else
+        {
+            _jobLogicInstance = null;
         }
 
         OnJobAssigned?.Invoke(currentJob);

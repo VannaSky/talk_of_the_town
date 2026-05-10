@@ -44,6 +44,10 @@ public class LLMController : MonoBehaviour
     [Tooltip("Pinned system message sent on every call. Leave empty to omit.")]
     [SerializeField, TextArea(2, 6)] private string pinnedSystemMessage = "";
 
+    [Header("Testing / Debug")]
+    [Tooltip("When enabled, injects a CRITICAL goal into every prompt to force the LLM to grow the village population as soon as possible.")]
+    [SerializeField] private bool forceGrowthGoalForTesting = false;
+
     [Header("Metrics Tracking")]
     [SerializeField] private bool trackMetrics = true;
     [SerializeField] private bool exportMetricsToFile = false;
@@ -350,7 +354,19 @@ public class LLMController : MonoBehaviour
     {
         var sb = new System.Text.StringBuilder();
 
-        if (VillageGoals.Instance != null)
+        if (forceGrowthGoalForTesting && VillageState.Instance != null)
+        {
+            sb.AppendLine("=== VILLAGE GOALS ===");
+            sb.AppendLine("ACTIVE VILLAGE GOALS (prioritize these!):");
+            int currentPop = VillageState.Instance.Villagers.Count;
+            sb.AppendLine($"- [CRITICAL] Grow village to {currentPop + 1} villagers ({currentPop}/{currentPop + 1})");
+            if (VillageState.Instance.CanSpawnVillager())
+                sb.AppendLine("  \u2192 Resources and a free house are available. Use grow_villager THIS turn!");
+            else
+                sb.AppendLine("  \u2192 Build a House and gather resources first, then use grow_villager.");
+            sb.AppendLine();
+        }
+        else if (VillageGoals.Instance != null)
         {
             sb.AppendLine("=== VILLAGE GOALS ===");
             sb.AppendLine(VillageGoals.Instance.GetGoalsForPrompt());
@@ -387,43 +403,84 @@ public class LLMController : MonoBehaviour
         }
         sb.AppendLine();
 
+        // Build occupied-position map from villagers who are actively working ([KEEP])
+        var takenPositions = new Dictionary<Vector2Int, string>();
+        foreach (var v in villagers)
+        {
+            if (v == null) continue;
+            var d = v.GetData();
+            bool isStuck = d.jobStatus == "Idle"
+                || d.jobStatus.Contains("Waiting")
+                || d.jobStatus.Contains("No ")
+                || d.jobStatus.Contains("found")
+                || d.jobStatus.Contains("Looking");
+            if (!isStuck)
+                takenPositions[new Vector2Int(d.x, d.y)] = d.name;
+        }
+
         sb.AppendLine("=== AVAILABLE RESOURCES (assign villagers to DIFFERENT locations!) ===");
         var resourceLocations = GetAllResourceLocations();
 
         if (resourceLocations.treeLocations.Count > 0)
         {
             sb.Append("TREES: ");
-            sb.AppendLine(FormatLocationsSimple(SortByNearestVillager(resourceLocations.treeLocations, villagers)));
+            sb.AppendLine(FormatLocationsWithTaken(SortByNearestVillager(resourceLocations.treeLocations, villagers), takenPositions));
         }
 
         if (resourceLocations.stoneLocations.Count > 0)
         {
             sb.Append("STONE: ");
-            sb.AppendLine(FormatLocationsSimple(SortByNearestVillager(resourceLocations.stoneLocations, villagers)));
+            sb.AppendLine(FormatLocationsWithTaken(SortByNearestVillager(resourceLocations.stoneLocations, villagers), takenPositions));
         }
 
         if (resourceLocations.seedLocations.Count > 0)
         {
             sb.Append("SEEDS: ");
-            sb.AppendLine(FormatLocationsSimple(SortByNearestVillager(resourceLocations.seedLocations, villagers)));
+            sb.AppendLine(FormatLocationsWithTaken(SortByNearestVillager(resourceLocations.seedLocations, villagers), takenPositions));
         }
 
         if (resourceLocations.buildingLocations.Count > 0)
         {
             sb.Append("UNFINISHED BUILDINGS: ");
-            sb.AppendLine(FormatLocationsSimple(SortByNearestVillager(resourceLocations.buildingLocations, villagers)));
+            sb.AppendLine(FormatLocationsWithTaken(SortByNearestVillager(resourceLocations.buildingLocations, villagers), takenPositions));
         }
 
         if (resourceLocations.farmLocations.Count > 0)
         {
             sb.Append("FARMS: ");
-            sb.AppendLine(FormatLocationsSimple(SortByNearestVillager(resourceLocations.farmLocations, villagers)));
+            sb.AppendLine(FormatLocationsWithTaken(SortByNearestVillager(resourceLocations.farmLocations, villagers), takenPositions));
         }
 
         if (resourceLocations.cropLocations.Count > 0)
         {
             sb.Append("MATURE CROPS: ");
-            sb.AppendLine(FormatLocationsSimple(SortByNearestVillager(resourceLocations.cropLocations, villagers)));
+            sb.AppendLine(FormatLocationsWithTaken(SortByNearestVillager(resourceLocations.cropLocations, villagers), takenPositions));
+        }
+
+        if (VillageState.Instance != null)
+        {
+            sb.AppendLine();
+            sb.AppendLine("=== VILLAGE GROWTH ===");
+            int pop = VillageState.Instance.Villagers.Count;
+            int cap = VillageState.Instance.PopulationCap;
+            int freeSlots = VillageState.Instance.GetAvailableHouseSlots();
+            sb.AppendLine($"Population: {pop}/{cap}");
+            sb.AppendLine($"Free house slots: {freeSlots}");
+
+            if (VillageState.Instance.CanSpawnVillager())
+            {
+                sb.AppendLine("VILLAGE ACTION AVAILABLE: grow_villager");
+                sb.AppendLine("  Cost: 5 Wood, 5 Stone, 5 Seeds, 10 Food");
+                sb.AppendLine("  RECOMMENDED: Grow your population now — more workers means faster resource gathering and building. Include grow_villager in village_actions this turn.");
+            }
+            else if (freeSlots == 0)
+            {
+                sb.AppendLine("No free house slots — build a House first before growing the population.");
+            }
+            else
+            {
+                sb.AppendLine("Not enough resources to grow (need 5 Wood, 5 Stone, 5 Seeds, 10 Food).");
+            }
         }
 
         return sb.ToString();
@@ -439,6 +496,23 @@ public class LLMController : MonoBehaviour
                 .Where(v => v != null)
                 .Min(v => Mathf.Abs(v.GridPosition.x - loc.x) + Mathf.Abs(v.GridPosition.y - loc.y)))
             .ToList();
+    }
+
+    private string FormatLocationsWithTaken(List<Vector2Int> locations, Dictionary<Vector2Int, string> taken)
+    {
+        var parts = new List<string>();
+        int count = Mathf.Min(locations.Count, maxResourceLocationsToShow);
+
+        for (int i = 0; i < count; i++)
+        {
+            var loc = locations[i];
+            if (taken != null && taken.TryGetValue(loc, out string occupant))
+                parts.Add($"({loc.x},{loc.y})[TAKEN by {occupant}]");
+            else
+                parts.Add($"({loc.x},{loc.y})");
+        }
+
+        return string.Join(", ", parts);
     }
 
     private string FormatLocationsSimple(List<Vector2Int> locations)
@@ -737,6 +811,18 @@ public class LLMController : MonoBehaviour
                 }
 
                 VillageGoals.Instance.SetGoalsFromLLM(parsedGoals);
+            }
+
+            if (raw.village_actions != null && VillageState.Instance != null)
+            {
+                foreach (var action in raw.village_actions)
+                {
+                    if (string.Equals(action, "grow_villager", StringComparison.OrdinalIgnoreCase))
+                    {
+                        bool grew = VillageState.Instance.TryGrowVillage();
+                        LogInfo($"Village action 'grow_villager': {(grew ? "success" : "failed (conditions not met)")}");
+                    }
+                }
             }
         }
         catch (Exception e)
@@ -1211,6 +1297,7 @@ Response Times:
 public class RawBatchDecision
 {
     public List<RawSingleAssignment> assignments;
+    public List<string> village_actions;
     public List<RawGoalDecision> goals;
 }
 
