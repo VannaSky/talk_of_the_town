@@ -380,11 +380,13 @@ public class LLMController : MonoBehaviour
             int seeds = VillageState.Instance.Seeds;
             int food = VillageState.Instance.Food;
 
+            int cap = VillageState.Instance.InventoryCapacity;
             sb.AppendLine("=== VILLAGE INVENTORY ===");
-            sb.AppendLine($"Wood: {wood}{(wood > 50 ? " [SURPLUS - no more Lumberjacks needed]" : wood < 10 ? " [LOW - need Lumberjack]" : "")}");
-            sb.AppendLine($"Stone: {stone}{(stone > 40 ? " [SURPLUS - no more Miners needed]" : stone < 10 ? " [LOW - need Miner]" : "")}");
-            sb.AppendLine($"Seeds: {seeds}{(seeds >= 10 ? $" [SUFFICIENT - assign {Mathf.Max(1, seeds / 20)} Farmer(s) to use these seeds!]" : " [LOW - need SeedGatherer]")}");
-            sb.AppendLine($"Food: {food}{(food < 10 ? " [LOW - farming urgently needed!]" : "")}");
+            sb.AppendLine($"Capacity: {cap} (build Stockpile to increase)");
+            sb.AppendLine($"Wood: {wood}/{cap}{(wood >= cap ? " [FULL - gatherers are BLOCKED, build Stockpile!]" : wood > 50 ? " [SURPLUS - no more Lumberjacks needed]" : wood < 10 ? " [LOW - need Lumberjack]" : "")}");
+            sb.AppendLine($"Stone: {stone}/{cap}{(stone >= cap ? " [FULL - gatherers are BLOCKED, build Stockpile!]" : stone > 40 ? " [SURPLUS - no more Miners needed]" : stone < 10 ? " [LOW - need Miner]" : "")}");
+            sb.AppendLine($"Seeds: {seeds}/{cap}{(seeds >= cap ? " [FULL - gatherers are BLOCKED]" : seeds >= 10 ? $" [SUFFICIENT - assign {Mathf.Max(1, seeds / 20)} Farmer(s) to use these seeds!]" : " [LOW - need SeedGatherer]")}");
+            sb.AppendLine($"Food: {food}/{cap}{(food >= cap ? " [FULL]" : food < 10 ? " [LOW - farming urgently needed!]" : "")}");
             sb.AppendLine();
         }
 
@@ -560,11 +562,12 @@ public class LLMController : MonoBehaviour
             int seeds = VillageState.Instance.Seeds;
             int food = VillageState.Instance.Food;
 
-            sb.AppendLine("=== RESOURCE CHANGES ===");
-            sb.AppendLine(FormatDelta("Wood", wood, _lastWood, wood > 50 ? " [SURPLUS]" : wood < 10 ? " [LOW]" : ""));
-            sb.AppendLine(FormatDelta("Stone", stone, _lastStone, stone > 40 ? " [SURPLUS]" : stone < 10 ? " [LOW]" : ""));
-            sb.AppendLine(FormatDelta("Seeds", seeds, _lastSeeds, seeds >= 10 ? " [SUFFICIENT]" : " [LOW]"));
-            sb.AppendLine(FormatDelta("Food", food, _lastFood, food < 10 ? " [LOW]" : ""));
+            int cap = VillageState.Instance.InventoryCapacity;
+            sb.AppendLine($"=== RESOURCE CHANGES (capacity: {cap}) ===");
+            sb.AppendLine(FormatDelta("Wood", wood, _lastWood, wood >= cap ? " [FULL - gatherers BLOCKED]" : wood > 50 ? " [SURPLUS]" : wood < 10 ? " [LOW]" : ""));
+            sb.AppendLine(FormatDelta("Stone", stone, _lastStone, stone >= cap ? " [FULL - gatherers BLOCKED]" : stone > 40 ? " [SURPLUS]" : stone < 10 ? " [LOW]" : ""));
+            sb.AppendLine(FormatDelta("Seeds", seeds, _lastSeeds, seeds >= cap ? " [FULL]" : seeds >= 10 ? " [SUFFICIENT]" : " [LOW]"));
+            sb.AppendLine(FormatDelta("Food", food, _lastFood, food >= cap ? " [FULL]" : food < 10 ? " [LOW]" : ""));
             sb.AppendLine();
         }
 

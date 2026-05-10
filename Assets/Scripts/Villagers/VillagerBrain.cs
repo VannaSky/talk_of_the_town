@@ -149,7 +149,7 @@ public class VillagerBrain : MonoBehaviour
         string status = _jobHandler.ActiveJobLogic?.GetCurrentStatus() ?? "Idle";
 
         // Job is waiting/stuck
-        if (status.Contains("Waiting") || status.Contains("No ") || status.Contains("found"))
+        if (status.Contains("Waiting") || status.Contains("No ") || status.Contains("found") || status.Contains("Storage full"))
         {
             _idleTime += checkInterval;
             if (_idleTime >= idleTimeout)

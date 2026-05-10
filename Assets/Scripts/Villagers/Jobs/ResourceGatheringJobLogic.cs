@@ -68,6 +68,14 @@ namespace Villagers.Jobs
 
         private void ExecuteFindingTarget(JobHandler handler)
         {
+            if (VillageState.Instance != null &&
+                VillageState.Instance.GetResource(DepositResourceType) >= VillageState.Instance.InventoryCapacity)
+            {
+                currentStatus = $"Storage full ({ResourceName})";
+                ChangeState(AnimationState.Idle, handler);
+                return;
+            }
+
             _currentTarget = FindBestResource(handler);
             if (_currentTarget != null)
             {
