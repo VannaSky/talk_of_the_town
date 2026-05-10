@@ -12,6 +12,7 @@ GameObject:
   - component: {fileID: 9119874092953123051}
   - component: {fileID: 1239982260815180827}
   - component: {fileID: 1993199970511430190}
+  - component: {fileID: -4597270050172174081}
   m_Layer: 0
   m_Name: Farm_Lvl1_Stage0
   m_TagString: Untagged
@@ -112,3 +113,19 @@ MeshCollider:
   m_Convex: 0
   m_CookingOptions: 30
   m_Mesh: {fileID: -7048599644142795996, guid: 266038c156d6ace44aa5e8489195627f, type: 3}
+--- !u!208 &-4597270050172174081
+NavMeshObstacle:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3543122875971320926}
+  m_Enabled: 1
+  serializedVersion: 3
+  m_Shape: 1
+  m_Extents: {x: 4.086, y: 0.27600002, z: 2.897}
+  m_MoveThreshold: 0.1
+  m_Carve: 1
+  m_CarveOnlyStationary: 1
+  m_Center: {x: -3.732, y: 1.1730001, z: -2.496}
+  m_TimeToStationary: 0.5

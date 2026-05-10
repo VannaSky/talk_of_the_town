@@ -12,6 +12,7 @@ GameObject:
   - component: {fileID: 33197235847500012}
   - component: {fileID: 23806765663751258}
   - component: {fileID: 64446608057954794}
+  - component: {fileID: -2857639988866124652}
   m_Layer: 0
   m_Name: SM_Prop_Crate_Stack_04
   m_TagString: Untagged
@@ -112,3 +113,19 @@ MeshCollider:
   m_Convex: 0
   m_CookingOptions: 30
   m_Mesh: {fileID: 43857535335972316, guid: d17d571ae0639d7408d6766270a337f7, type: 2}
+--- !u!208 &-2857639988866124652
+NavMeshObstacle:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1949185069924860}
+  m_Enabled: 1
+  serializedVersion: 3
+  m_Shape: 1
+  m_Extents: {x: 1.3410001, y: 0.577, z: 0.88900006}
+  m_MoveThreshold: 0.1
+  m_Carve: 1
+  m_CarveOnlyStationary: 1
+  m_Center: {x: 0.075, y: 0.577, z: -0.0050000004}
+  m_TimeToStationary: 0.5

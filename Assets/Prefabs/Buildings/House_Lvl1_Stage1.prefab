@@ -12,6 +12,7 @@ GameObject:
   - component: {fileID: 5327512533705334606}
   - component: {fileID: 2759706586535120905}
   - component: {fileID: 7379120442494164383}
+  - component: {fileID: -2583924508306210609}
   m_Layer: 0
   m_Name: House_Lvl1_Stage1
   m_TagString: Untagged
@@ -112,3 +113,19 @@ MeshCollider:
   m_Convex: 0
   m_CookingOptions: 30
   m_Mesh: {fileID: -8087571406601793247, guid: 73033d390d77f85489bdf7595d39b2e3, type: 3}
+--- !u!208 &-2583924508306210609
+NavMeshObstacle:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6570832402318498230}
+  m_Enabled: 1
+  serializedVersion: 3
+  m_Shape: 1
+  m_Extents: {x: 3.3450003, y: 3.443, z: 3.8330002}
+  m_MoveThreshold: 0.1
+  m_Carve: 1
+  m_CarveOnlyStationary: 1
+  m_Center: {x: 2.5, y: 0.93000007, z: -1.8820001}
+  m_TimeToStationary: 0.5
