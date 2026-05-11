@@ -200,6 +200,13 @@ public class BuilderLogic : JobLogic
     {
         if (tile == null || data == null || data.foundationPrefab == null) return null;
 
+        // Prevent placing on a tile that already has a crop or building
+        if (tile.HasBuilding || tile.GetComponentInChildren<ResourceNode>() != null)
+        {
+            LogWarning($"Tile {tile.GridPos} already occupied — skipping foundation");
+            return null;
+        }
+
         if (!tile.AllowsBuilding(data.constructionType))
         {
             LogWarning($"Tile {tile.GridPos} does not allow {data.constructionType}");

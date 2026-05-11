@@ -179,6 +179,15 @@ public class FarmerLogic : JobLogic
 
         if (timeSinceLastAction >= plantTime)
         {
+            // Prevent planting on a tile that got a building or crop while we were walking/planting
+            if (_targetTile.HasBuilding || _targetTile.GetComponentInChildren<ResourceNode>() != null)
+            {
+                LogWarning($"Tile {_targetTile.GridPos} already occupied — skipping planting");
+                _targetTile = null;
+                ChangeState(AnimationState.FindingTarget, handler);
+                return false;
+            }
+
             if (!TryConsumeSeeds())
             {
                 currentStatus = "Out of seeds!";
