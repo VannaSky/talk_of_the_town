@@ -111,6 +111,7 @@ public class FarmerLogic : JobLogic
     private void ExecuteMovingToTarget(JobHandler handler)
     {
         Vector3 destination;
+        Transform tileTransform = null;
 
         if (_phase == FarmerPhase.Harvesting)
         {
@@ -119,8 +120,10 @@ public class FarmerLogic : JobLogic
                 ChangeState(AnimationState.FindingTarget, handler);
                 return;
             }
-            destination = _targetCrop.transform.position;
-            currentStatus = $"Moving to crop at {destination}";
+            // Crop is parented under a tile
+            tileTransform = _targetCrop.transform.parent;
+            destination = GetWorkSpot(handler, tileTransform);
+            currentStatus = $"Moving to crop at {_targetCrop.transform.position}";
         }
         else
         {
@@ -129,7 +132,8 @@ public class FarmerLogic : JobLogic
                 ChangeState(AnimationState.FindingTarget, handler);
                 return;
             }
-            destination = _targetTile.transform.position;
+            tileTransform = _targetTile.transform;
+            destination = GetWorkSpot(handler, tileTransform);
             currentStatus = $"Moving to plant at {_targetTile.GridPos}";
         }
 
@@ -144,6 +148,22 @@ public class FarmerLogic : JobLogic
             else
                 ChangeState(AnimationState.Farming, handler);
         }
+    }
+
+    private Vector3 GetWorkSpot(JobHandler handler, Transform tileTransform)
+    {
+        if (tileTransform == null)
+            return _phase == FarmerPhase.Harvesting
+                ? _targetCrop.transform.position
+                : _targetTile.transform.position;
+
+        Vector3 tileCenter = tileTransform.position + new Vector3(1f, 0f, 1f);
+
+        // Farmers work in the field — stand in the tile center
+        if (_phase == FarmerPhase.Planting || _phase == FarmerPhase.Harvesting)
+            return tileCenter;
+
+        return tileCenter;
     }
 
     private bool ExecutePlanting(JobHandler handler)

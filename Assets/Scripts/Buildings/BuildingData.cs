@@ -21,6 +21,10 @@ public class BuildingData : ScriptableObject
     public GameObject foundationPrefab;
     public ConstructionType constructionType = ConstructionType.Hut;
 
+    [Header("Placement")]
+    [Tooltip("Offset from tile origin when placing this building. Tweak at runtime to align the prefab.")]
+    public Vector3 placementOffset = new Vector3(1f, 0.5f, 1f);
+
     [System.Serializable]
     public class LevelData
     {

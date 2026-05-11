@@ -23,6 +23,33 @@ namespace Buildings
     {
         public BuildingData buildingData;
 
+        /// <summary>
+        /// Repositions all buildings in the scene using their BuildingData.placementOffset.
+        /// Call from inspector or at runtime to preview offset changes.
+        /// </summary>
+        [ContextMenu("Reposition All Buildings From Offset")]
+        public static void RepositionAllBuildings()
+        {
+            var all = FindObjectsByType<Building>(FindObjectsSortMode.None);
+            foreach (var b in all)
+            {
+                if (b == null || b.buildingData == null) continue;
+                var tile = b.transform.parent?.parent; // Building container -> Tile
+                if (tile == null) continue;
+
+                // Preserve current rotation, reapply around tile center
+                float yAngle = b.transform.eulerAngles.y;
+                b.transform.position = tile.position + b.buildingData.placementOffset;
+                b.transform.rotation = Quaternion.identity;
+                if (yAngle > 0.1f)
+                {
+                    Vector3 tileCenter = tile.position + new Vector3(1f, 0f, 1f);
+                    b.transform.RotateAround(tileCenter, Vector3.up, yAngle);
+                }
+            }
+            Debug.Log($"[Building] Repositioned {all.Length} buildings from BuildingData offsets.");
+        }
+
         [HideInInspector]
         public List<BuildingLevelVisual> levels = new List<BuildingLevelVisual>();
 

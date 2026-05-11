@@ -86,7 +86,11 @@ public class VillagerAudioManager : MonoBehaviour
             PlayOneShot(voiceSource, GetCarryClips());
     }
 
-    private void HandleBecameIdle(JobHandler handler) { }
+    private void HandleBecameIdle(JobHandler handler)
+    {
+        StopFootsteps();
+        StopWorkSounds();
+    }
 
     // --- Footsteps ---
 

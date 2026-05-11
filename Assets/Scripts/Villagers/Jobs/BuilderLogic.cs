@@ -24,11 +24,13 @@ public class BuilderLogic : JobLogic
     [NonSerialized] private BuilderPhase _phase;
     [NonSerialized] private Building _currentTarget = null;
     [NonSerialized] private Tile _targetTile = null;
+    [NonSerialized] private bool _completedBuilding = false;
 
     protected override void OnInitialize(JobHandler handler)
     {
         _currentTarget = null;
         _targetTile = null;
+        _completedBuilding = false;
         ChangeState(AnimationState.FindingTarget, handler);
     }
 
@@ -86,16 +88,20 @@ public class BuilderLogic : JobLogic
     private void ExecuteMovingToTarget(JobHandler handler)
     {
         Vector3 destination;
+        Transform tileTransform = null;
 
         if (_phase == BuilderPhase.Building)
         {
             if (_currentTarget == null) { ChangeState(AnimationState.FindingTarget, handler); return; }
-            destination = _currentTarget.transform.position;
+            // The tile is: Building -> "Building" container -> Tile
+            tileTransform = _currentTarget.transform.parent?.parent;
+            destination = GetBuildSpot(handler, tileTransform);
             currentStatus = $"Moving to build {GetBuildingName()}";
         }
         else
         {
             if (_targetTile == null) { ChangeState(AnimationState.FindingTarget, handler); return; }
+            tileTransform = _targetTile.transform;
             destination = _targetTile.transform.position;
             currentStatus = "Moving to place building foundation";
         }
@@ -105,6 +111,13 @@ public class BuilderLogic : JobLogic
         if (!handler.villagerMover.IsNearDestination(stoppingDistance)) return;
 
         handler.villagerMover.StopMoving();
+
+        // Face the tile center so the villager looks at the building
+        if (tileTransform != null)
+        {
+            Vector3 tileCenter = tileTransform.position + new Vector3(1f, 0f, 1f);
+            handler.villagerMover.FaceTarget(tileCenter);
+        }
 
         if (_phase == BuilderPhase.Placing)
         {
@@ -150,12 +163,23 @@ public class BuilderLogic : JobLogic
         if (levelCompleted)
         {
             bool finished = _currentTarget.IsFinished();
-            if (finished)
-                LogEvent($"Completed building: {GetBuildingName()}");
-
             _currentTarget.Unreserve();
-            _currentTarget = null;
-            ChangeState(AnimationState.FindingTarget, handler);
+
+            if (finished)
+            {
+                LogEvent($"Completed building: {GetBuildingName()}");
+                _completedBuilding = true;
+                _currentTarget = null;
+                currentStatus = "Finished building. Waiting for instructions...";
+                handler.villagerMover.StopMoving();
+                ChangeState(AnimationState.Idle, handler);
+            }
+            else
+            {
+                _currentTarget = null;
+                ChangeState(AnimationState.FindingTarget, handler);
+            }
+
             return true;
         }
 
@@ -164,6 +188,9 @@ public class BuilderLogic : JobLogic
 
     private void ExecuteIdle(JobHandler handler)
     {
+        // Don't leave idle while waiting for LLM instructions after completing a building
+        if (_completedBuilding) return;
+
         timeSinceLastAction += Time.deltaTime;
         if (timeSinceLastAction >= 1f)
             ChangeState(AnimationState.FindingTarget, handler);
@@ -189,10 +216,14 @@ public class BuilderLogic : JobLogic
             buildingContainer = container.transform;
         }
 
-        Vector3 spawnPos = tile.transform.position + new Vector3(1f, 0.5f, 1f);
+        Vector3 spawnPos = tile.transform.position + data.placementOffset;
         int rotSteps = UnityEngine.Random.Range(0, 4);
-        var rotation = Quaternion.Euler(0f, rotSteps * 90f, 0f);
-        var go = UnityEngine.Object.Instantiate(data.foundationPrefab, spawnPos, rotation, buildingContainer);
+        var go = UnityEngine.Object.Instantiate(data.foundationPrefab, spawnPos, Quaternion.identity, buildingContainer);
+        if (rotSteps > 0)
+        {
+            Vector3 tileCenter = tile.transform.position + new Vector3(1f, 0f, 1f);
+            go.transform.RotateAround(tileCenter, Vector3.up, rotSteps * 90f);
+        }
         go.name = $"{data.buildingType}_{tile.GridPos.x}_{tile.GridPos.y}";
 
         tile.TrySetBuilding(new ConstructionInstance(data.constructionType, 0f, false));
@@ -360,6 +391,35 @@ public class BuilderLogic : JobLogic
         return tile.GetComponentInChildren<ResourceNode>() != null;
     }
 
+    /// <summary>
+    /// Returns a position just outside the tile edge, on the side nearest to the villager.
+    /// </summary>
+    private Vector3 GetBuildSpot(JobHandler handler, Transform tileTransform)
+    {
+        if (tileTransform == null)
+            return _currentTarget.transform.position;
+
+        Vector3 tileCenter = tileTransform.position + new Vector3(1f, 0f, 1f);
+        Vector3 villagerPos = handler.transform.position;
+
+        // Direction from tile center to villager, flattened
+        Vector3 dir = villagerPos - tileCenter;
+        dir.y = 0f;
+
+        if (dir.sqrMagnitude < 0.01f)
+            dir = Vector3.forward;
+
+        // Snap to nearest cardinal direction (N/S/E/W edge)
+        if (Mathf.Abs(dir.x) > Mathf.Abs(dir.z))
+            dir = new Vector3(Mathf.Sign(dir.x), 0f, 0f);
+        else
+            dir = new Vector3(0f, 0f, Mathf.Sign(dir.z));
+
+        // Place just outside the tile edge (tile is 2x2, so 1 unit from center = edge)
+        float edgeOffset = 1f + stoppingDistance * 0.5f;
+        return tileCenter + dir * edgeOffset;
+    }
+
     private Vector3? GetTargetAreaWorld(JobHandler handler)
     {
         if (!handler.PreferredTargetArea.HasValue || VillageState.Instance?.TileGrid == null)
@@ -375,5 +435,6 @@ public class BuilderLogic : JobLogic
         base.ResetState();
         _currentTarget = null;
         _targetTile = null;
+        _completedBuilding = false;
     }
 }

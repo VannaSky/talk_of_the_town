@@ -26,7 +26,11 @@ public class VillageState : MonoBehaviour
     [SerializeField] private int food = 0;
     
     [Header("Game Speed")]
-    [SerializeField] [Range(0.1f, 10f)] private float gameSpeed = 1f;
+    [SerializeField] [Range(1f, 10f)] private float gameSpeed = 1f;
+    public const float MinGameSpeed = 1f;
+    public const float MaxGameSpeed = 10f;
+
+    public event System.Action<float> OnGameSpeedChanged;
 
     [Header("Village Capacity")]
     [SerializeField] private int populationCap = 5;
@@ -114,8 +118,9 @@ public class VillageState : MonoBehaviour
 
     public void SetGameSpeed(float speed)
     {
-        gameSpeed = Mathf.Clamp(speed, 0.1f, 10f);
+        gameSpeed = Mathf.Clamp(speed, MinGameSpeed, MaxGameSpeed);
         ApplyGameSpeed();
+        OnGameSpeedChanged?.Invoke(gameSpeed);
     }
 
     private void ApplyGameSpeed()
@@ -128,7 +133,7 @@ public class VillageState : MonoBehaviour
 #if UNITY_EDITOR
     private void OnValidate()
     {
-        gameSpeed = Mathf.Clamp(gameSpeed, 0.1f, 10f);
+        gameSpeed = Mathf.Clamp(gameSpeed, MinGameSpeed, MaxGameSpeed);
         if (Application.isPlaying)
             ApplyGameSpeed();
     }
