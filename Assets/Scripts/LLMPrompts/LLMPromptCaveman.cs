@@ -14,8 +14,8 @@ public static class LLMPromptCaveman
         return $@"Assign ALL {villagerCount} villagers. No 2 same spot.
 
 JOBS: {jobList}, IDLE
-Lumberjack→wood, target TREE
-Miner→stone, target STONE
+Lumberjack→wood, target TREE (trees regrow, renewable)
+Miner→stone, target STONE (fast) or MINE SHAFT (infinite/very slow). STONE first while available. At 10+ villagers: keep 1 miner at MINE SHAFT permanently.
 Builder→place+build. Need wood+stone. buildingType: House(villager auto-spawns on finish)/Stockpile/Farm
 Farmer→plant(seeds near Farm)+harvest→food+seeds. NEEDS Farm building to plant! No farm=no fields. Crops regrow→2-3 farms enough.
 SeedGatherer→seeds from nodes

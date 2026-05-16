@@ -39,6 +39,14 @@ namespace Tiles
         [SerializeField] private int maxVillagePlacementRetries = 5;
         private int currentRetryCount = 0;
 
+        [Header("Mine Shafts")]
+        [Tooltip("Prefab for the mine shaft resource node. Must have a ResourceNode component with isMineShaft=true, canRegrow=true, resourceType=Stone.")]
+        [SerializeField] GameObject mineShaftPrefab;
+        [Tooltip("Number of mine shafts to place on mountain tiles after map generation.")]
+        [SerializeField] int mineShaftCount = 1;
+        [Tooltip("Y-offset applied to mine shaft spawn position (above tile surface).")]
+        [SerializeField] float mineShaftYOffset = 0f;
+
         /// <summary>
         /// Set to true once LoadFromFile has run. Prevents TWC event callbacks
         /// (which fire asynchronously via coroutines) from overwriting loaded tile data.
@@ -209,6 +217,7 @@ namespace Tiles
 
                 // 3) Register resources
                 RegisterExistingResources();
+                SpawnMineShafts();
 
 #pragma warning disable CS4014
                 RebakeNavMeshAsync();
@@ -267,6 +276,7 @@ namespace Tiles
 
             // 3) Register resources after village is placed
             RegisterExistingResources();
+            SpawnMineShafts();
 
 #pragma warning disable CS4014
             RebakeNavMeshAsync();
@@ -600,8 +610,62 @@ namespace Tiles
 
             LogInfo($"Resource registration complete: {tilesProcessed} tiles processed, {totalResources} total resources registered");
         }
-        
-        
+
+        /// <summary>
+        /// Spawns mine shaft prefabs on random mountain tiles after map generation.
+        /// Called automatically after RegisterExistingResources().
+        /// </summary>
+        [ContextMenu("Spawn Mine Shafts")]
+        public void SpawnMineShafts()
+        {
+            if (mineShaftPrefab == null)
+            {
+                LogWarning("MineShaftPrefab not assigned — skipping mine shaft spawning. Assign it in the Inspector.");
+                return;
+            }
+
+            if (tileGrid == null) return;
+
+            // Collect eligible mountain tiles that don't already have a mine shaft
+            var candidates = new List<Tile>();
+            foreach (Transform t in tileGrid.transform)
+            {
+                if (!t.TryGetComponent<Tile>(out var tile)) continue;
+                if (tile.Archetype?.Style != TileStyle.Mountain) continue;
+                if (t.Find("Mines") != null) continue; // already has a mine shaft
+                candidates.Add(tile);
+            }
+
+            if (candidates.Count == 0)
+            {
+                LogWarning("No suitable mountain tiles found for mine shaft placement.");
+                return;
+            }
+
+            // Fisher-Yates partial shuffle to pick mineShaftCount random tiles
+            int count = Mathf.Min(mineShaftCount, candidates.Count);
+            for (int i = 0; i < count; i++)
+            {
+                int swapIdx = UnityEngine.Random.Range(i, candidates.Count);
+                (candidates[i], candidates[swapIdx]) = (candidates[swapIdx], candidates[i]);
+
+                var tile = candidates[i];
+
+                // Parent the group at the tile centre so the prefab can use localPosition = zero
+                var minesGroup = new GameObject("Mines");
+                minesGroup.transform.SetParent(tile.transform, false);
+                minesGroup.transform.localPosition = new Vector3(cellSize / 2f, mineShaftYOffset, cellSize / 2f);
+
+                var instance = Instantiate(mineShaftPrefab, minesGroup.transform);
+                instance.transform.localPosition = Vector3.zero;
+                instance.transform.localRotation = Quaternion.identity;
+                LogInfo($"Spawned mine shaft at tile {tile.GridPos}");
+            }
+
+            LogInfo($"Mine shaft spawning complete: {count} placed.");
+        }
+
+
         [ContextMenu("Export Grid to JSON")]
         public void ExportGridToJson()
         {

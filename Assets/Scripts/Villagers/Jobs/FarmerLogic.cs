@@ -366,15 +366,20 @@ public class FarmerLogic : JobLogic
             centerGrid = nearestTile != null ? nearestTile.GridPos : Vector2Int.zero;
         }
 
-        var candidates = VillageState.Instance.TileGrid.FindTilesInRadius(
-            centerGrid, searchRadius,
-            tile => tile.Archetype != null
-                    && (tile.Archetype.Style == TileStyle.Grass || tile.Archetype.Style == TileStyle.Field)
-                    && !tile.HasBuilding
-                    && !tile.HasResource
-                    && !HasResourceNodeOnTile(tile)
-                    && IsInFarmRange(tile)
-        );
+        System.Func<Tile, bool> condition = tile => tile.Archetype != null
+                && (tile.Archetype.Style == TileStyle.Grass || tile.Archetype.Style == TileStyle.Field)
+                && !tile.HasBuilding
+                && !tile.HasResource
+                && !HasResourceNodeOnTile(tile)
+                && IsInFarmRange(tile);
+
+        var candidates = VillageState.Instance.TileGrid.FindTilesInRadius(centerGrid, searchRadius, condition);
+
+        if (candidates.Count == 0)
+        {
+            LogInfo($"No planting tiles within radius {searchRadius} of {centerGrid} — expanding to full map");
+            candidates = VillageState.Instance.TileGrid.FindTilesInRadius(centerGrid, 9999, condition);
+        }
 
         if (candidates.Count == 0) return null;
 

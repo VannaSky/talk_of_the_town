@@ -49,6 +49,11 @@ public abstract class JobLogic
     {
         if (handler != null && handler.equipment != null)
             handler.equipment.HideAll();
+
+        // Reset animator to Idle so the old working animation doesn't linger
+        // while the new job's FindingTarget phase runs (FindingTarget skips animator updates)
+        if (handler != null && handler.animator != null && !string.IsNullOrEmpty(animatorStateParameter))
+            handler.animator.SetInteger(animatorStateParameter, (int)AnimationState.Idle);
     }
 
     protected abstract void OnInitialize(JobHandler handler);

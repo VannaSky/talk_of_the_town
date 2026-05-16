@@ -442,6 +442,12 @@ public class LLMController : MonoBehaviour
             sb.AppendLine(FormatLocationsWithTaken(SortByNearestVillager(resourceLocations.stoneLocations, villagers), takenPositions));
         }
 
+        if (resourceLocations.mineLocations.Count > 0)
+        {
+            sb.Append("MINE SHAFT (infinite stone, VERY slow — prefer regular STONE, but assign 1 permanent miner here at 10+ villagers): ");
+            sb.AppendLine(FormatLocationsWithTaken(SortByNearestVillager(resourceLocations.mineLocations, villagers), takenPositions));
+        }
+
         if (resourceLocations.seedLocations.Count > 0)
         {
             sb.Append("SEEDS: ");
@@ -1228,10 +1234,14 @@ Response Times:
             switch (node.resourceType)
             {
                 case ResourceNode.ResourceType.Tree:
-                    result.treeLocations.Add(pos);
+                    if (node.IsMature)
+                        result.treeLocations.Add(pos);
                     break;
                 case ResourceNode.ResourceType.Stone:
-                    result.stoneLocations.Add(pos);
+                    if (node.isMineShaft)
+                        result.mineLocations.Add(pos);
+                    else
+                        result.stoneLocations.Add(pos);
                     break;
                 case ResourceNode.ResourceType.Seed:
                     result.seedLocations.Add(pos);
@@ -1489,6 +1499,7 @@ public class ResourceLocations
 {
     public List<Vector2Int> treeLocations = new List<Vector2Int>();
     public List<Vector2Int> stoneLocations = new List<Vector2Int>();
+    public List<Vector2Int> mineLocations = new List<Vector2Int>();
     public List<Vector2Int> seedLocations = new List<Vector2Int>();
     public List<Vector2Int> buildingLocations = new List<Vector2Int>();
     public List<Vector2Int> farmLocations = new List<Vector2Int>();

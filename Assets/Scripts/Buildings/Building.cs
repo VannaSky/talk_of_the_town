@@ -99,6 +99,7 @@ namespace Buildings
 
                 if (IsFinished() && buildingData != null && buildingData.buildingType == BuildingType.House)
                 {
+                    OccupySlot(); // Claim the slot immediately so GetAvailableHouseSlots() is accurate
                     VillageState.Instance?.RegisterCompletedHouse(this);
                     StartCoroutine(SpawnVillagerDelayed(buildingData.villagerSpawnDelay));
                 }

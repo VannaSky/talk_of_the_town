@@ -23,8 +23,8 @@ public static class LLMPromptNormal
 AVAILABLE JOBS: {jobList}, IDLE
 
 JOB DESCRIPTIONS:
-- Lumberjack: Chops trees for wood. Assign to TREE locations.
-- Miner: Mines stone deposits. Assign to STONE locations.
+- Lumberjack: Chops trees for wood. Assign to TREE locations. Trees regrow after being cut — they are a renewable resource.
+- Miner: Mines stone deposits. Assign to STONE locations (fast). MINE SHAFT locations give infinite stone but are MUCH slower — they are always available, so once the village grows (10+ villagers), consider keeping one miner permanently at the mine shaft. Always prefer regular STONE first while deposits last.
 - Builder: Constructs buildings. Needs wood+stone in inventory. Set ""buildingType"" to one of: House (new villager spawns automatically when complete), Stockpile (increases inventory capacity), Farm (expands farming area). Choose based on village needs.
 - Farmer: Plants crops on grass tiles near Farm buildings (needs seeds) and harvests mature crops for food AND seeds. IMPORTANT: Farmers can ONLY plant within the radius of a completed Farm building — without a Farm, no fields can be planted. Each harvest yields food and seeds, making farming partially self-sustaining. Assign to FARMS or nearby grass. THIS IS THE PRIMARY FOOD PRODUCTION JOB. NOTE: Crops regrow after harvest — 2-3 farms is usually sufficient.
 - SeedGatherer: Collects seeds from seed nodes (pumpkins, wheat, etc.)

@@ -340,15 +340,22 @@ public class BuilderLogic : JobLogic
         }
 
         var ct = data.constructionType;
-        var candidates = VillageState.Instance.TileGrid.FindTilesInRadius(
-            centerGrid, searchRadius,
-            tile => tile.Archetype != null
-                    && tile.Archetype.Style == TileStyle.Grass
-                    && !tile.HasBuilding
-                    && !tile.HasResource
-                    && tile.AllowsBuilding(ct)
-                    && !HasResourceNodeOnTile(tile)
-        );
+        System.Func<Tile, bool> condition = tile =>
+            tile.Archetype != null
+            && tile.Archetype.Style == TileStyle.Grass
+            && !tile.HasBuilding
+            && !tile.HasResource
+            && tile.AllowsBuilding(ct)
+            && !HasResourceNodeOnTile(tile);
+
+        var candidates = VillageState.Instance.TileGrid.FindTilesInRadius(centerGrid, searchRadius, condition);
+
+        // If nothing found in the preferred radius, search the whole map
+        if (candidates.Count == 0)
+        {
+            LogInfo($"No building tiles within radius {searchRadius} of {centerGrid} — expanding to full map");
+            candidates = VillageState.Instance.TileGrid.FindTilesInRadius(centerGrid, 9999, condition);
+        }
 
         if (candidates.Count == 0) return null;
 
