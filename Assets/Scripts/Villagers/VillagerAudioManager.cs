@@ -54,12 +54,14 @@ public class VillagerAudioManager : MonoBehaviour
     {
         _jobHandler.OnAnimationStateChanged += HandleStateChanged;
         _jobHandler.OnBecameIdle += HandleBecameIdle;
+        _jobHandler.OnJobAssigned += HandleJobAssigned;
     }
 
     void OnDisable()
     {
         _jobHandler.OnAnimationStateChanged -= HandleStateChanged;
         _jobHandler.OnBecameIdle -= HandleBecameIdle;
+        _jobHandler.OnJobAssigned -= HandleJobAssigned;
     }
 
     void Start()
@@ -88,6 +90,13 @@ public class VillagerAudioManager : MonoBehaviour
 
     private void HandleBecameIdle(JobHandler handler)
     {
+        StopFootsteps();
+        StopWorkSounds();
+    }
+
+    private void HandleJobAssigned(JobType job)
+    {
+        // Stop all active sounds immediately on any job change (including going idle)
         StopFootsteps();
         StopWorkSounds();
     }
