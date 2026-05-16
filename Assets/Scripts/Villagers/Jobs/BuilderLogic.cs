@@ -270,6 +270,9 @@ public class BuilderLogic : JobLogic
         if (_currentTarget == null || VillageState.Instance == null) return true;
         if (_currentTarget.buildingData == null) return true;
 
+        // Resources already paid by a previous builder — don't charge again
+        if (_currentTarget.resourcesPaidForCurrentLevel) return true;
+
         int level = _currentTarget.currentLevel;
         if (level >= _currentTarget.buildingData.levels.Count) return true;
 
@@ -284,6 +287,7 @@ public class BuilderLogic : JobLogic
 
         VillageState.Instance.TrySpendResource(ResourceType.Wood, levelData.woodCost);
         VillageState.Instance.TrySpendResource(ResourceType.Stone, levelData.stoneCost);
+        _currentTarget.resourcesPaidForCurrentLevel = true;
         return true;
     }
 
@@ -354,7 +358,7 @@ public class BuilderLogic : JobLogic
         if (candidates.Count == 0)
         {
             LogInfo($"No building tiles within radius {searchRadius} of {centerGrid} — expanding to full map");
-            candidates = VillageState.Instance.TileGrid.FindTilesInRadius(centerGrid, 9999, condition);
+            candidates = VillageState.Instance.TileGrid.FindAllTiles(condition);
         }
 
         if (candidates.Count == 0) return null;

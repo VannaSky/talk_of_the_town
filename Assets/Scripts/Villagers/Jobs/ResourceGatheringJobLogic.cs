@@ -181,6 +181,7 @@ namespace Villagers.Jobs
                 {
                     VillageState.Instance.AddResource(DepositResourceType, resourcePerNode);
                     currentStatus = $"Deposited {resourcePerNode} {ResourceName}!";
+                    handler.NotifyResourceDeposited(resourcePerNode);
                 }
 
                 if (_currentTarget != null)

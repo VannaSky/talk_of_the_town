@@ -37,6 +37,10 @@ namespace Environment.Resources
         [Tooltip("Mark this node as a mine shaft: infinite stone but very slow regrowth. Miners use regular stone first.")]
         public bool isMineShaft = false;
 
+        [Header("Crop")]
+        [Tooltip("Maximum seeds returned when this crop is harvested. Actual yield is random between 1 and this value.")]
+        public int seedsYield = 1;
+
         public bool IsMature => growthStage == GrowthStage.Mature;
 
         // Cached tree renderers for stump-mode toggling

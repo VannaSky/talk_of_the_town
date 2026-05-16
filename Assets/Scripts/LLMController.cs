@@ -587,7 +587,23 @@ public class LLMController : MonoBehaviour
 
         if (unfinished > 0)
             sb.AppendLine($"Under construction: {unfinished} building(s)");
+
+        AppendBuildingCosts(sb);
         sb.AppendLine();
+    }
+
+    private void AppendBuildingCosts(System.Text.StringBuilder sb)
+    {
+        var allData = Resources.LoadAll<BuildingData>("");
+        if (allData.Length == 0) return;
+
+        sb.AppendLine("Building costs (wood / stone required to start construction):");
+        foreach (var data in allData)
+        {
+            if (data.levels == null || data.levels.Count == 0) continue;
+            var level = data.levels[0];
+            sb.AppendLine($"  {data.buildingType}: {level.woodCost} wood, {level.stoneCost} stone");
+        }
     }
 
     private void AppendRecentEvents(System.Text.StringBuilder sb)
@@ -828,7 +844,8 @@ public class LLMController : MonoBehaviour
                         success = true,
                         hasTargetArea = assignment.targetX != 0 || assignment.targetY != 0,
                         targetX = assignment.targetX,
-                        targetY = assignment.targetY
+                        targetY = assignment.targetY,
+                        gatherAmount = assignment.gatherAmount
                     };
 
                     results[assignment.villager] = decision;
@@ -1394,6 +1411,7 @@ public class RawSingleAssignment
     public string buildingType;
     public int targetX;
     public int targetY;
+    public int gatherAmount;
     public string reason;
 }
 
@@ -1417,6 +1435,7 @@ public class JobDecision
     public bool hasTargetArea;
     public int targetX;
     public int targetY;
+    public int gatherAmount;
 
     public bool IsIdle => string.IsNullOrEmpty(jobName) ||
                           jobName.Equals("IDLE", StringComparison.OrdinalIgnoreCase);

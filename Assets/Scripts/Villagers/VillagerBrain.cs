@@ -33,6 +33,10 @@ public class VillagerBrain : MonoBehaviour
     private float _idleTime;
     private float _lastAppliedDecisionTime;
 
+    // Mini-goal tracking
+    private int _gatherGoalAmount;
+    private int _personalGathered;
+
     void Awake()
     {
         _villager = GetComponent<Villager>();
@@ -53,6 +57,8 @@ public class VillagerBrain : MonoBehaviour
             LLMController.Instance.OnBatchDecisionMade += OnBatchDecisionReceived;
         }
 
+        _jobHandler.OnResourceDeposited += OnResourceDeposited;
+
         StartCoroutine(WaitForLLMAndSubscribe());
         StartCoroutine(MonitorLoop());
     }
@@ -63,6 +69,8 @@ public class VillagerBrain : MonoBehaviour
         {
             LLMController.Instance.OnBatchDecisionMade -= OnBatchDecisionReceived;
         }
+
+        _jobHandler.OnResourceDeposited -= OnResourceDeposited;
     }
 
     private IEnumerator WaitForLLMAndSubscribe()
@@ -78,6 +86,12 @@ public class VillagerBrain : MonoBehaviour
         LLMController.Instance.OnBatchDecisionMade += OnBatchDecisionReceived;
 
         LogInfo($"{_villager.villagerName} subscribed to batch decisions");
+    }
+
+    private void OnResourceDeposited(int amount)
+    {
+        if (_gatherGoalAmount <= 0) return;
+        _personalGathered += amount;
     }
 
     private void OnBatchDecisionReceived(Dictionary<string, JobDecision> decisions)
@@ -133,6 +147,17 @@ public class VillagerBrain : MonoBehaviour
 
     private bool ShouldRequestDecision()
     {
+        // Check if a gather mini-goal has been met
+        if (_gatherGoalAmount > 0 && _personalGathered >= _gatherGoalAmount)
+        {
+            LogEvent($"{_villager.villagerName} mini-goal met: deposited {_personalGathered}/{_gatherGoalAmount}");
+            ClearGatherGoal();
+            _jobHandler.AssignJob(null);
+            currentState = "Mini-goal complete";
+            _idleTime = 0f;
+            return true;
+        }
+
         // No job assigned
         if (_jobHandler.currentJob == null)
         {
@@ -205,7 +230,10 @@ public class VillagerBrain : MonoBehaviour
         _lastAppliedDecisionTime = Time.time;
 
         string targetInfo = decision.hasTargetArea ? $" at ({decision.targetX},{decision.targetY})" : "";
-        LogEvent($"{_villager.villagerName} -> {decision.jobName}{targetInfo}: {decision.reason}");
+        string goalInfo = decision.gatherAmount > 0 ? $" [goal: {decision.gatherAmount}]" : "";
+        LogEvent($"{_villager.villagerName} -> {decision.jobName}{targetInfo}{goalInfo}: {decision.reason}");
+
+        ClearGatherGoal();
 
         if (decision.IsIdle || !decision.success)
         {
@@ -241,6 +269,13 @@ public class VillagerBrain : MonoBehaviour
                 LogInfo($"{_villager.villagerName} assigned {matchedJob.JobName}");
             }
 
+            if (decision.gatherAmount > 0 && IsGatheringJob(matchedJob.JobName))
+            {
+                _gatherGoalAmount = decision.gatherAmount;
+                _personalGathered = 0;
+                LogEvent($"{_villager.villagerName} mini-goal set: personally gather {_gatherGoalAmount} via {matchedJob.JobName}");
+            }
+
             currentState = $"{matchedJob.JobName}";
         }
         else
@@ -250,6 +285,15 @@ public class VillagerBrain : MonoBehaviour
             currentState = "Unknown job";
         }
     }
+
+    private void ClearGatherGoal()
+    {
+        _gatherGoalAmount = 0;
+        _personalGathered = 0;
+    }
+
+    private static bool IsGatheringJob(string jobName) =>
+        jobName == "Lumberjack" || jobName == "Miner" || jobName == "SeedGatherer" || jobName == "Farmer";
 
     private JobType FindJobType(string jobName)
     {

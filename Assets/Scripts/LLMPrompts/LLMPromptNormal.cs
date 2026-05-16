@@ -11,7 +11,7 @@ public static class LLMPromptNormal
 
         string jsonExample = @"{
     ""assignments"": [
-        { ""villager"": ""<NAME>"", ""job"": ""<JOB>"", ""buildingType"": ""<TYPE>"", ""targetX"": <X>, ""targetY"": <Y>, ""reason"": ""<why>"" }
+        { ""villager"": ""<NAME>"", ""job"": ""<JOB>"", ""buildingType"": ""<TYPE>"", ""targetX"": <X>, ""targetY"": <Y>, ""gatherAmount"": <N>, ""reason"": ""<why>"" }
     ],
     ""goals"": [
         { ""type"": ""GatherResource"", ""resource"": ""Wood"", ""amount"": 80, ""priority"": ""High"", ""description"": ""Build wood reserves"" }
@@ -46,6 +46,15 @@ CRITICAL COORDINATION RULES:
 3. CHECK STOCKPILES: High stockpile = stop gathering that resource, switch to productive jobs.
 4. USE DIFFERENT RESOURCE NODES: If both need wood, send them to different tree clusters!
 5. STABILITY — KEEP ONGOING ASSIGNMENTS: Villagers marked [KEEP] are already working. Do NOT reassign them unless their resource is critically oversupplied. Never swap two villagers' jobs with each other without a specific reason. Only assign new jobs to villagers marked [NEEDS ASSIGNMENT].
+
+MINI-GOALS (strongly encouraged for gatherers):
+You may set a ""gatherAmount"" on any Lumberjack, Miner, SeedGatherer, or Farmer assignment. The villager personally gathers exactly that many units, then stops and waits for your next instruction.
+WHY THIS MATTERS: Without a gatherAmount, the villager gathers indefinitely until the next scheduled decision — you lose precise control over when they stop. A villager that gathers forever will overfill storage, block other gatherers, and waste time you could have spent on a smarter task. Setting a gatherAmount lets you chain tasks: gather just enough, then build, farm, or help elsewhere.
+GOOD EXAMPLES:
+- Wood is low (8): assign Lumberjack with gatherAmount 20 — enough to unblock builders without overshooting
+- Stone is needed for one building: assign Miner with gatherAmount 15 — stop once you have enough
+- Seeds: assign SeedGatherer with gatherAmount 12 — then switch them to Farmer
+Omit (or 0) only when you genuinely want indefinite gathering and don't need to redirect the villager.
 
 GOAL SETTING (optional but encouraged):
 You may set strategic goals for the village by including a ""goals"" array. Goals track progress and trigger a new decision when completed — use them to chain plans.

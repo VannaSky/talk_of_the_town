@@ -4,6 +4,7 @@ using Environment.Resources;
 using Tiles;
 using UnityEngine;
 using AnimationState = Villagers.Jobs.AnimationState;
+using Random = UnityEngine.Random;
 
 [Serializable]
 public class FarmerLogic : JobLogic
@@ -15,7 +16,6 @@ public class FarmerLogic : JobLogic
     public float harvestTime = 5f;
     public int seedCost = 2;
     public int foodProduced = 5;
-    public int seedsProduced = 1;
     public int searchRadius = 15;
 
     [Header("Crop Prefab")]
@@ -244,10 +244,12 @@ public class FarmerLogic : JobLogic
 
             if (VillageState.Instance != null)
             {
+                int seedsYield = _targetCrop.seedsYield > 0 ? Random.Range(1, _targetCrop.seedsYield + 1) : 0;
                 VillageState.Instance.AddResource(ResourceType.Food, foodProduced);
-                VillageState.Instance.AddResource(ResourceType.Seed, seedsProduced);
-                currentStatus = $"Harvested {foodProduced} food and {seedsProduced} seeds!";
-                LogInfo($"Harvested {foodProduced} food and {seedsProduced} seeds!");
+                if (seedsYield > 0)
+                    VillageState.Instance.AddResource(ResourceType.Seed, seedsYield);
+                currentStatus = $"Harvested {foodProduced} food and {seedsYield} seeds!";
+                LogInfo($"Harvested {foodProduced} food and {seedsYield} seeds!");
             }
 
             _targetCrop = null;
@@ -378,7 +380,7 @@ public class FarmerLogic : JobLogic
         if (candidates.Count == 0)
         {
             LogInfo($"No planting tiles within radius {searchRadius} of {centerGrid} — expanding to full map");
-            candidates = VillageState.Instance.TileGrid.FindTilesInRadius(centerGrid, 9999, condition);
+            candidates = VillageState.Instance.TileGrid.FindAllTiles(condition);
         }
 
         if (candidates.Count == 0) return null;

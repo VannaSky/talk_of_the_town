@@ -172,6 +172,17 @@ namespace Tiles
             return results;
         }
 
+        public List<Tile> FindAllTiles(System.Func<Tile, bool> predicate)
+        {
+            var results = new List<Tile>();
+            foreach (var tile in _tiles.Values)
+            {
+                if (predicate(tile))
+                    results.Add(tile);
+            }
+            return results;
+        }
+
         public void RebuildIndex()
         {
             _tiles.Clear();

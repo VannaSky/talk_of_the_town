@@ -55,6 +55,7 @@ namespace Buildings
 
         public int currentLevel = 0;
         public float currentWork = 0f;
+        public bool resourcesPaidForCurrentLevel = false;
 
         private bool isReserved = false;
         public bool IsReserved => isReserved;
@@ -93,6 +94,7 @@ namespace Buildings
                 currentWork -= level.workRequired;
                 int finishedLevel = currentLevel;
                 currentLevel++;
+                resourcesPaidForCurrentLevel = false;
                 levelCompleted = true;
                 ShowFinalForLevel(finishedLevel);
                 ApplyLevelBonuses(finishedLevel);
