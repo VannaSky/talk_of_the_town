@@ -328,8 +328,12 @@ public class FarmerLogic : JobLogic
         if (farmCoverage.Count == 0)
         {
             currentStatus = "No farm buildings — cannot plant fields";
+            LogWarning($"[{handler.name}] FindEmptyGrassTile: no completed Farm buildings found — cannot plant");
             return null;
         }
+
+        LogWarning($"[{handler.name}] FindEmptyGrassTile: {farmCoverage.Count} farm(s) found — " +
+                   string.Join(", ", farmCoverage.ConvertAll(f => $"pos={f.pos} r={f.radius}")));
 
         // Check field capacity (set by FieldCapacity bonuses on Farm buildings)
         if (VillageState.Instance != null && VillageState.Instance.FieldCapacity > 0)
@@ -338,8 +342,14 @@ public class FarmerLogic : JobLogic
             if (currentCrops >= VillageState.Instance.FieldCapacity)
             {
                 currentStatus = $"Field limit reached ({currentCrops}/{VillageState.Instance.FieldCapacity}) — build more farms";
+                LogWarning($"[{handler.name}] FindEmptyGrassTile: field cap reached ({currentCrops}/{VillageState.Instance.FieldCapacity})");
                 return null;
             }
+            LogWarning($"[{handler.name}] FindEmptyGrassTile: crops={currentCrops}/{VillageState.Instance.FieldCapacity}");
+        }
+        else
+        {
+            LogWarning($"[{handler.name}] FindEmptyGrassTile: FieldCapacity={VillageState.Instance?.FieldCapacity} (0 means uncapped)");
         }
 
         Vector3 origin = handler.transform.position;
@@ -368,6 +378,24 @@ public class FarmerLogic : JobLogic
             centerGrid = nearestTile != null ? nearestTile.GridPos : Vector2Int.zero;
         }
 
+        LogWarning($"[{handler.name}] FindEmptyGrassTile: searching from center={centerGrid} radius={searchRadius}");
+
+        // Debug: count why tiles are being excluded
+        int totalChecked = 0, failArchetype = 0, failStyle = 0, failBuilding = 0, failResource = 0, failFarmRange = 0;
+        var allTilesInRadius = VillageState.Instance.TileGrid.FindTilesInRadius(centerGrid, searchRadius, _ => true);
+        foreach (var t in allTilesInRadius)
+        {
+            totalChecked++;
+            if (t.Archetype == null) { failArchetype++; continue; }
+            if (t.Archetype.Style != TileStyle.Grass && t.Archetype.Style != TileStyle.Field) { failStyle++; continue; }
+            if (t.HasBuilding) { failBuilding++; continue; }
+            if (t.HasResource || HasResourceNodeOnTile(t)) { failResource++; continue; }
+            if (!IsInFarmRange(t)) failFarmRange++;
+        }
+        LogWarning($"[{handler.name}] Tile filter breakdown (radius {searchRadius} of {centerGrid}): " +
+                   $"total={totalChecked} noArchetype={failArchetype} wrongStyle={failStyle} " +
+                   $"hasBuilding={failBuilding} hasResource={failResource} outOfFarmRange={failFarmRange}");
+
         System.Func<Tile, bool> condition = tile => tile.Archetype != null
                 && (tile.Archetype.Style == TileStyle.Grass || tile.Archetype.Style == TileStyle.Field)
                 && !tile.HasBuilding
@@ -379,11 +407,17 @@ public class FarmerLogic : JobLogic
 
         if (candidates.Count == 0)
         {
-            LogInfo($"No planting tiles within radius {searchRadius} of {centerGrid} — expanding to full map");
+            LogWarning($"[{handler.name}] FindEmptyGrassTile: no tiles in radius {searchRadius} of {centerGrid} — expanding to full map");
             candidates = VillageState.Instance.TileGrid.FindAllTiles(condition);
         }
 
-        if (candidates.Count == 0) return null;
+        if (candidates.Count == 0)
+        {
+            LogWarning($"[{handler.name}] FindEmptyGrassTile: no valid planting tiles found anywhere on the map");
+            return null;
+        }
+
+        LogWarning($"[{handler.name}] FindEmptyGrassTile: {candidates.Count} candidate(s) found, picking nearest");
 
         Tile best = null;
         float bestDist = float.MaxValue;

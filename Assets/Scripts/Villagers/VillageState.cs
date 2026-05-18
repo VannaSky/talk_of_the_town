@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using Buildings;
 using Tiles;
 using UnityEngine;
+using UnityEngine.AI;
 using Random = UnityEngine.Random;
 
 /// <summary>
@@ -26,9 +27,9 @@ public class VillageState : MonoBehaviour
     [SerializeField] private int food = 0;
     
     [Header("Game Speed")]
-    [SerializeField] [Range(1f, 10f)] private float gameSpeed = 1f;
+    [SerializeField] [Range(1f, 50f)] private float gameSpeed = 1f;
     public const float MinGameSpeed = 1f;
-    public const float MaxGameSpeed = 10f;
+    public const float MaxGameSpeed = 50f;
 
     public event System.Action<float> OnGameSpeedChanged;
 
@@ -261,8 +262,8 @@ public class VillageState : MonoBehaviour
             return;
         }
 
-        Vector3 offset = new Vector3(Random.Range(-2f, 2f), 0f, Random.Range(-2f, 2f));
-        var go = Instantiate(villagerPrefab, nearPosition + offset, Quaternion.identity);
+        Vector3 spawnPos = FindNavMeshSpawnPoint(nearPosition);
+        var go = Instantiate(villagerPrefab, spawnPos, Quaternion.identity);
         go.name = GetNextVillagerName();
 
         var villager = go.GetComponent<Villager>();
@@ -285,6 +286,29 @@ public class VillageState : MonoBehaviour
 
         populationCap++;
         LogInfo($"Spawned new villager '{go.name}' (population cap now {populationCap})");
+    }
+
+    private Vector3 FindNavMeshSpawnPoint(Vector3 origin)
+    {
+        // Try increasingly large rings around the origin until we land on the NavMesh.
+        float[] radii = { 2f, 4f, 8f, 15f };
+        foreach (float r in radii)
+        {
+            for (int attempt = 0; attempt < 8; attempt++)
+            {
+                float angle = attempt * (360f / 8) * Mathf.Deg2Rad;
+                Vector3 candidate = origin + new Vector3(Mathf.Cos(angle) * r, 0f, Mathf.Sin(angle) * r);
+                if (NavMesh.SamplePosition(candidate, out NavMeshHit hit, 2f, NavMesh.AllAreas))
+                    return hit.position;
+            }
+        }
+
+        // Last resort: sample directly on the origin
+        if (NavMesh.SamplePosition(origin, out NavMeshHit fallback, 20f, NavMesh.AllAreas))
+            return fallback.position;
+
+        LogWarning("SpawnVillager: could not find a NavMesh point — spawning at origin");
+        return origin;
     }
 
     private string GetNextVillagerName()
