@@ -388,8 +388,14 @@ public class LLMController : MonoBehaviour
             sb.AppendLine($"Capacity: {cap} (build Stockpile to increase)");
             sb.AppendLine($"Wood: {wood}/{cap}{(wood >= cap ? " [FULL - gatherers are BLOCKED, build Stockpile!]" : wood > 50 ? " [SURPLUS - no more Lumberjacks needed]" : wood < 10 ? " [LOW - need Lumberjack]" : "")}");
             sb.AppendLine($"Stone: {stone}/{cap}{(stone >= cap ? " [FULL - gatherers are BLOCKED, build Stockpile!]" : stone > 40 ? " [SURPLUS - no more Miners needed]" : stone < 10 ? " [LOW - need Miner]" : "")}");
-            sb.AppendLine($"Seeds: {seeds}/{cap}{(seeds >= cap ? " [FULL - gatherers are BLOCKED]" : seeds >= 10 ? $" [SUFFICIENT - assign {Mathf.Max(1, seeds / 20)} Farmer(s) to use these seeds!]" : " [LOW - need SeedGatherer]")}");
-            sb.AppendLine($"Food: {food}/{cap}{(food >= cap ? " [FULL]" : food < 10 ? " [LOW - farming urgently needed!]" : "")}");
+            bool seedsFull = seeds >= cap;
+            bool foodFull  = food >= cap;
+            sb.AppendLine($"Seeds: {seeds}/{cap}{(seedsFull ? " [FULL - no more SeedGatherers]" : seeds >= 10 ? $" [SUFFICIENT - assign {Mathf.Max(1, seeds / 20)} Farmer(s) to use these seeds!]" : " [LOW - need SeedGatherer]")}");
+            sb.AppendLine($"Food: {food}/{cap}{(foodFull ? " [FULL - harvest is wasted until Stockpile is built or food is consumed]" : food < 10 ? " [LOW - farming urgently needed!]" : "")}");
+            if (foodFull && seedsFull)
+                sb.AppendLine("⚠ FARMING BLOCKED: both Food and Seeds are at capacity — do NOT assign Farmers or SeedGatherers. Build a Stockpile to increase capacity.");
+            else if (foodFull)
+                sb.AppendLine("⚠ Food storage full: farmers can still plant (seeds are consumed) but harvested food will overflow. Build a Stockpile soon.");
             sb.AppendLine();
         }
 

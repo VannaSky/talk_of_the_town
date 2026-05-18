@@ -31,7 +31,7 @@ JOB DESCRIPTIONS:
 - IDLE: Rest.
 
 PRIORITY ORDER (follow this strictly):
-1. FARMING FIRST: If Seeds >= 10, assign at least one villager as Farmer. Farming is the most important job — food sustains the village. More seeds = more farmers needed!
+1. FARMING FIRST: If Seeds >= 10 AND farming is not blocked (see inventory warnings), assign at least one villager as Farmer. Farming is the most important job — food sustains the village. More seeds = more farmers needed! EXCEPTION: if the inventory shows ""FARMING BLOCKED"", do NOT assign Farmers — build a Stockpile instead.
 2. BUILDING: If Wood >= 20 and Stone >= 10, consider assigning a Builder. Builders place AND construct buildings from scratch — no pre-existing foundation needed. Always specify ""buildingType"" and rotate between building types:
    - House: only if free slots = 0 (no pending house slots). A new villager spawns automatically when done.
    - Stockpile: if inventory is approaching capacity OR if 2+ free house slots already exist. Prioritize this to avoid gatherers getting blocked.
