@@ -188,10 +188,21 @@ public class BuilderLogic : JobLogic
 
     private void ExecuteIdle(JobHandler handler)
     {
-        // Don't leave idle while waiting for LLM instructions after completing a building
-        if (_completedBuilding) return;
-
+        // Don't leave idle while waiting for LLM instructions after completing a building,
+        // but self-recover after 25 s in case the LLM sends the same assignment again
+        // (which skips re-initialization and would leave the builder stuck forever).
         timeSinceLastAction += Time.deltaTime;
+        if (_completedBuilding)
+        {
+            if (timeSinceLastAction >= 25f)
+            {
+                _completedBuilding = false;
+                timeSinceLastAction = 0f;
+                ChangeState(AnimationState.FindingTarget, handler);
+            }
+            return;
+        }
+
         if (timeSinceLastAction >= 1f)
             ChangeState(AnimationState.FindingTarget, handler);
     }

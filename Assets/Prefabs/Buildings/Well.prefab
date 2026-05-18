@@ -137,6 +137,8 @@ MonoBehaviour:
   seedlingVisual: {fileID: 0}
   growingVisual: {fileID: 0}
   matureVisual: {fileID: 0}
+  isMineShaft: 0
+  seedsYield: 1
 --- !u!1 &8359415645800886344
 GameObject:
   m_ObjectHideFlags: 0

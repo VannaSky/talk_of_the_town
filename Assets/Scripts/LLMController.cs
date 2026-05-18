@@ -462,7 +462,7 @@ public class LLMController : MonoBehaviour
 
         if (resourceLocations.farmLocations.Count > 0)
         {
-            sb.Append("FARMS: ");
+            sb.Append("FARM BUILDINGS (these are building tiles — farmers plant on empty grass tiles NEAR them, not on the building itself): ");
             sb.AppendLine(FormatLocationsWithTaken(SortByNearestVillager(resourceLocations.farmLocations, villagers), takenPositions));
         }
 
