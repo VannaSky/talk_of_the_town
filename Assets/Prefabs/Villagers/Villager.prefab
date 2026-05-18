@@ -414,7 +414,6 @@ MonoBehaviour:
   checkInterval: 1
   idleTimeout: 3
   availableJobTypes: []
-  logDecisions: 1
   lastDecision:
     jobName: 
     buildingType: 
@@ -519,7 +518,7 @@ MonoBehaviour:
   - jobType: {fileID: 11400000, guid: 18429fa6c339702a9bd71c49003f29ca, type: 2}
     workToolPrefab: {fileID: 6258649582156304889, guid: 1be38d1a0041d9342aeb1ab308f49c18, type: 3}
     carryItemPrefab: {fileID: 430512277768205782, guid: b0d20455d3efca14483fce835db91a4c, type: 3}
-    workStates: 09000000
+    workStates: 08000000
     carryStates: 04000000
 --- !u!114 &3067700278203038447
 MonoBehaviour:

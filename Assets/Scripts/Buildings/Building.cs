@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -22,11 +23,39 @@ namespace Buildings
     {
         public BuildingData buildingData;
 
+        /// <summary>
+        /// Repositions all buildings in the scene using their BuildingData.placementOffset.
+        /// Call from inspector or at runtime to preview offset changes.
+        /// </summary>
+        [ContextMenu("Reposition All Buildings From Offset")]
+        public static void RepositionAllBuildings()
+        {
+            var all = FindObjectsByType<Building>(FindObjectsSortMode.None);
+            foreach (var b in all)
+            {
+                if (b == null || b.buildingData == null) continue;
+                var tile = b.transform.parent?.parent; // Building container -> Tile
+                if (tile == null) continue;
+
+                // Preserve current rotation, reapply around tile center
+                float yAngle = b.transform.eulerAngles.y;
+                b.transform.position = tile.position + b.buildingData.placementOffset;
+                b.transform.rotation = Quaternion.identity;
+                if (yAngle > 0.1f)
+                {
+                    Vector3 tileCenter = tile.position + new Vector3(1f, 0f, 1f);
+                    b.transform.RotateAround(tileCenter, Vector3.up, yAngle);
+                }
+            }
+            Debug.Log($"[Building] Repositioned {all.Length} buildings from BuildingData offsets.");
+        }
+
         [HideInInspector]
         public List<BuildingLevelVisual> levels = new List<BuildingLevelVisual>();
 
         public int currentLevel = 0;
         public float currentWork = 0f;
+        public bool resourcesPaidForCurrentLevel = false;
 
         private bool isReserved = false;
         public bool IsReserved => isReserved;
@@ -65,12 +94,17 @@ namespace Buildings
                 currentWork -= level.workRequired;
                 int finishedLevel = currentLevel;
                 currentLevel++;
+                resourcesPaidForCurrentLevel = false;
                 levelCompleted = true;
                 ShowFinalForLevel(finishedLevel);
                 ApplyLevelBonuses(finishedLevel);
 
                 if (IsFinished() && buildingData != null && buildingData.buildingType == BuildingType.House)
+                {
+                    OccupySlot(); // Claim the slot immediately so GetAvailableHouseSlots() is accurate
                     VillageState.Instance?.RegisterCompletedHouse(this);
+                    StartCoroutine(SpawnVillagerDelayed(buildingData.villagerSpawnDelay));
+                }
             }
             UpdateVisuals();
             return levelCompleted;
@@ -187,6 +221,15 @@ namespace Buildings
                 foreach (var go in rl.stageInstances) if (go != null) go.SetActive(false);
             }
             if (rl.finalInstance != null) rl.finalInstance.SetActive(true);
+        }
+
+        private IEnumerator SpawnVillagerDelayed(float delay)
+        {
+            yield return new WaitForSeconds(delay);
+            if (VillageState.Instance == null) yield break;
+            // Spawn in front of the building, respecting its rotation
+            Vector3 spawnPos = transform.position + transform.forward * 2f;
+            VillageState.Instance.SpawnVillager(spawnPos);
         }
     }
 }

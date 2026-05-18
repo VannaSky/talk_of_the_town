@@ -129,16 +129,18 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ResourceNode
   resourceType: 4
-  resourceAmount: 6
+  resourceAmount: 4
   isReserved: 0
   growthStage: 0
   canRegrow: 1
-  growthTime: 30
+  growthTime: 60
   currentGrowthTimer: 0
   defaultResourceAmount: 6
   seedlingVisual: {fileID: 4356570368146942209}
   growingVisual: {fileID: 1715877013339255003}
   matureVisual: {fileID: 8956129208766400221}
+  isMineShaft: 0
+  seedsYield: 1
 --- !u!1 &1715877013339255003
 GameObject:
   m_ObjectHideFlags: 0

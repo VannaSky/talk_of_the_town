@@ -49,6 +49,11 @@ public abstract class JobLogic
     {
         if (handler != null && handler.equipment != null)
             handler.equipment.HideAll();
+
+        // Reset animator to Idle so the old working animation doesn't linger
+        // while the new job's FindingTarget phase runs (FindingTarget skips animator updates)
+        if (handler != null && handler.animator != null && !string.IsNullOrEmpty(animatorStateParameter))
+            handler.animator.SetInteger(animatorStateParameter, (int)AnimationState.Idle);
     }
 
     protected abstract void OnInitialize(JobHandler handler);
@@ -61,7 +66,7 @@ public abstract class JobLogic
 
         LogInfo($"{handler.name}: {_currentState} -> {newState}");
 
-        bool goingIdle = newState == AnimationState.Idle && _currentState == AnimationState.FindingTarget;
+        bool goingIdle = newState == AnimationState.Idle;
 
         var oldState = _currentState;
         _currentState = newState;
@@ -70,9 +75,14 @@ public abstract class JobLogic
         handler?.NotifyStateChanged(oldState, newState);
 
         if (goingIdle)
+        {
+            handler.villagerMover?.StopMoving();
             handler.NotifyIdle();
+        }
 
-        if (handler != null && handler.animator != null && !string.IsNullOrEmpty(animatorStateParameter))
+        // Only push visual animation states to the animator — FindingTarget is a logic-only state
+        if (handler != null && handler.animator != null && !string.IsNullOrEmpty(animatorStateParameter)
+            && _currentState != AnimationState.FindingTarget)
         {
             handler.animator.SetInteger(animatorStateParameter, (int)_currentState);
         }

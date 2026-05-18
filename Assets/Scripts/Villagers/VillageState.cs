@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using Buildings;
 using Tiles;
 using UnityEngine;
+using UnityEngine.AI;
 using Random = UnityEngine.Random;
 
 /// <summary>
@@ -26,11 +27,16 @@ public class VillageState : MonoBehaviour
     [SerializeField] private int food = 0;
     
     [Header("Game Speed")]
-    [SerializeField] [Range(0.1f, 10f)] private float gameSpeed = 1f;
+    [SerializeField] [Range(1f, 50f)] private float gameSpeed = 1f;
+    public const float MinGameSpeed = 1f;
+    public const float MaxGameSpeed = 50f;
+
+    public event System.Action<float> OnGameSpeedChanged;
 
     [Header("Village Capacity")]
     [SerializeField] private int populationCap = 5;
     [SerializeField] private int inventoryCapacity = 100;
+    private int _fieldCapacity = 0;
 
     [Header("Villager Spawning")]
     [SerializeField] private GameObject villagerPrefab;
@@ -60,6 +66,7 @@ public class VillageState : MonoBehaviour
     public IReadOnlyList<Villager> Villagers => villagers;
     public int PopulationCap => populationCap;
     public int InventoryCapacity => inventoryCapacity;
+    public int FieldCapacity => _fieldCapacity;
     public float GameSpeed => gameSpeed;
     
     // Resource accessors
@@ -112,8 +119,9 @@ public class VillageState : MonoBehaviour
 
     public void SetGameSpeed(float speed)
     {
-        gameSpeed = Mathf.Clamp(speed, 0.1f, 10f);
+        gameSpeed = Mathf.Clamp(speed, MinGameSpeed, MaxGameSpeed);
         ApplyGameSpeed();
+        OnGameSpeedChanged?.Invoke(gameSpeed);
     }
 
     private void ApplyGameSpeed()
@@ -126,7 +134,7 @@ public class VillageState : MonoBehaviour
 #if UNITY_EDITOR
     private void OnValidate()
     {
-        gameSpeed = Mathf.Clamp(gameSpeed, 0.1f, 10f);
+        gameSpeed = Mathf.Clamp(gameSpeed, MinGameSpeed, MaxGameSpeed);
         if (Application.isPlaying)
             ApplyGameSpeed();
     }
@@ -238,10 +246,14 @@ public class VillageState : MonoBehaviour
                 inventoryCapacity += bonus.value;
                 LogInfo($"Inventory capacity increased by {bonus.value} (now {inventoryCapacity})");
                 break;
+            case BuildingBonusType.FieldCapacity:
+                _fieldCapacity += bonus.value;
+                LogInfo($"Field capacity increased by {bonus.value} (now {_fieldCapacity})");
+                break;
         }
     }
 
-    private void SpawnVillager(Vector3 nearPosition)
+    public void SpawnVillager(Vector3 nearPosition)
     {
         if (villagerPrefab == null)
         {
@@ -250,8 +262,8 @@ public class VillageState : MonoBehaviour
             return;
         }
 
-        Vector3 offset = new Vector3(Random.Range(-2f, 2f), 0f, Random.Range(-2f, 2f));
-        var go = Instantiate(villagerPrefab, nearPosition + offset, Quaternion.identity);
+        Vector3 spawnPos = FindNavMeshSpawnPoint(nearPosition);
+        var go = Instantiate(villagerPrefab, spawnPos, Quaternion.identity);
         go.name = GetNextVillagerName();
 
         var villager = go.GetComponent<Villager>();
@@ -276,6 +288,29 @@ public class VillageState : MonoBehaviour
         LogInfo($"Spawned new villager '{go.name}' (population cap now {populationCap})");
     }
 
+    private Vector3 FindNavMeshSpawnPoint(Vector3 origin)
+    {
+        // Try increasingly large rings around the origin until we land on the NavMesh.
+        float[] radii = { 2f, 4f, 8f, 15f };
+        foreach (float r in radii)
+        {
+            for (int attempt = 0; attempt < 8; attempt++)
+            {
+                float angle = attempt * (360f / 8) * Mathf.Deg2Rad;
+                Vector3 candidate = origin + new Vector3(Mathf.Cos(angle) * r, 0f, Mathf.Sin(angle) * r);
+                if (NavMesh.SamplePosition(candidate, out NavMeshHit hit, 2f, NavMesh.AllAreas))
+                    return hit.position;
+            }
+        }
+
+        // Last resort: sample directly on the origin
+        if (NavMesh.SamplePosition(origin, out NavMeshHit fallback, 20f, NavMesh.AllAreas))
+            return fallback.position;
+
+        LogWarning("SpawnVillager: could not find a NavMesh point — spawning at origin");
+        return origin;
+    }
+
     private string GetNextVillagerName()
     {
         _villagerSpawnCount++;
@@ -297,8 +332,12 @@ public class VillageState : MonoBehaviour
     {
         if (house == null || _completedHouses.Contains(house)) return;
         _completedHouses.Add(house);
-        LogInfo($"House registered — available slots: {GetAvailableHouseSlots()}");
+        int slots = GetAvailableHouseSlots();
+        LogInfo($"House registered — available slots: {slots}");
+        LLMController.Instance?.AddRecentEvent($"House completed — {slots} free slot(s) now available, villager spawning soon");
     }
+
+    public int CompletedHouseCount => _completedHouses.Count;
 
     public int GetAvailableHouseSlots()
     {
@@ -345,6 +384,58 @@ public class VillageState : MonoBehaviour
         targetHouse.OccupySlot();
         SpawnVillager(targetHouse.transform.position);
         return true;
+    }
+
+    #endregion
+
+    #region Village Core
+
+    /// <summary>
+    /// Returns the grid-space center of the village.
+    /// Uses the authoritative spawn position if available, otherwise falls back to
+    /// the centroid of placed buildings, then villager positions.
+    /// </summary>
+    public Vector2Int GetVillageCore()
+    {
+        // Primary: use the position chosen by VillageSpawner (most reliable)
+        if (Tiles.VillageSpawner.SpawnedCoreGridPos.HasValue)
+            return Tiles.VillageSpawner.SpawnedCoreGridPos.Value;
+
+        // Fallback: centroid of Building components in scene
+        var buildings = UnityEngine.Object.FindObjectsByType<Buildings.Building>(FindObjectsSortMode.None);
+        float sumX = 0f, sumZ = 0f;
+        int count = 0;
+
+        foreach (var b in buildings)
+        {
+            if (b == null) continue;
+            var pos = b.transform.position;
+            sumX += pos.x;
+            sumZ += pos.z;
+            count++;
+        }
+
+        if (count > 0)
+        {
+            float cellSize = 2f;
+            int gx = Mathf.RoundToInt(sumX / count / cellSize);
+            int gz = Mathf.RoundToInt(sumZ / count / cellSize);
+            return new Vector2Int(gx, gz);
+        }
+
+        // Last resort: centroid of villager positions
+        foreach (var v in villagers)
+        {
+            if (v == null) continue;
+            sumX += v.GridPosition.x;
+            sumZ += v.GridPosition.y;
+            count++;
+        }
+
+        if (count > 0)
+            return new Vector2Int(Mathf.RoundToInt(sumX / count), Mathf.RoundToInt(sumZ / count));
+
+        return Vector2Int.zero;
     }
 
     #endregion

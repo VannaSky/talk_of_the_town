@@ -11,7 +11,10 @@ namespace Tiles
     public class VillageSpawner : MonoBehaviour
     {
         private const string LogCategory = "VillageSpawner";
-        
+
+        /// <summary>Grid position of the village core, set after a successful SpawnInitialVillage call.</summary>
+        public static Vector2Int? SpawnedCoreGridPos { get; private set; }
+
         [Header("Building Prefabs")]
         [SerializeField] private GameObject villageCorePrefab;
         [SerializeField] private GameObject wellPrefab;
@@ -70,6 +73,9 @@ namespace Tiles
             // 3. Place buildings in cleared area
             ShuffleList(clearedTiles);
             
+            // Store the authoritative village core position
+            SpawnedCoreGridPos = centerPos.Value;
+
             // Place VillageCore at center
             PlaceBuilding(villageCorePrefab, centerPos.Value, ConstructionType.Hut, "VillageCore");
             LogInfo($"VillageCore placed at {centerPos.Value}");
@@ -90,10 +96,39 @@ namespace Tiles
                 LogInfo($"Warehouse placed at {warehousePos}");
             }
             
+            // Move pre-placed villagers into the cleared village area
+            RepositionVillagersToCore(centerPos.Value);
+
             LogInfo("Initial village spawning complete!");
             return true; // Signal success
         }
         
+        /// <summary>
+        /// Teleports all pre-placed villagers (including inactive) into the cleared village area.
+        /// Must search for inactive objects because villagers are disabled until the Start button is pressed.
+        /// </summary>
+        private void RepositionVillagersToCore(Vector2Int centerGrid)
+        {
+            if (!tileGrid.TryGet(centerGrid, out Tile centerTile)) return;
+
+            // Include inactive — villagers are disabled in the scene until Start is pressed
+            var allVillagers = FindObjectsByType<Villager>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+            if (allVillagers.Length == 0) return;
+
+            Vector3 coreWorld = centerTile.transform.position + new Vector3(cellSize / 2f, 0f, cellSize / 2f);
+            float radius = cellSize * 2f; // 2 tiles from center, guarantees separation
+
+            for (int i = 0; i < allVillagers.Length; i++)
+            {
+                if (allVillagers[i] == null) continue;
+                float angle = (Mathf.PI * 2f / allVillagers.Length) * i;
+                Vector3 offset = new Vector3(Mathf.Cos(angle) * radius, 0f, Mathf.Sin(angle) * radius);
+                allVillagers[i].transform.position = coreWorld + offset;
+            }
+
+            LogInfo($"Repositioned {allVillagers.Length} villager(s) to village core at {centerGrid}");
+        }
+
         /// <summary>
         /// Finds a suitable center point for the village (center of map, not water).
         /// Also ensures the surrounding area has enough non-water tiles.

@@ -13,6 +13,8 @@ namespace Villagers.Jobs
         public float timeToCarry = 2f;
         public float stoppingDistance = 1.5f;
         public int resourcePerNode = 3;
+        [Tooltip("Work time used when gathering from a mine shaft (much slower than regular nodes).")]
+        public float mineShaftTimeToWork = 30f;
 
         [Header("Target Area")]
         [Tooltip("How strongly to prefer the LLM's target area (higher = stricter)")]
@@ -68,7 +70,20 @@ namespace Villagers.Jobs
 
         private void ExecuteFindingTarget(JobHandler handler)
         {
+            if (VillageState.Instance != null &&
+                VillageState.Instance.GetResource(DepositResourceType) >= VillageState.Instance.InventoryCapacity)
+            {
+                currentStatus = $"Storage full ({ResourceName})";
+                ChangeState(AnimationState.Idle, handler);
+                return;
+            }
+
+            // First: look for regular (non-mine-shaft) resources
             _currentTarget = FindBestResource(handler);
+            // Last resort: fall back to mine shaft if no regular resources exist
+            if (_currentTarget == null)
+                _currentTarget = FindMineShaft(handler);
+
             if (_currentTarget != null)
             {
                 handler.villagerMover.StopMoving();
@@ -142,10 +157,13 @@ namespace Villagers.Jobs
                 return;
             }
 
+            float workTime = _currentTarget.isMineShaft ? mineShaftTimeToWork : timeToWork;
             timeSinceLastAction += Time.deltaTime;
-            currentStatus = $"{WorkingVerb} ({timeSinceLastAction:F1}/{timeToWork:F1})...";
+            currentStatus = _currentTarget.isMineShaft
+                ? $"{WorkingVerb} (mine shaft — slow) ({timeSinceLastAction:F1}/{workTime:F1})..."
+                : $"{WorkingVerb} ({timeSinceLastAction:F1}/{workTime:F1})...";
 
-            if (timeSinceLastAction >= timeToWork)
+            if (timeSinceLastAction >= workTime)
             {
                 _currentTarget.Harvest();
                 ChangeState(AnimationState.Carrying, handler);
@@ -163,6 +181,7 @@ namespace Villagers.Jobs
                 {
                     VillageState.Instance.AddResource(DepositResourceType, resourcePerNode);
                     currentStatus = $"Deposited {resourcePerNode} {ResourceName}!";
+                    handler.NotifyResourceDeposited(resourcePerNode);
                 }
 
                 if (_currentTarget != null)
@@ -222,6 +241,14 @@ namespace Villagers.Jobs
                 {
                     if (debugResourceSearch)
                         LogVerbose($"  Skip {node.name}: reserved");
+                    continue;
+                }
+
+                // Skip mine shafts — only used as absolute last resort via FindMineShaft()
+                if (node.isMineShaft)
+                {
+                    if (debugResourceSearch)
+                        LogVerbose($"  Skip {node.name}: mine shaft (last resort only)");
                     continue;
                 }
 
@@ -289,6 +316,38 @@ namespace Villagers.Jobs
             {
                 if (node == null) continue;
                 if (node.resourceType != TargetResourceType) continue;
+                if (node.isReserved) continue;
+                if (node.isMineShaft) continue; // mine shafts handled separately
+                if (!node.IsMature) continue;
+                if (!node.gameObject.activeInHierarchy) continue;
+
+                float d = Vector3.Distance(origin, node.transform.position);
+                if (d < bestDist)
+                {
+                    bestDist = d;
+                    nearest = node;
+                }
+            }
+            nearest?.Reserve();
+            return nearest;
+        }
+
+        /// <summary>
+        /// Last-resort fallback: finds the nearest mine shaft node.
+        /// Only called when no regular resource nodes of the target type exist.
+        /// </summary>
+        private ResourceNode FindMineShaft(JobHandler handler)
+        {
+            ResourceNode[] allNodes = GameObject.FindObjectsByType<ResourceNode>(FindObjectsSortMode.None);
+            ResourceNode nearest = null;
+            float bestDist = float.MaxValue;
+            Vector3 origin = handler.transform.position;
+
+            foreach (var node in allNodes)
+            {
+                if (node == null) continue;
+                if (node.resourceType != TargetResourceType) continue;
+                if (!node.isMineShaft) continue;
                 if (node.isReserved) continue;
                 if (!node.IsMature) continue;
                 if (!node.gameObject.activeInHierarchy) continue;

@@ -24,11 +24,13 @@ public class BuilderLogic : JobLogic
     [NonSerialized] private BuilderPhase _phase;
     [NonSerialized] private Building _currentTarget = null;
     [NonSerialized] private Tile _targetTile = null;
+    [NonSerialized] private bool _completedBuilding = false;
 
     protected override void OnInitialize(JobHandler handler)
     {
         _currentTarget = null;
         _targetTile = null;
+        _completedBuilding = false;
         ChangeState(AnimationState.FindingTarget, handler);
     }
 
@@ -86,16 +88,20 @@ public class BuilderLogic : JobLogic
     private void ExecuteMovingToTarget(JobHandler handler)
     {
         Vector3 destination;
+        Transform tileTransform = null;
 
         if (_phase == BuilderPhase.Building)
         {
             if (_currentTarget == null) { ChangeState(AnimationState.FindingTarget, handler); return; }
-            destination = _currentTarget.transform.position;
+            // The tile is: Building -> "Building" container -> Tile
+            tileTransform = _currentTarget.transform.parent?.parent;
+            destination = GetBuildSpot(handler, tileTransform);
             currentStatus = $"Moving to build {GetBuildingName()}";
         }
         else
         {
             if (_targetTile == null) { ChangeState(AnimationState.FindingTarget, handler); return; }
+            tileTransform = _targetTile.transform;
             destination = _targetTile.transform.position;
             currentStatus = "Moving to place building foundation";
         }
@@ -105,6 +111,13 @@ public class BuilderLogic : JobLogic
         if (!handler.villagerMover.IsNearDestination(stoppingDistance)) return;
 
         handler.villagerMover.StopMoving();
+
+        // Face the tile center so the villager looks at the building
+        if (tileTransform != null)
+        {
+            Vector3 tileCenter = tileTransform.position + new Vector3(1f, 0f, 1f);
+            handler.villagerMover.FaceTarget(tileCenter);
+        }
 
         if (_phase == BuilderPhase.Placing)
         {
@@ -150,12 +163,23 @@ public class BuilderLogic : JobLogic
         if (levelCompleted)
         {
             bool finished = _currentTarget.IsFinished();
-            if (finished)
-                LogEvent($"Completed building: {GetBuildingName()}");
-
             _currentTarget.Unreserve();
-            _currentTarget = null;
-            ChangeState(AnimationState.FindingTarget, handler);
+
+            if (finished)
+            {
+                LogEvent($"Completed building: {GetBuildingName()}");
+                _completedBuilding = true;
+                _currentTarget = null;
+                currentStatus = "Finished building. Waiting for instructions...";
+                handler.villagerMover.StopMoving();
+                ChangeState(AnimationState.Idle, handler);
+            }
+            else
+            {
+                _currentTarget = null;
+                ChangeState(AnimationState.FindingTarget, handler);
+            }
+
             return true;
         }
 
@@ -164,7 +188,21 @@ public class BuilderLogic : JobLogic
 
     private void ExecuteIdle(JobHandler handler)
     {
+        // Don't leave idle while waiting for LLM instructions after completing a building,
+        // but self-recover after 25 s in case the LLM sends the same assignment again
+        // (which skips re-initialization and would leave the builder stuck forever).
         timeSinceLastAction += Time.deltaTime;
+        if (_completedBuilding)
+        {
+            if (timeSinceLastAction >= 25f)
+            {
+                _completedBuilding = false;
+                timeSinceLastAction = 0f;
+                ChangeState(AnimationState.FindingTarget, handler);
+            }
+            return;
+        }
+
         if (timeSinceLastAction >= 1f)
             ChangeState(AnimationState.FindingTarget, handler);
     }
@@ -172,6 +210,13 @@ public class BuilderLogic : JobLogic
     private Building PlaceFoundation(Tile tile, BuildingData data)
     {
         if (tile == null || data == null || data.foundationPrefab == null) return null;
+
+        // Prevent placing on a tile that already has a crop or building
+        if (tile.HasBuilding || tile.GetComponentInChildren<ResourceNode>() != null)
+        {
+            LogWarning($"Tile {tile.GridPos} already occupied — skipping foundation");
+            return null;
+        }
 
         if (!tile.AllowsBuilding(data.constructionType))
         {
@@ -189,8 +234,14 @@ public class BuilderLogic : JobLogic
             buildingContainer = container.transform;
         }
 
-        Vector3 spawnPos = tile.transform.position + new Vector3(1f, 0.5f, 1f);
+        Vector3 spawnPos = tile.transform.position + data.placementOffset;
+        int rotSteps = UnityEngine.Random.Range(0, 4);
         var go = UnityEngine.Object.Instantiate(data.foundationPrefab, spawnPos, Quaternion.identity, buildingContainer);
+        if (rotSteps > 0)
+        {
+            Vector3 tileCenter = tile.transform.position + new Vector3(1f, 0f, 1f);
+            go.transform.RotateAround(tileCenter, Vector3.up, rotSteps * 90f);
+        }
         go.name = $"{data.buildingType}_{tile.GridPos.x}_{tile.GridPos.y}";
 
         tile.TrySetBuilding(new ConstructionInstance(data.constructionType, 0f, false));
@@ -230,6 +281,9 @@ public class BuilderLogic : JobLogic
         if (_currentTarget == null || VillageState.Instance == null) return true;
         if (_currentTarget.buildingData == null) return true;
 
+        // Resources already paid by a previous builder — don't charge again
+        if (_currentTarget.resourcesPaidForCurrentLevel) return true;
+
         int level = _currentTarget.currentLevel;
         if (level >= _currentTarget.buildingData.levels.Count) return true;
 
@@ -244,6 +298,7 @@ public class BuilderLogic : JobLogic
 
         VillageState.Instance.TrySpendResource(ResourceType.Wood, levelData.woodCost);
         VillageState.Instance.TrySpendResource(ResourceType.Stone, levelData.stoneCost);
+        _currentTarget.resourcesPaidForCurrentLevel = true;
         return true;
     }
 
@@ -288,6 +343,7 @@ public class BuilderLogic : JobLogic
         Vector3 origin = handler.transform.position;
         Vector2Int? preferred = handler.PreferredTargetArea;
 
+        // Use LLM target if provided, otherwise fall back to village core (not builder position)
         Vector2Int centerGrid;
         if (preferred.HasValue)
         {
@@ -295,33 +351,46 @@ public class BuilderLogic : JobLogic
         }
         else
         {
-            var nearest = VillageState.Instance.TileGrid.FindNearestTile(origin);
-            centerGrid = nearest != null ? nearest.GridPos : Vector2Int.zero;
+            centerGrid = VillageState.Instance.GetVillageCore();
         }
 
         var ct = data.constructionType;
-        var candidates = VillageState.Instance.TileGrid.FindTilesInRadius(
-            centerGrid, searchRadius,
-            tile => tile.Archetype != null
-                    && tile.Archetype.Style == TileStyle.Grass
-                    && !tile.HasBuilding
-                    && !tile.HasResource
-                    && tile.AllowsBuilding(ct)
-                    && !HasResourceNodeOnTile(tile)
-        );
+        System.Func<Tile, bool> condition = tile =>
+            tile.Archetype != null
+            && tile.Archetype.Style == TileStyle.Grass
+            && !tile.HasBuilding
+            && !tile.HasResource
+            && tile.AllowsBuilding(ct)
+            && !HasResourceNodeOnTile(tile);
+
+        var candidates = VillageState.Instance.TileGrid.FindTilesInRadius(centerGrid, searchRadius, condition);
+
+        // If nothing found in the preferred radius, search the whole map
+        if (candidates.Count == 0)
+        {
+            LogInfo($"No building tiles within radius {searchRadius} of {centerGrid} — expanding to full map");
+            candidates = VillageState.Instance.TileGrid.FindAllTiles(condition);
+        }
 
         if (candidates.Count == 0) return null;
 
-        // Score: distance from builder + bias toward tiles near existing buildings
+        // Score: proximity to village core is primary, distance from builder is secondary
+        Vector3? coreWorld = null;
+        if (VillageState.Instance.TileGrid.TryGet(centerGrid, out var coreTile))
+            coreWorld = coreTile.transform.position;
+
         Tile best = null;
         float bestScore = float.MaxValue;
 
         foreach (var tile in candidates)
         {
-            float dist = Vector3.Distance(origin, tile.transform.position);
+            float distToCore = coreWorld.HasValue
+                ? Vector3.Distance(coreWorld.Value, tile.transform.position)
+                : 0f;
             float buildingProximity = GetNearestBuildingDistance(tile);
-            // Prefer tiles close to the builder and close to existing buildings
-            float score = dist + buildingProximity * 0.5f;
+            float distToBuilder = Vector3.Distance(origin, tile.transform.position);
+            // Primary: close to existing buildings / village core. Secondary: close to builder.
+            float score = distToCore * 1.5f + buildingProximity * 1.5f + distToBuilder * 0.3f;
 
             if (score < bestScore)
             {
@@ -351,6 +420,35 @@ public class BuilderLogic : JobLogic
         return tile.GetComponentInChildren<ResourceNode>() != null;
     }
 
+    /// <summary>
+    /// Returns a position just outside the tile edge, on the side nearest to the villager.
+    /// </summary>
+    private Vector3 GetBuildSpot(JobHandler handler, Transform tileTransform)
+    {
+        if (tileTransform == null)
+            return _currentTarget.transform.position;
+
+        Vector3 tileCenter = tileTransform.position + new Vector3(1f, 0f, 1f);
+        Vector3 villagerPos = handler.transform.position;
+
+        // Direction from tile center to villager, flattened
+        Vector3 dir = villagerPos - tileCenter;
+        dir.y = 0f;
+
+        if (dir.sqrMagnitude < 0.01f)
+            dir = Vector3.forward;
+
+        // Snap to nearest cardinal direction (N/S/E/W edge)
+        if (Mathf.Abs(dir.x) > Mathf.Abs(dir.z))
+            dir = new Vector3(Mathf.Sign(dir.x), 0f, 0f);
+        else
+            dir = new Vector3(0f, 0f, Mathf.Sign(dir.z));
+
+        // Place just outside the tile edge (tile is 2x2, so 1 unit from center = edge)
+        float edgeOffset = 1f + stoppingDistance * 0.5f;
+        return tileCenter + dir * edgeOffset;
+    }
+
     private Vector3? GetTargetAreaWorld(JobHandler handler)
     {
         if (!handler.PreferredTargetArea.HasValue || VillageState.Instance?.TileGrid == null)
@@ -366,5 +464,6 @@ public class BuilderLogic : JobLogic
         base.ResetState();
         _currentTarget = null;
         _targetTile = null;
+        _completedBuilding = false;
     }
 }

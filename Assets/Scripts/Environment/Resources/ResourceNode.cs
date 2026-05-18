@@ -33,12 +33,25 @@ namespace Environment.Resources
         public GameObject growingVisual;
         public GameObject matureVisual;
 
+        [Header("Mine Shaft")]
+        [Tooltip("Mark this node as a mine shaft: infinite stone but very slow regrowth. Miners use regular stone first.")]
+        public bool isMineShaft = false;
+
+        [Header("Crop")]
+        [Tooltip("Maximum seeds returned when this crop is harvested. Actual yield is random between 1 and this value.")]
+        public int seedsYield = 1;
+
         public bool IsMature => growthStage == GrowthStage.Mature;
+
+        // Cached tree renderers for stump-mode toggling
+        private Renderer[] _selfRenderers;
+        private GameObject _activeStump;
 
         void Start()
         {
             if (defaultResourceAmount <= 0)
                 defaultResourceAmount = resourceAmount;
+            _selfRenderers = GetComponentsInChildren<Renderer>();
             UpdateVisuals();
         }
 
@@ -64,6 +77,14 @@ namespace Environment.Resources
 
         public void Harvest()
         {
+            // Mine shafts are infinite: just restore the resource amount and stay available
+            if (isMineShaft)
+            {
+                resourceAmount = defaultResourceAmount;
+                isReserved = false;
+                return;
+            }
+
             if (canRegrow)
             {
                 growthStage = GrowthStage.Seedling;
@@ -80,6 +101,33 @@ namespace Environment.Resources
 
         private void UpdateVisuals()
         {
+            // Stump mode: auto-managed for regrowing trees when ResourceRegrowthManager is present
+            if (canRegrow && resourceType == ResourceType.Tree && !isMineShaft)
+            {
+                var mgr = ResourceRegrowthManager.Instance;
+                if (mgr != null && mgr.HasStumps)
+                {
+                    bool isMature = growthStage == GrowthStage.Mature;
+
+                    // Toggle own mesh renderers
+                    if (_selfRenderers != null)
+                        foreach (var r in _selfRenderers)
+                            if (r != null) r.enabled = isMature;
+
+                    // Spawn stump child when cut down
+                    if (!isMature && _activeStump == null)
+                        _activeStump = mgr.SpawnStump(transform.position, transform.rotation, transform);
+                    // Remove stump when tree is fully grown back
+                    else if (isMature && _activeStump != null)
+                    {
+                        Destroy(_activeStump);
+                        _activeStump = null;
+                    }
+                    return;
+                }
+            }
+
+            // Fallback: manual per-stage visuals
             if (seedlingVisual == null && growingVisual == null && matureVisual == null)
                 return;
 

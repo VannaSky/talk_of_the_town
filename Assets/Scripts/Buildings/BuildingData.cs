@@ -3,7 +3,7 @@ using Buildings;
 using Tiles;
 using UnityEngine;
 
-public enum BuildingBonusType { NewVillager, InventoryCapacity }
+public enum BuildingBonusType { NewVillager, InventoryCapacity, FieldCapacity }
 
 [System.Serializable]
 public class BuildingBonus
@@ -21,6 +21,10 @@ public class BuildingData : ScriptableObject
     public GameObject foundationPrefab;
     public ConstructionType constructionType = ConstructionType.Hut;
 
+    [Header("Placement")]
+    [Tooltip("Offset from tile origin when placing this building. Tweak at runtime to align the prefab.")]
+    public Vector3 placementOffset = new Vector3(1f, 0.5f, 1f);
+
     [System.Serializable]
     public class LevelData
     {
@@ -37,4 +41,12 @@ public class BuildingData : ScriptableObject
     }
 
     public List<LevelData> levels = new List<LevelData>();
+
+    [Header("Villager Spawning (House only)")]
+    [Tooltip("Seconds after completion before a villager appears")]
+    public float villagerSpawnDelay = 5f;
+
+    [Header("Farm Fields (Farm only)")]
+    [Tooltip("World-unit radius around this farm in which farmers are allowed to plant fields")]
+    public float fieldRadius = 8f;
 }

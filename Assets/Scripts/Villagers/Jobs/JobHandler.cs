@@ -38,6 +38,9 @@ public class JobHandler : MonoBehaviour
     /// <summary>Fired when a new job is assigned.</summary>
     public event Action<JobType> OnJobAssigned;
 
+    /// <summary>Fired when this villager personally deposits resources. Amount = units deposited.</summary>
+    public event Action<int> OnResourceDeposited;
+
     private const float IdleNotifyCooldown = 10f;
     private float _lastIdleNotifyTime = -999f;
 
@@ -108,6 +111,11 @@ public class JobHandler : MonoBehaviour
         }
 
         OnJobAssigned?.Invoke(currentJob);
+    }
+
+    internal void NotifyResourceDeposited(int amount)
+    {
+        OnResourceDeposited?.Invoke(amount);
     }
 
     internal void NotifyIdle()

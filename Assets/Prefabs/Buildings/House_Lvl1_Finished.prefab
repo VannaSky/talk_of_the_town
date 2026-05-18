@@ -101,6 +101,7 @@ GameObject:
   - component: {fileID: 6461715311306461718}
   - component: {fileID: 5823720014985596125}
   - component: {fileID: 3594972822890877940}
+  - component: {fileID: 861579270570901238}
   m_Layer: 0
   m_Name: House_Lvl1_Finished
   m_TagString: Untagged
@@ -199,6 +200,22 @@ MeshCollider:
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 5
-  m_Convex: 1
+  m_Convex: 0
   m_CookingOptions: 30
   m_Mesh: {fileID: 4300000, guid: 87cc8c0832836144e9ac4d454b0c730e, type: 3}
+--- !u!208 &861579270570901238
+NavMeshObstacle:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1144685044788508242}
+  m_Enabled: 1
+  serializedVersion: 3
+  m_Shape: 1
+  m_Extents: {x: 3.39, y: 5.2530003, z: 3.8330002}
+  m_MoveThreshold: 0.1
+  m_Carve: 1
+  m_CarveOnlyStationary: 1
+  m_Center: {x: 2.5, y: 2.7410002, z: -1.8820001}
+  m_TimeToStationary: 0.5

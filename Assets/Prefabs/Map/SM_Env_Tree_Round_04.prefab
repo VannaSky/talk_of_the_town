@@ -151,3 +151,12 @@ MonoBehaviour:
   resourceType: 0
   resourceAmount: 2
   isReserved: 0
+  growthStage: 2
+  canRegrow: 1
+  growthTime: 300
+  currentGrowthTimer: 0
+  defaultResourceAmount: 5
+  seedlingVisual: {fileID: 0}
+  growingVisual: {fileID: 0}
+  matureVisual: {fileID: 0}
+  isMineShaft: 0

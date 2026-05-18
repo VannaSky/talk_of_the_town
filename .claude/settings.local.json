@@ -5,7 +5,13 @@
       "WebFetch(domain:raw.githubusercontent.com)",
       "WebSearch",
       "WebFetch(domain:giantgrey.gitbook.io)",
-      "Bash(xargs grep:*)"
+      "Bash(xargs grep:*)",
+      "Bash(grep -E \"\\\\.\\(cs|prefab|asset\\)$\")",
+      "Bash(grep -E \"\\\\.\\(prefab|asset\\)$\")",
+      "Bash(python -c ':*)",
+      "Bash(ls /c/Python*/python.exe)",
+      "Read(//c/Users/**)",
+      "Bash('/c/Users/Florian Buchholz/AppData/Local/Programs/Python/Python313/python.exe' -c ':*)"
     ]
   }
 }

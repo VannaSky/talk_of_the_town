@@ -9,21 +9,21 @@ public static class LLMPromptCaveman
     {
         string jobList = string.Join(", ", availableJobs);
 
-        string jsonExample = @"{""assignments"":[{""villager"":""<NAME>"",""job"":""<JOB>"",""buildingType"":""<TYPE>"",""targetX"":<X>,""targetY"":<Y>,""reason"":""<why>""}],""village_actions"":[""grow_villager""],""goals"":[{""type"":""GatherResource"",""resource"":""Wood"",""amount"":80,""priority"":""High"",""description"":""build wood""}]}";
+        string jsonExample = @"{""assignments"":[{""villager"":""<NAME>"",""job"":""<JOB>"",""buildingType"":""<TYPE>"",""targetX"":<X>,""targetY"":<Y>,""reason"":""<why>""}],""goals"":[{""type"":""GatherResource"",""resource"":""Wood"",""amount"":80,""priority"":""High"",""description"":""build wood""}]}";
 
         return $@"Assign ALL {villagerCount} villagers. No 2 same spot.
 
 JOBS: {jobList}, IDLE
-Lumberjack→wood, target TREE
-Miner→stone, target STONE
-Builder→place+build. Need wood+stone. buildingType: House/Stockpile/Farm
-Farmer→plant(seeds)+harvest→food+seeds. Main food. Target FARM/grass
+Lumberjack→wood, target TREE (trees regrow, renewable)
+Miner→stone, target STONE (fast) or MINE SHAFT (infinite/very slow). STONE first while available. At 10+ villagers: keep 1 miner at MINE SHAFT permanently.
+Builder→place+build. Need wood+stone. buildingType: House(villager auto-spawns on finish)/Stockpile/Farm
+Farmer→plant(seeds near Farm)+harvest→food+seeds. NEEDS Farm building to plant! No farm=no fields. Crops regrow→2-3 farms enough.
 SeedGatherer→seeds from nodes
 IDLE→rest
 
 PRIORITY:
 1. Seeds>=10→1+ Farmer. Farmer harvest→food+seeds(self-sustaining). Healthy farm cycle→less SeedGatherers needed.
-2. Wood>=20+Stone>=10→Builder. buildingType: House(pop near cap→more slots), Stockpile(inv near full), Farm(need food). Pop near cap→prioritize House.
+2. Wood>=20+Stone>=10→Builder. buildingType: House(auto-spawns villager)/Stockpile(inv near full or 2+ free slots)/Farm(REQUIRED if 0 farms exist, else only if food critically low). ROTATE: if 2+ free house slots→Stockpile/Farm not more Houses.
 3. Low only: Wood<10→Lumberjack, Stone<10→Miner, Seeds<10→SeedGatherer
 4. Surplus→stop: Wood>50 no Lumberjack, Seeds>30 no SeedGatherer→farm instead.
 
@@ -33,7 +33,6 @@ Surplus→switch Farmer/Builder.
 [KEEP]=working→no reassign. [NEEDS ASSIGNMENT]=assign only these. No job swaps.
 
 GOALS(opt): ""goals"" replaces existing. type=GatherResource/ReachPopulation, resource=Wood/Stone/Seed/Food, amount, priority=Low/Normal/High/Critical, description.
-VILLAGE_ACTIONS(opt): ""grow_villager""→spend 5W+5S+5Se+10F, new villager in free house. Only if context says VILLAGE ACTION AVAILABLE. More workers=more production→grow whenever resources allow.
 
 JSON ONLY:
 {jsonExample}";
