@@ -38,6 +38,7 @@ namespace Tiles
         public ResourceInstance Resource { get; private set; }
         public ConstructionInstance Construction { get; private set; }
         public Person Occupant { get; private set; }
+        public Buildings.Building PlacedBuilding { get; private set; }
 
         public bool HasResource => Resource != null;
         public bool HasBuilding => Construction != null;
@@ -205,6 +206,8 @@ namespace Tiles
             OnChanged?.Invoke(this);
             return true;
         }
+
+        public void SetPlacedBuilding(Buildings.Building building) => PlacedBuilding = building;
 
         public bool AllowsResource(ResourceType type) =>
             archetype != null && (type == ResourceType.None || archetype.AllowedResources.Contains(type));

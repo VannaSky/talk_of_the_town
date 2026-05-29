@@ -66,6 +66,22 @@ public class BuilderLogic : JobLogic
             return;
         }
 
+        // Guard: if the LLM assigned a specific building type + target area, and a completed
+        // building of that type already exists near that target, the assignment referred to
+        // work that finished while waiting for the LLM response. Go idle instead of starting
+        // a new build by mistake.
+        if (!string.IsNullOrEmpty(handler.PreferredBuildingType) && handler.PreferredTargetArea.HasValue)
+        {
+            if (HasCompletedBuildingAtTarget(handler, handler.PreferredBuildingType))
+            {
+                currentStatus = "Assigned building already completed. Waiting for instructions...";
+                LogInfo($"Target {handler.PreferredBuildingType} near {handler.PreferredTargetArea} already finished — going idle");
+                handler.villagerMover.StopMoving();
+                ChangeState(AnimationState.Idle, handler);
+                return;
+            }
+        }
+
         // Phase 2: find an empty tile and place a new foundation
         var data = PickBuildingData(handler);
         if (data != null)
@@ -289,15 +305,20 @@ public class BuilderLogic : JobLogic
 
         var levelData = _currentTarget.buildingData.levels[level];
 
+        bool hasFood = levelData.foodCost <= 0 || VillageState.Instance.HasResource(ResourceType.Food, levelData.foodCost);
         if (!VillageState.Instance.HasResource(ResourceType.Wood, levelData.woodCost)
-            || !VillageState.Instance.HasResource(ResourceType.Stone, levelData.stoneCost))
+            || !VillageState.Instance.HasResource(ResourceType.Stone, levelData.stoneCost)
+            || !hasFood)
         {
-            currentStatus = $"Need {levelData.woodCost} wood, {levelData.stoneCost} stone to build {GetBuildingName()}";
+            string foodPart = levelData.foodCost > 0 ? $", {levelData.foodCost} food" : "";
+            currentStatus = $"Need {levelData.woodCost} wood, {levelData.stoneCost} stone{foodPart} to build {GetBuildingName()}";
             return false;
         }
 
         VillageState.Instance.TrySpendResource(ResourceType.Wood, levelData.woodCost);
         VillageState.Instance.TrySpendResource(ResourceType.Stone, levelData.stoneCost);
+        if (levelData.foodCost > 0)
+            VillageState.Instance.TrySpendResource(ResourceType.Food, levelData.foodCost);
         _currentTarget.resourcesPaidForCurrentLevel = true;
         return true;
     }
@@ -447,6 +468,22 @@ public class BuilderLogic : JobLogic
         // Place just outside the tile edge (tile is 2x2, so 1 unit from center = edge)
         float edgeOffset = 1f + stoppingDistance * 0.5f;
         return tileCenter + dir * edgeOffset;
+    }
+
+    /// <summary>
+    /// Returns true if a FINISHED building of the given type exists on the exact target tile.
+    /// Used to detect stale LLM assignments where the building completed during the LLM wait.
+    /// </summary>
+    private bool HasCompletedBuildingAtTarget(JobHandler handler, string buildingTypeName)
+    {
+        if (!handler.PreferredTargetArea.HasValue || VillageState.Instance?.TileGrid == null) return false;
+        if (!VillageState.Instance.TileGrid.TryGet(handler.PreferredTargetArea.Value, out var tile)) return false;
+
+        var b = tile.PlacedBuilding;
+        return b != null
+            && b.IsFinished()
+            && b.buildingData != null
+            && b.buildingData.buildingType.ToString().Equals(buildingTypeName, System.StringComparison.OrdinalIgnoreCase);
     }
 
     private Vector3? GetTargetAreaWorld(JobHandler handler)

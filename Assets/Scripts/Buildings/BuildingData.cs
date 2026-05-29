@@ -35,6 +35,7 @@ public class BuildingData : ScriptableObject
         [Header("Resource Cost for this Level")]
         public int woodCost = 5;
         public int stoneCost = 2;
+        public int foodCost = 0;
 
         [Header("Bonuses on Completion")]
         public List<BuildingBonus> bonuses = new List<BuildingBonus>();

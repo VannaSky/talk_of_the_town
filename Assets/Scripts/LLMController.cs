@@ -369,6 +369,13 @@ public class LLMController : MonoBehaviour
     {
         var sb = new System.Text.StringBuilder();
 
+        if (GlobalGoals.Instance != null && GlobalGoals.Instance.HasGoals)
+        {
+            sb.AppendLine("=== RESEARCHER GOALS (FINAL OBJECTIVES) ===");
+            sb.AppendLine(GlobalGoals.Instance.GetGoalsForPrompt());
+            sb.AppendLine();
+        }
+
         if (VillageGoals.Instance != null)
         {
             sb.AppendLine("=== VILLAGE GOALS ===");
@@ -391,7 +398,8 @@ public class LLMController : MonoBehaviour
             bool seedsFull = seeds >= cap;
             bool foodFull  = food >= cap;
             sb.AppendLine($"Seeds: {seeds}/{cap}{(seedsFull ? " [FULL - no more SeedGatherers]" : seeds >= 10 ? $" [SUFFICIENT - assign {Mathf.Max(1, seeds / 20)} Farmer(s) to use these seeds!]" : " [LOW - need SeedGatherer]")}");
-            sb.AppendLine($"Food: {food}/{cap}{(foodFull ? " [FULL - harvest is wasted until Stockpile is built or food is consumed]" : food < 10 ? " [LOW - farming urgently needed!]" : "")}");
+            bool foodNearFull = food >= cap * 0.8f;
+            sb.AppendLine($"Food: {food}/{cap}{(foodFull ? " [FULL - harvest is wasted until Stockpile is built or food is consumed]" : foodNearFull ? " [NEARLY FULL - do NOT build more Farms, avoid excess Farmers]" : food < 10 ? " [LOW - farming urgently needed!]" : "")}");
             if (foodFull && seedsFull)
                 sb.AppendLine("⚠ FARMING BLOCKED: both Food and Seeds are at capacity — do NOT assign Farmers or SeedGatherers. Build a Stockpile to increase capacity.");
             else if (foodFull)
@@ -573,16 +581,31 @@ public class LLMController : MonoBehaviour
         counts.TryGetValue(Buildings.BuildingType.Farm,      out int farms);
 
         sb.AppendLine("=== EXISTING BUILDINGS ===");
-        sb.AppendLine($"Houses: {houses} completed ({freeSlots} free slot(s))");
-        sb.AppendLine($"Stockpiles: {stockpiles}");
+        bool canSpawn = VillageState.Instance?.CanSpawnVillager() ?? false;
+        string spawnNote = freeSlots > 0
+            ? (canSpawn
+                ? " [spawn ready — villager will appear automatically]"
+                : " [slot available but spawn BLOCKED: need 5 wood + 5 stone + 5 seeds + 10 food]")
+            : "";
+        string housePos = resourceLocations.houseLocations.Count > 0
+            ? $" at {FormatLocationsSimple(resourceLocations.houseLocations)}" : "";
+        sb.AppendLine($"Houses: {houses} completed ({freeSlots} free slot(s)){spawnNote}{housePos}");
+        string stockpilePos = resourceLocations.stockpileLocations.Count > 0
+            ? $" at {FormatLocationsSimple(resourceLocations.stockpileLocations)}" : "";
+        sb.AppendLine($"Stockpiles: {stockpiles}{stockpilePos}");
 
         int fieldCap = VillageState.Instance?.FieldCapacity ?? 0;
         int currentCrops = CountAllCrops();
+        int currentFood  = VillageState.Instance?.Food ?? 0;
+        int invCap       = VillageState.Instance?.InventoryCapacity ?? 1;
+        bool foodHigh    = currentFood >= invCap * 0.8f;
         string farmNote;
         if (farms == 0)
             farmNote = " [REQUIRED — farmers cannot plant any fields without a Farm building!]";
+        else if (fieldCap > 0 && currentCrops >= fieldCap && foodHigh)
+            farmNote = $" [field limit reached: {currentCrops}/{fieldCap} — but food is high, do NOT build more Farms]";
         else if (fieldCap > 0 && currentCrops >= fieldCap)
-            farmNote = $" [field limit reached: {currentCrops}/{fieldCap} — build another Farm to expand]";
+            farmNote = $" [field limit reached: {currentCrops}/{fieldCap} — build another Farm only if food production is needed]";
         else if (farms >= 3)
             farmNote = $" [SUFFICIENT — crops regrow within each farm's radius. Avoid building more unless field limit is hit.]";
         else
@@ -603,12 +626,24 @@ public class LLMController : MonoBehaviour
         var allData = Resources.LoadAll<BuildingData>("");
         if (allData.Length == 0) return;
 
-        sb.AppendLine("Building costs (wood / stone required to start construction):");
+        sb.AppendLine("Building costs (resources required to start construction):");
         foreach (var data in allData)
         {
             if (data.levels == null || data.levels.Count == 0) continue;
             var level = data.levels[0];
-            sb.AppendLine($"  {data.buildingType}: {level.woodCost} wood, {level.stoneCost} stone");
+            string foodPart = level.foodCost > 0 ? $", {level.foodCost} food" : "";
+            string bonusPart = "";
+            if (level.bonuses != null)
+            {
+                foreach (var bonus in level.bonuses)
+                {
+                    if (bonus.type == BuildingBonusType.InventoryCapacity)
+                        bonusPart += $" → +{bonus.value} inventory capacity";
+                    else if (bonus.type == BuildingBonusType.FieldCapacity)
+                        bonusPart += $" → +{bonus.value} field slots";
+                }
+            }
+            sb.AppendLine($"  {data.buildingType}: {level.woodCost} wood, {level.stoneCost} stone{foodPart}{bonusPart}");
         }
     }
 
@@ -629,6 +664,13 @@ public class LLMController : MonoBehaviour
     private string BuildDeltaContext(IReadOnlyList<Villager> villagers, List<string> availableJobs)
     {
         var sb = new System.Text.StringBuilder();
+
+        if (GlobalGoals.Instance != null && GlobalGoals.Instance.HasGoals)
+        {
+            sb.AppendLine("=== RESEARCHER GOALS (FINAL OBJECTIVES) ===");
+            sb.AppendLine(GlobalGoals.Instance.GetGoalsForPrompt());
+            sb.AppendLine();
+        }
 
         if (VillageGoals.Instance != null)
         {
@@ -732,6 +774,7 @@ public class LLMController : MonoBehaviour
 
         bool fullSnapshot = ShouldUseFullSnapshot();
         string systemPrompt = BuildBatchSystemPrompt(availableJobs, villagers.Count);
+        LogEvent($"Batch System Prompt:\n{systemPrompt}");
         string context = fullSnapshot
             ? BuildBatchContext(villagers, availableJobs)
             : BuildDeltaContext(villagers, availableJobs);
@@ -748,7 +791,7 @@ public class LLMController : MonoBehaviour
         if (includeThinkingPrompt)
             fullPrompt += "\n/think";
         
-        LogVerbose($"Batch Prompt [{promptLabel}] for {villagers.Count} villagers:\n{fullPrompt} ");
+        LogEvent($"Batch Prompt [{promptLabel}] for {villagers.Count} villagers:\n{fullPrompt} ");
 
         // Start metrics tracking
         var metrics = new LLMMetrics
@@ -791,6 +834,8 @@ public class LLMController : MonoBehaviour
             UpdateStateSnapshot();
             foreach (var kv in results)
                 _lastAssignedJob[kv.Key] = kv.Value.jobName;
+            if (_decisionCount == 0)
+                MainMenu.GoalsMenu.Instance?.LockGoals();
             _decisionCount++;
 
             metrics.success = true;
@@ -1296,6 +1341,10 @@ Response Times:
 
                 if (type == Buildings.BuildingType.Farm)
                     result.farmLocations.Add(pos);
+                else if (type == Buildings.BuildingType.House)
+                    result.houseLocations.Add(pos);
+                else if (type == Buildings.BuildingType.Stockpile)
+                    result.stockpileLocations.Add(pos);
             }
         }
 
@@ -1528,6 +1577,8 @@ public class ResourceLocations
     public List<Vector2Int> seedLocations = new List<Vector2Int>();
     public List<Vector2Int> buildingLocations = new List<Vector2Int>();
     public List<Vector2Int> farmLocations = new List<Vector2Int>();
+    public List<Vector2Int> houseLocations = new List<Vector2Int>();
+    public List<Vector2Int> stockpileLocations = new List<Vector2Int>();
     public List<Vector2Int> cropLocations = new List<Vector2Int>();
     public Dictionary<Buildings.BuildingType, int> completedBuildingCounts = new Dictionary<Buildings.BuildingType, int>();
 }

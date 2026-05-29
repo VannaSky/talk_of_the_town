@@ -122,6 +122,10 @@ namespace Buildings
 
         private void Awake()
         {
+            // Register with parent tile so it can be found via TileGrid without a scene-wide search
+            var parentTile = GetComponentInParent<Tiles.Tile>();
+            parentTile?.SetPlacedBuilding(this);
+
             BuildRuntimeLevels();
             UpdateVisuals();
         }

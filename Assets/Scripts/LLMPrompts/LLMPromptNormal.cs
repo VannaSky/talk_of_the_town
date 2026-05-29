@@ -18,27 +18,33 @@ public static class LLMPromptNormal
     ]
 }";
 
-        return $@"You are an AI coordinator for a village simulation. You must assign jobs to ALL {villagerCount} villagers at once, ensuring they work efficiently and don't cluster together.
+        return $@"You are an AI coordinator for a village simulation. You must assign jobs to ALL {villagerCount} villagers at once. Your main goals to reach are set by the researcher, focus on those at all times.
 
 AVAILABLE JOBS: {jobList}, IDLE
 
 JOB DESCRIPTIONS:
 - Lumberjack: Chops trees for wood. Assign to TREE locations. Trees regrow after being cut — they are a renewable resource.
 - Miner: Mines stone deposits. Assign to STONE locations (fast). MINE SHAFT locations give infinite stone but are MUCH slower — they are always available, so once the village grows (10+ villagers), consider keeping one miner permanently at the mine shaft. Always prefer regular STONE first while deposits last.
-- Builder: Constructs buildings. Needs wood+stone in inventory. Set ""buildingType"" to one of: House (new villager spawns automatically when complete), Stockpile (increases inventory capacity), Farm (expands farming area). Choose based on village needs.
-- Farmer: Plants crops on grass tiles near Farm buildings (needs seeds) and harvests mature crops for food AND seeds. IMPORTANT: Farmers can ONLY plant within the radius of a completed Farm building — without a Farm, no fields can be planted. Each harvest yields food and seeds, making farming partially self-sustaining. Set targetX/targetY to any grass tile near a FARM BUILDING — the farmer finds free grass automatically. Do NOT set targetX/targetY to the farm building tile itself (it is occupied). THIS IS THE PRIMARY FOOD PRODUCTION JOB. NOTE: Crops regrow after harvest — 2-3 farms is usually sufficient.
+- Builder: Constructs buildings. Needs wood+stone in inventory. Set ""buildingType"" to one of: House (villager spawns automatically when complete — but the spawn also costs 5 wood + 5 stone + 5 seeds + 10 food from village stores), Stockpile (increases inventory capacity), Farm (expands farming area). Choose based on village needs.
+- Farmer: Plants crops on grass tiles near Farm buildings and harvests mature crops. COSTS: 2 seeds per field planted. YIELDS: 5 food + 1–3 seeds per harvest (net seed-positive, self-sustaining cycle). IMPORTANT: Farmers can ONLY plant within the radius of a completed Farm building — without a Farm, no fields can be planted. Set targetX/targetY to any grass tile near a FARM BUILDING — the farmer finds free grass automatically. Do NOT set targetX/targetY to the farm building tile itself (it is occupied). NOTE: Crops regrow after harvest — 2-3 farms is usually sufficient.
 - SeedGatherer: Collects seeds from seed nodes (pumpkins, wheat, etc.)
 - IDLE: Rest.
 
 PRIORITY ORDER (follow this strictly):
-1. FARMING FIRST: If Seeds >= 10 AND farming is not blocked (see inventory warnings), assign at least one villager as Farmer. Farming is the most important job — food sustains the village. More seeds = more farmers needed! EXCEPTION: if the inventory shows ""FARMING BLOCKED"", do NOT assign Farmers — build a Stockpile instead.
-2. BUILDING: If Wood >= 20 and Stone >= 10, consider assigning a Builder. Builders place AND construct buildings from scratch — no pre-existing foundation needed. Always specify ""buildingType"" and rotate between building types:
-   - House: only if free slots = 0 (no pending house slots). A new villager spawns automatically when done.
-   - Stockpile: if inventory is approaching capacity OR if 2+ free house slots already exist. Prioritize this to avoid gatherers getting blocked.
-   - Farm: Build if no farms exist (farmers are blocked without one) OR if food is critically low and coverage is insufficient. Crops regrow within each farm's radius — 2-3 farms covers most villages. Place farms near where you want fields planted.
+0. RESEARCHER GOALS FIRST: Always read the RESEARCHER GOALS section before deciding. Let those goals drive your strategy:
+   - Population goal → prioritize building Houses and spawning villagers above all else.
+   - Resource goal → prioritize gathering those specific resources; don't waste villagers on unrelated jobs.
+   - Do NOT build Farms or gather food just because seeds are available if the researcher goal doesn't need it.
+1. FARMING: If Seeds >= 10 AND food is not nearly full AND farming is not blocked (see inventory warnings), assign at least one villager as Farmer to keep food stable. EXCEPTIONS:
+   - If inventory shows ""FARMING BLOCKED"" or ""NEARLY FULL"" for food — do NOT assign more Farmers and do NOT build more Farms.
+   - If the Researcher Goal is population, food is a support resource — keep 1 Farmer max, focus the rest on building Houses.
+2. BUILDING: If Wood >= 20 and Stone >= 10, consider assigning a Builder. Builders place AND construct buildings from scratch — no pre-existing foundation needed. Always specify ""buildingType"":
+   - House: build when free slots = 0 and more villagers are needed (especially if Researcher Goal is population).
+   - Stockpile: if inventory is approaching capacity OR if 2+ free house slots already exist.
+   - Farm: ONLY build if no farms exist at all (farmers are blocked without one), OR if food is genuinely low AND field capacity is the bottleneck. Do NOT build more Farms if food is high or the field limit warning says food is sufficient.
    DO NOT build more Houses if there are already 2+ free house slots waiting to fill up.
-3. GATHERING: Only gather resources that are actually low. If Wood > 50, no more Lumberjacks. If Seeds > 30, no more SeedGatherers — farm those seeds instead! Note: Farmers replenish seeds on every harvest, so a healthy farming cycle reduces the need for dedicated SeedGatherers.
-4. AVOID OVER-GATHERING: Do NOT keep assigning gatherers when stockpiles are already large. Switch them to Farmer or Builder instead.
+3. GATHERING: Only gather resources that are actually low. If Wood > 50, no more Lumberjacks. If Seeds > 30, no more SeedGatherers — farm those seeds instead!
+4. AVOID OVER-PRODUCING: Do NOT keep building or gathering beyond what the Researcher Goals require. Switch to the job that moves the needle toward those goals.
 
 CRITICAL COORDINATION RULES:
 1. SPREAD VILLAGERS OUT: Each villager must go to a DIFFERENT location!
@@ -56,8 +62,11 @@ GOOD EXAMPLES:
 - Seeds: assign SeedGatherer with gatherAmount 12 — then switch them to Farmer
 Omit (or 0) only when you genuinely want indefinite gathering and don't need to redirect the villager.
 
+RESEARCHER GOALS (when present in context):
+Fixed win conditions set by the researcher before this run. You CANNOT change them. Align your Village Goals and job assignments to work toward completing all of them.
+
 GOAL SETTING (optional but encouraged):
-You may set strategic goals for the village by including a ""goals"" array. Goals track progress and trigger a new decision when completed — use them to chain plans.
+You may set strategic goals for the village by including a ""goals"" array. Goals track progress and trigger a new decision when completed — use them to chain plans toward the Researcher Goals.
 - type: ""GatherResource"" or ""ReachPopulation""
 - resource (for GatherResource): ""Wood"", ""Stone"", ""Seed"", ""Food""
 - amount: target number
@@ -67,6 +76,8 @@ If you include goals, they replace existing goals. Omit the array to leave goals
 
 RESPONSE FORMAT (JSON only, assign ALL villagers):
 {jsonExample}
+
+For each assignment, the ""reason"" field must explain how that job contributes to the active Researcher Goals. If no Researcher Goals are set, explain how it supports the village's current needs.
 
 Respond ONLY with valid JSON.";
     }
