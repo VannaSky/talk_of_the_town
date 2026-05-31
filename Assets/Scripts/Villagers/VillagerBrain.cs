@@ -147,6 +147,16 @@ public class VillagerBrain : MonoBehaviour
 
     private bool ShouldRequestDecision()
     {
+        // Check if villager is exhausted (energy < 5) — force idle
+        if (_villager.Energy < 5f && _jobHandler.currentJob != null)
+        {
+            LogEvent($"{_villager.villagerName} exhausted (energy {_villager.EnergyPercent}%) — forcing idle to rest");
+            _jobHandler.AssignJob(null);
+            currentState = "Exhausted — resting";
+            _idleTime = 0f;
+            return false; // Don't request a new decision yet, let them rest
+        }
+
         // Check if a gather mini-goal has been met
         if (_gatherGoalAmount > 0 && _personalGathered >= _gatherGoalAmount)
         {
@@ -195,11 +205,17 @@ public class VillagerBrain : MonoBehaviour
     {
         if (_jobHandler.currentJob == null)
         {
-            currentState = $"Idle ({_idleTime:F1}s)";
+            if (_villager.Energy < 30f)
+                currentState = $"Resting (energy {_villager.EnergyPercent}%)";
+            else
+                currentState = $"Idle ({_idleTime:F1}s)";
         }
         else
         {
-            currentState = _jobHandler.ActiveJobLogic?.GetCurrentStatus() ?? "Working";
+            string status = _jobHandler.ActiveJobLogic?.GetCurrentStatus() ?? "Working";
+            if (_villager.Energy < 30f)
+                status += $" [tired {_villager.EnergyPercent}%]";
+            currentState = status;
         }
     }
 

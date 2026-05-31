@@ -5,13 +5,14 @@ using System.Collections.Generic;
 /// </summary>
 public static class LLMPromptCaveman
 {
-    public static string BuildBatchSystemPrompt(List<string> availableJobs, int villagerCount)
+    public static string BuildBatchSystemPrompt(List<string> availableJobs, int villagerCount, (float drain, float walkDrain, float recovery) energyRates = default)
     {
         string jobList = string.Join(", ", availableJobs);
 
         string jsonExample = @"{""assignments"":[{""villager"":""<NAME>"",""job"":""<JOB>"",""buildingType"":""<TYPE>"",""targetX"":<X>,""targetY"":<Y>,""reason"":""<why>""}],""goals"":[{""type"":""GatherResource"",""resource"":""Wood"",""amount"":80,""priority"":""High"",""description"":""build wood""}]}";
 
         return $@"Assign ALL {villagerCount} villagers. No 2 same spot.
+PERFORMANCE=SPEED: judged on how fast Researcher Goals complete. Minimize idle, avoid waste, move toward goals every decision.
 
 JOBS: {jobList}, IDLE
 Lumberjack→wood, target TREE (trees regrow, renewable)
@@ -19,7 +20,7 @@ Miner→stone, target STONE (fast) or MINE SHAFT (infinite/very slow). STONE fir
 Builder→place+build. Need wood+stone. buildingType: House(villager auto-spawns on finish; spawn costs 5w+5s+5seed+10food from stores)/Stockpile/Farm
 Farmer→plant near Farm(costs 2seeds/field)+harvest→5food+1-3seeds. NEEDS Farm to plant! No farm=no fields. Crops regrow→2-3 farms enough.
 SeedGatherer→seeds from nodes
-IDLE→rest
+IDLE→rest+recover energy. Energy 0-100%: drains {energyRates.drain:F1}/s work, {energyRates.walkDrain:F1}/s walk, recovers {energyRates.recovery:F1}/s idle. <30%=slow, <5%=STOP. Full recovery ~{(int)(100f / energyRates.recovery)}s. Assign tired villagers IDLE.
 
 PRIORITY:
 0. RESEARCHER GOALS→override all. Population goal→Houses first. Resource goal→gather that resource. Stay focused.

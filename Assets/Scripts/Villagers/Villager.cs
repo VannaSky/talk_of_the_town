@@ -13,6 +13,13 @@ public class Villager : MonoBehaviour
     [SerializeField] private TileGrid tileGrid;
     [SerializeField] private float cellSize = 2f;  // Must match TileGridSpawner
     
+    [Header("Energy")]
+    [SerializeField] private float energy = 100f;
+    [SerializeField] private float maxEnergy = 100f;
+    [SerializeField] private float energyDrainRate = 1f;
+    [SerializeField] private float energyWalkDrainRate = 0.3f;
+    [SerializeField] private float energyRecoveryRate = 2f;
+
     [Header("State (Read-Only)")]
     [SerializeField] private Vector2Int currentGridPos;
     
@@ -31,6 +38,26 @@ public class Villager : MonoBehaviour
     public Vector2Int GridPosition => currentGridPos;
     public Tile CurrentTile => _currentTile;
     public JobHandler JobHandler => _jobHandler;
+    public float Energy => energy;
+    public float MaxEnergy => maxEnergy;
+    public int EnergyPercent => Mathf.RoundToInt(energy / maxEnergy * 100f);
+    public float EnergyDrainRate => energyDrainRate;
+    public float EnergyWalkDrainRate => energyWalkDrainRate;
+    public float EnergyRecoveryRate => energyRecoveryRate;
+
+    /// <summary>
+    /// Work speed multiplier based on energy level.
+    /// 1.0 at energy >= 30, scales linearly down to ~0 between 30 and 5, 0 below 5.
+    /// </summary>
+    public float WorkSpeedMultiplier
+    {
+        get
+        {
+            if (energy >= 30f) return 1f;
+            if (energy < 5f) return 0f;
+            return energy / 30f;
+        }
+    }
     
     void Awake()
     {
@@ -51,6 +78,27 @@ public class Villager : MonoBehaviour
     void Update()
     {
         UpdateCurrentTile();
+        UpdateEnergy();
+    }
+
+    private void UpdateEnergy()
+    {
+        var state = _jobHandler?.ActiveJobLogic?.GetCurrentState();
+        bool isActiveWork = state == Villagers.Jobs.AnimationState.Chopping
+            || state == Villagers.Jobs.AnimationState.Mining
+            || state == Villagers.Jobs.AnimationState.Gathering
+            || state == Villagers.Jobs.AnimationState.Building
+            || state == Villagers.Jobs.AnimationState.Farming
+            || state == Villagers.Jobs.AnimationState.Planting;
+        bool isWalking = state == Villagers.Jobs.AnimationState.MovingToTarget
+            || state == Villagers.Jobs.AnimationState.Carrying;
+
+        if (isActiveWork)
+            energy = Mathf.Max(0f, energy - energyDrainRate * Time.deltaTime);
+        else if (isWalking)
+            energy = Mathf.Max(0f, energy - energyWalkDrainRate * Time.deltaTime);
+        else
+            energy = Mathf.Min(maxEnergy, energy + energyRecoveryRate * Time.deltaTime);
     }
     
     /// <summary>
@@ -121,7 +169,8 @@ public class Villager : MonoBehaviour
             currentJob = GetCurrentJobName(),
             jobStatus = GetCurrentJobStatus(),
             jobLevel = _jobHandler?.GetCurrentJobLevel() ?? 0,
-            tileType = _currentTile?.Archetype?.Style.ToString() ?? "Unknown"
+            tileType = _currentTile?.Archetype?.Style.ToString() ?? "Unknown",
+            energy = EnergyPercent
         };
     }
 
@@ -149,4 +198,5 @@ public class VillagerData
     public string jobStatus;
     public int jobLevel;
     public string tileType;
+    public int energy;
 }

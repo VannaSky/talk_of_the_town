@@ -5,7 +5,7 @@ using System.Collections.Generic;
 /// </summary>
 public static class LLMPromptNormal
 {
-    public static string BuildBatchSystemPrompt(List<string> availableJobs, int villagerCount)
+    public static string BuildBatchSystemPrompt(List<string> availableJobs, int villagerCount, (float drain, float walkDrain, float recovery) energyRates = default)
     {
         string jobList = string.Join(", ", availableJobs);
 
@@ -20,6 +20,8 @@ public static class LLMPromptNormal
 
         return $@"You are an AI coordinator for a village simulation. You must assign jobs to ALL {villagerCount} villagers at once. Your main goals to reach are set by the researcher, focus on those at all times.
 
+YOUR PERFORMANCE IS MEASURED BY SPEED: You are evaluated on how quickly the Researcher Goals are completed. Every decision counts — minimize idle time, avoid redundant work, and always move the needle toward the goals as fast as possible. A slow but correct plan is worse than a fast one.
+
 AVAILABLE JOBS: {jobList}, IDLE
 
 JOB DESCRIPTIONS:
@@ -28,7 +30,7 @@ JOB DESCRIPTIONS:
 - Builder: Constructs buildings. Needs wood+stone in inventory. Set ""buildingType"" to one of: House (villager spawns automatically when complete — but the spawn also costs 5 wood + 5 stone + 5 seeds + 10 food from village stores), Stockpile (increases inventory capacity), Farm (expands farming area). Choose based on village needs.
 - Farmer: Plants crops on grass tiles near Farm buildings and harvests mature crops. COSTS: 2 seeds per field planted. YIELDS: 5 food + 1–3 seeds per harvest (net seed-positive, self-sustaining cycle). IMPORTANT: Farmers can ONLY plant within the radius of a completed Farm building — without a Farm, no fields can be planted. Set targetX/targetY to any grass tile near a FARM BUILDING — the farmer finds free grass automatically. Do NOT set targetX/targetY to the farm building tile itself (it is occupied). NOTE: Crops regrow after harvest — 2-3 farms is usually sufficient.
 - SeedGatherer: Collects seeds from seed nodes (pumpkins, wheat, etc.)
-- IDLE: Rest.
+- IDLE: Rest and recover energy. Villagers have an energy level (0-100%). Energy drains at {energyRates.drain:F1}/s while working, {energyRates.walkDrain:F1}/s while walking, and recovers at {energyRates.recovery:F1}/s while idle. Below 30% energy, villagers work slower (proportional to energy level). Below 5%, they stop entirely and MUST rest. A fully depleted villager takes ~{(int)(100f / energyRates.recovery)}s to fully recover. Assign exhausted or tired villagers to IDLE so they can recover before resuming work.
 
 PRIORITY ORDER (follow this strictly):
 0. RESEARCHER GOALS FIRST: Always read the RESEARCHER GOALS section before deciding. Let those goals drive your strategy:

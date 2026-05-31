@@ -171,7 +171,7 @@ public class BuilderLogic : JobLogic
             return false;
         }
 
-        float workApplied = buildSpeed * Time.deltaTime;
+        float workApplied = buildSpeed * Time.deltaTime * handler.WorkSpeedMultiplier;
         bool levelCompleted = _currentTarget.AddWork(workApplied);
 
         currentStatus = $"Building {GetBuildingName()} ({_currentTarget.GetProgressPercent()}%)";

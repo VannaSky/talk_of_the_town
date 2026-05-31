@@ -158,10 +158,12 @@ namespace Villagers.Jobs
             }
 
             float workTime = _currentTarget.isMineShaft ? mineShaftTimeToWork : timeToWork;
-            timeSinceLastAction += Time.deltaTime;
+            float speedMul = handler.WorkSpeedMultiplier;
+            timeSinceLastAction += Time.deltaTime * speedMul;
+            string slowTag = speedMul < 1f ? $" [TIRED x{speedMul:F2}]" : "";
             currentStatus = _currentTarget.isMineShaft
-                ? $"{WorkingVerb} (mine shaft — slow) ({timeSinceLastAction:F1}/{workTime:F1})..."
-                : $"{WorkingVerb} ({timeSinceLastAction:F1}/{workTime:F1})...";
+                ? $"{WorkingVerb} (mine shaft — slow) ({timeSinceLastAction:F1}/{workTime:F1}){slowTag}..."
+                : $"{WorkingVerb} ({timeSinceLastAction:F1}/{workTime:F1}){slowTag}...";
 
             if (timeSinceLastAction >= workTime)
             {
@@ -172,7 +174,7 @@ namespace Villagers.Jobs
 
         private bool ExecuteCarrying(JobHandler handler)
         {
-            timeSinceLastAction += Time.deltaTime;
+            timeSinceLastAction += Time.deltaTime * handler.WorkSpeedMultiplier;
             currentStatus = $"Carrying {ResourceName} ({timeSinceLastAction:F1}/{timeToCarry:F1})...";
 
             if (timeSinceLastAction >= timeToCarry)

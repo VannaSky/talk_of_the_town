@@ -359,10 +359,22 @@ public class LLMController : MonoBehaviour
 
     private string BuildBatchSystemPrompt(List<string> availableJobs, int villagerCount)
     {
+        var energyRates = GetEnergyRates();
         bool caveman = GlobalSettings.Instance != null && GlobalSettings.Instance.UseCavemanPrompt;
         return caveman
-            ? LLMPromptCaveman.BuildBatchSystemPrompt(availableJobs, villagerCount)
-            : LLMPromptNormal.BuildBatchSystemPrompt(availableJobs, villagerCount);
+            ? LLMPromptCaveman.BuildBatchSystemPrompt(availableJobs, villagerCount, energyRates)
+            : LLMPromptNormal.BuildBatchSystemPrompt(availableJobs, villagerCount, energyRates);
+    }
+
+    private (float drain, float walkDrain, float recovery) GetEnergyRates()
+    {
+        var villagers = VillageState.Instance?.Villagers;
+        if (villagers != null && villagers.Count > 0 && villagers[0] != null)
+        {
+            var v = villagers[0];
+            return (v.EnergyDrainRate, v.EnergyWalkDrainRate, v.EnergyRecoveryRate);
+        }
+        return (1f, 0.3f, 2f);
     }
 
     private string BuildBatchContext(IReadOnlyList<Villager> villagers, List<string> availableJobs)
@@ -420,7 +432,8 @@ public class LLMController : MonoBehaviour
                 || d.jobStatus.Contains("found")
                 || d.jobStatus.Contains("Looking");
             string tag = isStuck ? "[NEEDS ASSIGNMENT]" : "[KEEP]";
-            sb.AppendLine($"- {d.name} {tag}: at ({d.x},{d.y}), Job={d.currentJob}, Status=\"{d.jobStatus}\"");
+            string energyTag = d.energy < 5 ? " [EXHAUSTED — must rest!]" : d.energy < 30 ? $" [TIRED — working at {d.energy}% speed]" : "";
+            sb.AppendLine($"- {d.name} {tag}: at ({d.x},{d.y}), Job={d.currentJob}, Status=\"{d.jobStatus}\", Energy={d.energy}%{energyTag}");
         }
         sb.AppendLine();
 
@@ -711,7 +724,8 @@ public class LLMController : MonoBehaviour
             string previousJob = _lastAssignedJob.TryGetValue(d.name, out var prev) && prev != d.currentJob
                 ? $", was {prev}"
                 : "";
-            sb.AppendLine($"- {d.name} {tag}: {d.currentJob} at ({d.x},{d.y}){previousJob}, Status=\"{d.jobStatus}\"");
+            string energyTag = d.energy < 5 ? " [EXHAUSTED]" : d.energy < 30 ? $" [TIRED {d.energy}%]" : "";
+            sb.AppendLine($"- {d.name} {tag}: {d.currentJob} at ({d.x},{d.y}){previousJob}, Status=\"{d.jobStatus}\", Energy={d.energy}%{energyTag}");
         }
         sb.AppendLine();
 

@@ -25,6 +25,8 @@ public class JobHandler : MonoBehaviour
     public VillagerMover villagerMover;
     public VillagerEquipment equipment;
 
+    private Villager _villager;
+
     [Header("Debug")]
     [SerializeField] private int currentJobLevel = 1;
     [SerializeField] private float currentJobXP = 0f;
@@ -47,8 +49,11 @@ public class JobHandler : MonoBehaviour
     public Vector2Int? PreferredTargetArea => hasTargetArea ? targetArea : null;
     public string PreferredBuildingType => preferredBuildingType;
 
+    public float WorkSpeedMultiplier => _villager != null ? _villager.WorkSpeedMultiplier : 1f;
+
     void Awake()
     {
+        _villager = GetComponent<Villager>();
         if (animator == null)
             animator = GetComponentInChildren<Animator>();
         if (villagerMover == null)

@@ -174,7 +174,7 @@ public class FarmerLogic : JobLogic
             return false;
         }
 
-        timeSinceLastAction += Time.deltaTime;
+        timeSinceLastAction += Time.deltaTime * handler.WorkSpeedMultiplier;
         currentStatus = $"Planting ({timeSinceLastAction:F1}/{plantTime:F1})...";
 
         if (timeSinceLastAction >= plantTime)
@@ -235,7 +235,7 @@ public class FarmerLogic : JobLogic
             return false;
         }
 
-        timeSinceLastAction += Time.deltaTime;
+        timeSinceLastAction += Time.deltaTime * handler.WorkSpeedMultiplier;
         currentStatus = $"Harvesting ({timeSinceLastAction:F1}/{harvestTime:F1})...";
 
         if (timeSinceLastAction >= harvestTime)

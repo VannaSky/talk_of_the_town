@@ -27,20 +27,29 @@ namespace UI
         [SerializeField] private TextMeshProUGUI jobNameText;
         [SerializeField] private TextMeshProUGUI promptReasonText;
         [SerializeField] private TextMeshProUGUI currentStateText;
+        [SerializeField] private TextMeshProUGUI energyText;
 
         // Update is called once per frame
         void Update()
         {
+            if (_villager == null || _villagerBrain == null) return;
+
             villagerName = _villager.villagerName;
-            jobName = _villagerBrain.lastDecision.jobName;
-            promptReason = _villagerBrain.lastDecision.reason;
+            jobName = _villagerBrain.lastDecision?.jobName ?? "—";
+            promptReason = _villagerBrain.lastDecision?.reason ?? "—";
             currentState = _villagerBrain.currentState;
-            
+
             villagerNameText.text = villagerName;
             jobNameText.text = jobName;
             promptReasonText.text = promptReason;
             currentStateText.text = currentState;
 
+            if (energyText != null)
+            {
+                int e = _villager.EnergyPercent;
+                energyText.text = $"Energy: {e}%";
+                energyText.color = e < 5 ? Color.red : e < 30 ? Color.yellow : Color.green;
+            }
         }
     }
 }

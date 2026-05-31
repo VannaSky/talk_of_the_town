@@ -150,8 +150,20 @@ public class VillageState : MonoBehaviour
         {
             villagers.Add(villager);
             OnVillagerRegistered?.Invoke(villager);
+            SpawnVillagerUI(villager);
             LogInfo($"Registered villager: {villager.villagerName}");
         }
+    }
+
+    private void SpawnVillagerUI(Villager villager)
+    {
+        if (villagerUIPrefab == null || villagerUIContainer == null) return;
+
+        var uiGo = Instantiate(villagerUIPrefab, villagerUIContainer);
+        uiGo.name = villager.villagerName;
+        var textManager = uiGo.GetComponent<UI.VillagerTextManager>();
+        if (textManager != null)
+            textManager.SetVillager(villager, villager.GetComponent<VillagerBrain>());
     }
     
     public void UnregisterVillager(Villager villager)
@@ -271,17 +283,6 @@ public class VillageState : MonoBehaviour
         {
             villager.villagerName = go.name;
             RegisterVillager(villager);
-        }
-
-        if (villagerUIPrefab != null && villagerUIContainer != null)
-        {
-            var uiGo = Instantiate(villagerUIPrefab, villagerUIContainer);
-            uiGo.name = go.name;
-            var textManager = uiGo.GetComponent<UI.VillagerTextManager>();
-            if (textManager != null)
-            {
-                textManager.SetVillager(go.GetComponent<Villager>(), go.GetComponent<VillagerBrain>());
-            }
         }
 
         populationCap++;
