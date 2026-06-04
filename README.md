@@ -22,14 +22,15 @@ The result is emergent village management: the LLM balances food production, res
 ### LLM-Driven Coordination
 - **Batch decisions**: All idle villagers are assigned in one LLM call, preventing conflicts (no two villagers sent to the same tree).
 - **Event-driven triggers**: Decisions fire when villagers go idle, buildings complete, goals are met, or resources drop critically — not just on a timer.
-- **Conversation memory**: The LLM retains context from recent decisions to maintain strategic continuity.
+- **Conversation history**: The LLM retains a rolling context of recent decisions with pinned system messages, maintaining strategic continuity across calls.
 - **Mini-goals**: The LLM can set precise gather amounts (e.g., "chop 20 wood, then stop") for fine-grained control.
+- **Performance metrics**: Token usage and response times are tracked and displayed in the HUD for observability.
 
 ### Jobs
 | Job | Description |
 |-----|-------------|
 | **Lumberjack** | Chops trees for wood. Trees regrow over time. |
-| **Miner** | Mines stone deposits (fast) or mine shafts (slow, infinite). |
+| **Miner** | Mines stone deposits (fast) or mine shafts on mountain tiles (slow, infinite yield). |
 | **Farmer** | Plants crops near Farm buildings using seeds, harvests food + seeds. Primary food source. |
 | **SeedGatherer** | Collects seeds from pumpkin/wheat nodes. |
 | **Builder** | Constructs Houses, Stockpiles, or Farms using wood and stone. |
@@ -41,13 +42,19 @@ The result is emergent village management: the LLM balances food production, res
 
 All buildings progress through visual construction stages and require resource investment.
 
+### Villager Energy
+Each villager has an energy pool that drains while working or walking and recovers during rest. As energy falls, work speed drops proportionally. Villagers showing their energy level in their name tag give the player a clear read on stamina across the settlement.
+
 ### Resources & Farming
 - **Inventory**: Wood, Stone, Seeds, Food with shared capacity (expandable via Stockpiles).
 - **Farming cycle**: Seeds + Farm building + grass tiles = crops. Harvesting yields food *and* seeds, making farming self-sustaining.
-- **Renewable resources**: Trees regrow from stumps; crops regrow after harvest.
+- **Renewable resources**: Trees regrow from stumps (stump visuals appear during regrowth); crops regrow after harvest.
+- **Natural seed spawning**: Seed nodes grow organically on empty tiles over time, supplementing gathered seed stock.
+- **Mine shafts**: Placed on mountain tiles at map generation; provide infinite stone at a very slow extraction rate.
 
-### Village Goals
-The LLM can set strategic goals (e.g., "Gather 80 wood", "Reach population 6") that track progress and trigger new decisions on completion.
+### Goals
+- **Global Goals** (researcher-defined): Set before the simulation starts — e.g., "accumulate 200 wood", "reach population 8", or "build 3 stockpiles". Progress is tracked in real time and the simulation stops automatically when all goals are met.
+- **LLM mini-goals**: The LLM can also set its own precise gather targets mid-session (e.g., "chop 20 wood, then stop") to coordinate short-term bursts of work.
 
 ## Tech Stack
 
@@ -68,10 +75,11 @@ The LLM can set strategic goals (e.g., "Gather 80 wood", "Reach population 6") t
 
 ## Controls
 
-| Key | Action |
-|-----|--------|
+| Key / UI | Action |
+|----------|--------|
 | **1-4** | Game speed presets (1x, 2x, 10x, 50x) |
-| **Speed slider** | Fine-grained speed control |
+| **Speed slider** | Fine-grained speed control (1x – 50x) |
+| **Save / Load buttons** | Persist and restore the current map state |
 
 ## Project Structure
 
@@ -79,11 +87,12 @@ The LLM can set strategic goals (e.g., "Gather 80 wood", "Reach population 6") t
 Assets/Scripts/
   LLMController.cs          # Central LLM coordinator
   LLMPrompts/               # Prompt variants (normal, caveman)
-  Villagers/                 # Villager entity, brain, jobs
-  Tiles/                     # Tile grid, map spawning
+  Villagers/                 # Villager entity, brain, jobs, energy
+  Tiles/                     # Tile grid, map spawning, save/load
   Buildings/                 # Building progression & data
-  Environment/Resources/     # Resource nodes, regrowth
-  UI/                        # HUD, name tags, goals display
+  Environment/Resources/     # Resource nodes, regrowth, seed spawner
+  UI/                        # HUD, name tags, goals display, metrics
+  GlobalGoals/               # Researcher-defined win conditions
 ```
 
 ## What Makes This Different
