@@ -15,10 +15,18 @@ public class GameSpeedController : MonoBehaviour
     [Tooltip("Optional — displays the current speed value (e.g. '3.4x').")]
     [SerializeField] private TMP_Text speedLabel;
 
+    [Tooltip("Optional — button that pauses/resumes game time (sets timeScale to 0).")]
+    [SerializeField] private Button pauseButton;
+
+    [Tooltip("Optional — label on the pause button (shows 'Pause' or 'Resume').")]
+    [SerializeField] private TMP_Text pauseButtonLabel;
+
     // 1 = 0%, 2 = 33%, 3 = 66%, 4 = 100% of the range
     private static readonly float[] SpeedSteps = { 0f, 0.33f, 0.66f, 1f };
 
     private bool _updatingSlider;
+    private bool _isPaused;
+    private float _preManualPauseTimeScale;
 
     void Start()
     {
@@ -30,17 +38,25 @@ public class GameSpeedController : MonoBehaviour
             speedSlider.onValueChanged.AddListener(OnSliderChanged);
         }
 
+        if (pauseButton != null)
+            pauseButton.onClick.AddListener(TogglePause);
+
         if (VillageState.Instance != null)
         {
             VillageState.Instance.OnGameSpeedChanged += OnSpeedChanged;
             UpdateLabel(VillageState.Instance.GameSpeed);
         }
+
+        UpdatePauseButton();
     }
 
     void OnDestroy()
     {
         if (speedSlider != null)
             speedSlider.onValueChanged.RemoveListener(OnSliderChanged);
+
+        if (pauseButton != null)
+            pauseButton.onClick.RemoveListener(TogglePause);
 
         if (VillageState.Instance != null)
             VillageState.Instance.OnGameSpeedChanged -= OnSpeedChanged;
@@ -66,9 +82,40 @@ public class GameSpeedController : MonoBehaviour
         VillageState.Instance.SetGameSpeed(speed);
     }
 
+    public void TogglePause()
+    {
+        if (_isPaused)
+        {
+            Time.timeScale = _preManualPauseTimeScale;
+            _isPaused = false;
+        }
+        else
+        {
+            _preManualPauseTimeScale = VillageState.Instance != null
+                ? VillageState.Instance.GameSpeed
+                : Time.timeScale;
+            Time.timeScale = 0f;
+            _isPaused = true;
+        }
+
+        UpdatePauseButton();
+    }
+
+    private void UpdatePauseButton()
+    {
+        if (pauseButtonLabel != null)
+            pauseButtonLabel.text = _isPaused ? "Resume" : "Pause";
+    }
+
     private void OnSliderChanged(float value)
     {
         if (_updatingSlider || VillageState.Instance == null) return;
+        // Resuming via slider should also clear manual pause
+        if (_isPaused)
+        {
+            _isPaused = false;
+            UpdatePauseButton();
+        }
         VillageState.Instance.SetGameSpeed(value);
     }
 

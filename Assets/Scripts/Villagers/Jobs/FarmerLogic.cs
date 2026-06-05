@@ -332,7 +332,7 @@ public class FarmerLogic : JobLogic
             return null;
         }
 
-        LogWarning($"[{handler.name}] FindEmptyGrassTile: {farmCoverage.Count} farm(s) found — " +
+        LogInfo($"[{handler.name}] FindEmptyGrassTile: {farmCoverage.Count} farm(s) found — " +
                    string.Join(", ", farmCoverage.ConvertAll(f => $"pos={f.pos} r={f.radius}")));
 
         // Check field capacity (set by FieldCapacity bonuses on Farm buildings)
@@ -345,7 +345,7 @@ public class FarmerLogic : JobLogic
                 LogWarning($"[{handler.name}] FindEmptyGrassTile: field cap reached ({currentCrops}/{VillageState.Instance.FieldCapacity})");
                 return null;
             }
-            LogWarning($"[{handler.name}] FindEmptyGrassTile: crops={currentCrops}/{VillageState.Instance.FieldCapacity}");
+            LogInfo($"[{handler.name}] FindEmptyGrassTile: crops={currentCrops}/{VillageState.Instance.FieldCapacity}");
         }
         else
         {
@@ -392,7 +392,7 @@ public class FarmerLogic : JobLogic
             if (t.HasResource || HasResourceNodeOnTile(t)) { failResource++; continue; }
             if (!IsInFarmRange(t)) failFarmRange++;
         }
-        LogWarning($"[{handler.name}] Tile filter breakdown (radius {searchRadius} of {centerGrid}): " +
+        LogInfo($"[{handler.name}] Tile filter breakdown (radius {searchRadius} of {centerGrid}): " +
                    $"total={totalChecked} noArchetype={failArchetype} wrongStyle={failStyle} " +
                    $"hasBuilding={failBuilding} hasResource={failResource} outOfFarmRange={failFarmRange}");
 

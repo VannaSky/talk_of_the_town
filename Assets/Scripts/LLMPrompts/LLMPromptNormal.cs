@@ -11,7 +11,7 @@ public static class LLMPromptNormal
 
         string jsonExample = @"{
     ""assignments"": [
-        { ""villager"": ""<NAME>"", ""job"": ""<JOB>"", ""buildingType"": ""<TYPE>"", ""targetX"": <X>, ""targetY"": <Y>, ""gatherAmount"": <N>, ""reason"": ""<why>"" }
+        { ""villager"": ""<NAME>"", ""job"": ""<JOB>"", ""buildingType"": ""<TYPE>"", ""targetX"": <X>, ""targetY"": <Y>, ""gatherAmount"": <N>, ""restUntilEnergy"": <N>, ""reason"": ""<why>"" }
     ],
     ""goals"": [
         { ""type"": ""GatherResource"", ""resource"": ""Wood"", ""amount"": 80, ""priority"": ""High"", ""description"": ""Build wood reserves"" }
@@ -31,6 +31,7 @@ JOB DESCRIPTIONS:
 - Farmer: Plants crops on grass tiles near Farm buildings and harvests mature crops. COSTS: 2 seeds per field planted. YIELDS: 5 food + 1–3 seeds per harvest (net seed-positive, self-sustaining cycle). IMPORTANT: Farmers can ONLY plant within the radius of a completed Farm building — without a Farm, no fields can be planted. Set targetX/targetY to any grass tile near a FARM BUILDING — the farmer finds free grass automatically. Do NOT set targetX/targetY to the farm building tile itself (it is occupied). NOTE: Crops regrow after harvest — 2-3 farms is usually sufficient.
 - SeedGatherer: Collects seeds from seed nodes (pumpkins, wheat, etc.)
 - IDLE: Rest and recover energy. Villagers have an energy level (0-100%). Energy drains at {energyRates.drain:F1}/s while working, {energyRates.walkDrain:F1}/s while walking, and recovers at {energyRates.recovery:F1}/s while idle. Below 30% energy, villagers work slower (proportional to energy level). Below 5%, they stop entirely and MUST rest. A fully depleted villager takes ~{(int)(100f / energyRates.recovery)}s to fully recover. Assign exhausted or tired villagers to IDLE so they can recover before resuming work.
+  OPTIONAL — ""restUntilEnergy"": set this (1-100) on an IDLE assignment to tell the villager to rest silently until they reach that energy %. Once reached, they automatically request a new assignment without an extra LLM call. Example: {{ ""job"": ""IDLE"", ""restUntilEnergy"": 80, ""reason"": ""exhausted, rest to 80%"" }}. Use this instead of just IDLE when you want the villager to resume work at a specific energy level — it avoids wasting a future LLM call on a villager who is simply recovering.
 
 PRIORITY ORDER (follow this strictly):
 0. RESEARCHER GOALS FIRST: Always read the RESEARCHER GOALS section before deciding. Let those goals drive your strategy:

@@ -33,6 +33,10 @@ public class LLMController : MonoBehaviour
     [Tooltip("Seconds to wait after an event before triggering a decision (collects multiple events into one call)")]
     [SerializeField] private float decisionDebounceDelay = 1f;
 
+    [Header("Game Pause Settings")]
+    [Tooltip("Freeze game time while waiting for the LLM to respond, so game state doesn't change based on stale data.")]
+    [SerializeField] private bool pauseGameDuringLLM = true;
+
     [Header("Context Settings")]
     [Tooltip("Context window size (tokens). 0 = use model default. Check your model's actual limit.")]
     [SerializeField] private int contextSize = 0;
@@ -43,6 +47,10 @@ public class LLMController : MonoBehaviour
     [SerializeField] private bool useConversationMemory = true;
     [Tooltip("Pinned system message sent on every call. Leave empty to omit.")]
     [SerializeField, TextArea(2, 6)] private string pinnedSystemMessage = "";
+
+    [Header("Logging")]
+    [Tooltip("Include full prompt and response text in log events. Disable to keep logs readable during debugging.")]
+    [SerializeField] private bool logFullPrompts = true;
 
     [Header("Metrics Tracking")]
     [SerializeField] private bool trackMetrics = true;
@@ -73,6 +81,9 @@ public class LLMController : MonoBehaviour
 
     // Batch decision state
     private bool _isBatchProcessing;
+    private float _preLLMTimeScale;
+    private bool _triggerPendingAfterBatch;
+    private string _pendingTriggerReason;
     private Dictionary<string, JobDecision> _latestBatchDecisions = new ();
     private float _lastBatchDecisionTime;
     private Coroutine _pendingDecisionCoroutine;
@@ -102,7 +113,7 @@ public class LLMController : MonoBehaviour
     // Metrics tracking
     private List<LLMMetrics> _metricsHistory = new ();
     private LLMMetrics _lastMetrics;
-    private LLMSessionStats _sessionStats = new ();
+    [SerializeField] private LLMSessionStats _sessionStats = new ();
 
     public LLMMetrics LastMetrics => _lastMetrics;
     public LLMSessionStats SessionStats => _sessionStats;
@@ -137,6 +148,8 @@ public class LLMController : MonoBehaviour
                 _conversation.SetSystemMessage(pinnedSystemMessage);
 
             IsReady = true;
+            _sessionStats.sessionStartRealtime = Time.realtimeSinceStartup;
+            _sessionStats.sessionStartGameTime = Time.time;
             OnModelLoaded?.Invoke(defaultModel);
 
             LogEvent($"Controller ready with model: {defaultModel}");
@@ -265,10 +278,18 @@ public class LLMController : MonoBehaviour
 
     public void TriggerDecision(string reason)
     {
-        if (!IsReady || _isBatchProcessing) return;
+        if (!IsReady) { LogWarning($"TriggerDecision skipped (not ready): {reason}"); return; }
         AddRecentEvent(reason);
-        if (_pendingDecisionCoroutine != null)
-            StopCoroutine(_pendingDecisionCoroutine);
+        if (_isBatchProcessing)
+        {
+            _triggerPendingAfterBatch = true;
+            _pendingTriggerReason = reason;
+            return;
+        }
+        // If a debounce is already scheduled, don't reset it — the batch will fire soon.
+        // Resetting on every incoming trigger causes a storm where it never fires.
+        if (_pendingDecisionCoroutine != null) return;
+        LogEvent($"TriggerDecision: scheduling batch in {decisionDebounceDelay}s ({reason})");
         _pendingDecisionCoroutine = StartCoroutine(DebouncedDecision(reason));
     }
 
@@ -277,6 +298,13 @@ public class LLMController : MonoBehaviour
         yield return new WaitForSecondsRealtime(decisionDebounceDelay);
         _pendingDecisionCoroutine = null;
         LogEvent($"Event-triggered decision: {reason}");
+        if (_isBatchProcessing)
+        {
+            // A batch started while we were waiting — queue for after it finishes.
+            _triggerPendingAfterBatch = true;
+            _pendingTriggerReason = reason;
+            yield break;
+        }
         yield return RequestBatchDecisions();
     }
 
@@ -286,12 +314,25 @@ public class LLMController : MonoBehaviour
     {
         yield return new WaitForSecondsRealtime(2f);
 
+        // Fire once immediately at startup so the game doesn't wait the full interval.
+        if (IsReady && VillageState.Instance != null && VillageState.Instance.Villagers.Count > 0)
+        {
+            LogEvent("Startup batch decision.");
+            yield return RequestBatchDecisions();
+        }
+
         while (true)
         {
             yield return new WaitForSecondsRealtime(batchDecisionInterval);
 
             if (IsReady && VillageState.Instance != null && VillageState.Instance.Villagers.Count > 0)
             {
+                if (TimeSinceLastBatch < batchDecisionInterval)
+                {
+                    LogEvent($"Fallback skipped — recent decision {TimeSinceLastBatch:F1}s ago.");
+                    continue;
+                }
+
                 LogEvent($"Fallback interval triggered batch decision.");
                 yield return RequestBatchDecisions();
             }
@@ -311,12 +352,18 @@ public class LLMController : MonoBehaviour
         if (_isBatchProcessing) yield break;
 
         _isBatchProcessing = true;
+        if (pauseGameDuringLLM)
+        {
+            _preLLMTimeScale = Time.timeScale;
+            Time.timeScale = 0f;
+        }
 
         var villagers = VillageState.Instance.Villagers;
         var jobNames = GetAvailableJobNames();
 
         if (villagers.Count == 0 || jobNames.Count == 0)
         {
+            if (pauseGameDuringLLM) Time.timeScale = _preLLMTimeScale;
             _isBatchProcessing = false;
             yield break;
         }
@@ -328,9 +375,17 @@ public class LLMController : MonoBehaviour
 
         _latestBatchDecisions = task.Result;
         _lastBatchDecisionTime = Time.realtimeSinceStartup;
+        if (pauseGameDuringLLM) Time.timeScale = _preLLMTimeScale;
         _isBatchProcessing = false;
 
         OnBatchDecisionMade?.Invoke(_latestBatchDecisions);
+
+        // Re-fire any trigger that was queued while the batch was running.
+        if (_triggerPendingAfterBatch)
+        {
+            _triggerPendingAfterBatch = false;
+            TriggerDecision(_pendingTriggerReason);
+        }
 
     }
 
@@ -429,7 +484,7 @@ public class LLMController : MonoBehaviour
             bool isStuck = d.jobStatus == "Idle"
                 || d.jobStatus.Contains("Waiting")
                 || d.jobStatus.Contains("No ")
-                || d.jobStatus.Contains("found")
+                || d.jobStatus.Contains("not found")
                 || d.jobStatus.Contains("Looking");
             string tag = isStuck ? "[NEEDS ASSIGNMENT]" : "[KEEP]";
             string energyTag = d.energy < 5 ? " [EXHAUSTED — must rest!]" : d.energy < 30 ? $" [TIRED — working at {d.energy}% speed]" : "";
@@ -446,7 +501,7 @@ public class LLMController : MonoBehaviour
             bool isStuck = d.jobStatus == "Idle"
                 || d.jobStatus.Contains("Waiting")
                 || d.jobStatus.Contains("No ")
-                || d.jobStatus.Contains("found")
+                || d.jobStatus.Contains("not found")
                 || d.jobStatus.Contains("Looking");
             if (!isStuck)
                 takenPositions[new Vector2Int(d.x, d.y)] = d.name;
@@ -718,13 +773,13 @@ public class LLMController : MonoBehaviour
             bool isStuck = d.jobStatus == "Idle"
                 || d.jobStatus.Contains("Waiting")
                 || d.jobStatus.Contains("No ")
-                || d.jobStatus.Contains("found")
+                || d.jobStatus.Contains("not found")
                 || d.jobStatus.Contains("Looking");
             string tag = isStuck ? "[NEEDS ASSIGNMENT]" : "[KEEP]";
             string previousJob = _lastAssignedJob.TryGetValue(d.name, out var prev) && prev != d.currentJob
                 ? $", was {prev}"
                 : "";
-            string energyTag = d.energy < 5 ? " [EXHAUSTED]" : d.energy < 30 ? $" [TIRED {d.energy}%]" : "";
+            string energyTag = d.energy < 5 ? " [EXHAUSTED — must rest!]" : d.energy < 30 ? $" [TIRED — working at {d.energy}% speed, assign IDLE to recover]" : "";
             sb.AppendLine($"- {d.name} {tag}: {d.currentJob} at ({d.x},{d.y}){previousJob}, Status=\"{d.jobStatus}\", Energy={d.energy}%{energyTag}");
         }
         sb.AppendLine();
@@ -788,7 +843,7 @@ public class LLMController : MonoBehaviour
 
         bool fullSnapshot = ShouldUseFullSnapshot();
         string systemPrompt = BuildBatchSystemPrompt(availableJobs, villagers.Count);
-        LogEvent($"Batch System Prompt:\n{systemPrompt}");
+        LogEvent(logFullPrompts ? $"Batch System Prompt:\n{systemPrompt}" : $"Batch System Prompt called");
         string context = fullSnapshot
             ? BuildBatchContext(villagers, availableJobs)
             : BuildDeltaContext(villagers, availableJobs);
@@ -805,7 +860,8 @@ public class LLMController : MonoBehaviour
         if (includeThinkingPrompt)
             fullPrompt += "\n/think";
         
-        LogEvent($"Batch Prompt [{promptLabel}] for {villagers.Count} villagers:\n{fullPrompt} ");
+        if (logFullPrompts) LogEvent($"Batch Prompt [{promptLabel}] for {villagers.Count} villagers:\n{fullPrompt} ");
+        else LogEvent($"Batch Prompt [{promptLabel}] for {villagers.Count} villagers ({fullPrompt.Length} chars)");
 
         // Start metrics tracking
         var metrics = new LLMMetrics
@@ -840,7 +896,8 @@ public class LLMController : MonoBehaviour
             metrics.totalDuration = chatResponse.TotalSeconds;
             metrics.loadDuration = chatResponse.LoadSeconds;
             
-            LogEvent($"Batch Response:\n{chatResponse.content}");
+            if (logFullPrompts) LogEvent($"Batch Response:\n{chatResponse.content}");
+            else LogEvent($"Batch Response ({chatResponse.content.Length} chars)");
 
             results = ParseBatchDecisions(chatResponse.content, villagers);
 
@@ -910,7 +967,8 @@ public class LLMController : MonoBehaviour
                         hasTargetArea = assignment.targetX != 0 || assignment.targetY != 0,
                         targetX = assignment.targetX,
                         targetY = assignment.targetY,
-                        gatherAmount = assignment.gatherAmount
+                        gatherAmount = assignment.gatherAmount,
+                        restUntilEnergy = assignment.restUntilEnergy
                     };
 
                     results[assignment.villager] = decision;
@@ -1064,7 +1122,8 @@ public class LLMController : MonoBehaviour
         if (includeThinkingPrompt)
             fullPrompt += "\n/think";
 
-        LogVerbose($"Single Prompt:\n{fullPrompt}");
+        if (logFullPrompts) LogVerbose($"Single Prompt:\n{fullPrompt}");
+        else LogVerbose($"Single Prompt ({fullPrompt.Length} chars)");
 
         var metrics = new LLMMetrics
         {
@@ -1094,7 +1153,8 @@ public class LLMController : MonoBehaviour
             metrics.totalDuration = chatResponse.TotalSeconds;
             metrics.loadDuration = chatResponse.LoadSeconds;
 
-            LogVerbose($"Response:\n{chatResponse.content}");
+            if (logFullPrompts) LogVerbose($"Response:\n{chatResponse.content}");
+            else LogVerbose($"Response ({chatResponse.content.Length} chars)");
 
             var decision = ParseSingleDecision(chatResponse.content);
             
@@ -1219,6 +1279,12 @@ public class LLMController : MonoBehaviour
         if (metrics.responseTime < _sessionStats.minResponseTime || _sessionStats.minResponseTime == 0)
             _sessionStats.minResponseTime = metrics.responseTime;
 
+        _sessionStats.elapsedRealtime = Time.realtimeSinceStartup - _sessionStats.sessionStartRealtime;
+        _sessionStats.elapsedGameTime = Time.time - _sessionStats.sessionStartGameTime;
+        _sessionStats.avgGameSpeed = _sessionStats.elapsedRealtime > 0f
+            ? _sessionStats.elapsedGameTime / _sessionStats.elapsedRealtime
+            : 0f;
+
         OnMetricsRecorded?.Invoke(metrics);
 
         LogEvent($"Metrics: Type={metrics.requestType}, " +
@@ -1259,7 +1325,11 @@ public class LLMController : MonoBehaviour
     public void ClearMetricsHistory()
     {
         _metricsHistory.Clear();
-        _sessionStats = new LLMSessionStats();
+        _sessionStats = new LLMSessionStats
+        {
+            sessionStartRealtime = Time.realtimeSinceStartup,
+            sessionStartGameTime = Time.time
+        };
         LogInfo("Metrics history cleared");
     }
 
@@ -1272,10 +1342,19 @@ public class LLMController : MonoBehaviour
         double successRate = (_sessionStats.successfulRequests / (double)_sessionStats.totalRequests) * 100.0;
         int avgTokensPerRequest = _sessionStats.totalRequests > 0 ? _sessionStats.totalTokens / _sessionStats.totalRequests : 0;
 
+        float realElapsed = _sessionStats.elapsedRealtime;
+        float gameElapsed = _sessionStats.elapsedGameTime;
+        float gameSpeedRatio = _sessionStats.avgGameSpeed;
+
         return $@"=== LLM Session Metrics ===
 Total Requests: {_sessionStats.totalRequests}
 Success Rate: {successRate:F1}%
 Total Decisions Made: {_sessionStats.totalDecisions}
+
+Session Time:
+  Real time:  {realElapsed:F1}s
+  Game time:  {gameElapsed:F1}s
+  Avg speed:  {gameSpeedRatio:F1}x
 
 Token Usage (ACTUAL from API):
   Total: {_sessionStats.totalTokens:N0}
@@ -1481,6 +1560,7 @@ public class RawSingleAssignment
     public int targetX;
     public int targetY;
     public int gatherAmount;
+    public int restUntilEnergy;
     public string reason;
 }
 
@@ -1505,6 +1585,8 @@ public class JobDecision
     public int targetX;
     public int targetY;
     public int gatherAmount;
+
+    public int restUntilEnergy;
 
     public bool IsIdle => string.IsNullOrEmpty(jobName) ||
                           jobName.Equals("IDLE", StringComparison.OrdinalIgnoreCase);
@@ -1564,16 +1646,23 @@ public class LLMSessionStats
     public int totalRequests;
     public int successfulRequests;
     public int failedRequests;
-    
+
     public int totalPromptTokens;
     public int totalResponseTokens;
     public int totalTokens;
-    
+
     public double totalResponseTime;
     public double minResponseTime;
     public double maxResponseTime;
-    
+
     public int totalDecisions;
+
+    // Session timing
+    public float sessionStartRealtime;
+    public float sessionStartGameTime;
+    public float elapsedRealtime;
+    public float elapsedGameTime;
+    public float avgGameSpeed;
 }
 
 [Serializable]

@@ -32,6 +32,8 @@ public class VillagerBrain : MonoBehaviour
     private JobHandler _jobHandler;
     private float _idleTime;
     private float _lastAppliedDecisionTime;
+    private bool _waitingForBatch;
+    private int _restUntilEnergy; // 0 = no target; >0 = wait until villager reaches this % before requesting
 
     // Mini-goal tracking
     private int _gatherGoalAmount;
@@ -123,16 +125,12 @@ public class VillagerBrain : MonoBehaviour
             yield return new WaitForSeconds(checkInterval);
 
             // Check if we need to request a decision
-            if (ShouldRequestDecision())
+            if (!_waitingForBatch && ShouldRequestDecision())
             {
                 if (LLMController.Instance.UseBatchDecisions)
                 {
-                    // Request batch (will affect all villagers)
-                    if (!LLMController.Instance.IsBatchProcessing)
-                    {
-                        LogInfo($"{_villager.villagerName} triggering batch decision");
-                        LLMController.Instance.RequestImmediateBatchDecision();
-                    }
+                    _waitingForBatch = true;
+                    LLMController.Instance.TriggerDecision($"{_villager.villagerName} needs assignment");
                 }
                 else
                 {
@@ -155,6 +153,19 @@ public class VillagerBrain : MonoBehaviour
             currentState = "Exhausted — resting";
             _idleTime = 0f;
             return false; // Don't request a new decision yet, let them rest
+        }
+
+        // Check if an energy rest target has been reached
+        if (_restUntilEnergy > 0)
+        {
+            if (_villager.EnergyPercent >= _restUntilEnergy)
+            {
+                LogEvent($"{_villager.villagerName} energy recovered to {_villager.EnergyPercent}% (target was {_restUntilEnergy}%) — requesting new assignment");
+                _restUntilEnergy = 0;
+                _idleTime = 0f;
+                return true;
+            }
+            return false; // Still resting — suppress all other triggers
         }
 
         // Check if a gather mini-goal has been met
@@ -184,7 +195,7 @@ public class VillagerBrain : MonoBehaviour
         string status = _jobHandler.ActiveJobLogic?.GetCurrentStatus() ?? "Idle";
 
         // Job is waiting/stuck
-        if (status.Contains("Waiting") || status.Contains("No ") || status.Contains("found") || status.Contains("Storage full"))
+        if (status.Contains("Waiting") || status.Contains("No ") || status.Contains("not found") || status.Contains("Storage full"))
         {
             _idleTime += checkInterval;
             if (_idleTime >= idleTimeout)
@@ -244,17 +255,29 @@ public class VillagerBrain : MonoBehaviour
 
         lastDecision = decision;
         _lastAppliedDecisionTime = Time.time;
+        _idleTime = 0f;
+        _waitingForBatch = false;
 
         string targetInfo = decision.hasTargetArea ? $" at ({decision.targetX},{decision.targetY})" : "";
         string goalInfo = decision.gatherAmount > 0 ? $" [goal: {decision.gatherAmount}]" : "";
         LogEvent($"{_villager.villagerName} -> {decision.jobName}{targetInfo}{goalInfo}: {decision.reason}");
 
         ClearGatherGoal();
+        _restUntilEnergy = 0;
 
         if (decision.IsIdle || !decision.success)
         {
             _jobHandler.AssignJob(null);
-            currentState = "Idle";
+            if (decision.restUntilEnergy > 0)
+            {
+                _restUntilEnergy = Mathf.Clamp(decision.restUntilEnergy, 1, 100);
+                currentState = $"Resting until {_restUntilEnergy}% energy";
+                LogEvent($"{_villager.villagerName} rest target set: {_restUntilEnergy}%");
+            }
+            else
+            {
+                currentState = "Idle";
+            }
             return;
         }
 
