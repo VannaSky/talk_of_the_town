@@ -363,7 +363,7 @@ public class LLMController : MonoBehaviour
 
         if (villagers.Count == 0 || jobNames.Count == 0)
         {
-            if (pauseGameDuringLLM) Time.timeScale = _preLLMTimeScale;
+            if (pauseGameDuringLLM) RestoreGameSpeed();
             _isBatchProcessing = false;
             yield break;
         }
@@ -375,7 +375,7 @@ public class LLMController : MonoBehaviour
 
         _latestBatchDecisions = task.Result;
         _lastBatchDecisionTime = Time.realtimeSinceStartup;
-        if (pauseGameDuringLLM) Time.timeScale = _preLLMTimeScale;
+        if (pauseGameDuringLLM) RestoreGameSpeed();
         _isBatchProcessing = false;
 
         OnBatchDecisionMade?.Invoke(_latestBatchDecisions);
@@ -387,6 +387,24 @@ public class LLMController : MonoBehaviour
             TriggerDecision(_pendingTriggerReason);
         }
 
+    }
+
+    private void RestoreGameSpeed()
+    {
+        // If the game was already paused (manual pause) before the LLM ran, keep it paused.
+        // Otherwise restore via VillageState so the slider and label stay in sync.
+        if (_preLLMTimeScale == 0f)
+        {
+            Time.timeScale = 0f;
+        }
+        else if (VillageState.Instance != null)
+        {
+            VillageState.Instance.SetGameSpeed(VillageState.Instance.GameSpeed);
+        }
+        else
+        {
+            Time.timeScale = _preLLMTimeScale;
+        }
     }
 
     private List<string> GetAvailableJobNames()

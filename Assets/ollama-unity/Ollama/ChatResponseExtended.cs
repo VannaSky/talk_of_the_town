@@ -16,7 +16,8 @@ namespace ollama
         public List<SimpleChatMessage> messages;
         public bool stream;
         public int keep_alive;
-        public int num_ctx;
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public int? num_ctx;
     }
 
     [Serializable]
@@ -161,7 +162,7 @@ namespace ollama
                     messages = new List<SimpleChatMessage> { message },
                     stream = false,
                     keep_alive = keep_alive,
-                    num_ctx = num_ctx
+                    num_ctx = num_ctx > 0 ? num_ctx : (int?)null
                 };
 
                 string payload = JsonConvert.SerializeObject(request);
@@ -242,7 +243,7 @@ namespace ollama
                     messages = messages,
                     stream = false,
                     keep_alive = keep_alive,
-                    num_ctx = num_ctx
+                    num_ctx = num_ctx > 0 ? num_ctx : (int?)null
                 };
 
                 string payload = JsonConvert.SerializeObject(request);
@@ -263,7 +264,8 @@ namespace ollama
 
                 // Commit this turn only after a successful round trip,
                 // so a failed request does not poison the rolling window.
-                if (history != null)
+                // Skip empty responses to avoid poisoning history with blank assistant turns.
+                if (history != null && !string.IsNullOrEmpty(fullResponse.message.content))
                 {
                     history.AddUser(prompt, images);
                     history.AddAssistant(fullResponse.message.content);
