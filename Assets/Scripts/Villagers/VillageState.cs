@@ -44,6 +44,7 @@ public class VillageState : MonoBehaviour
     [SerializeField] private Transform villagerUIContainer;
     [SerializeField] private List<string> villagerNamePool = new List<string>();
     private int _villagerSpawnCount = 0;
+    private int _nextVillagerId = 0;
     
     // Local helper wrappers (as you use them now)
     void LogError(string msg)   => GameLog.LogError(LogCategory, msg, this);
@@ -148,10 +149,15 @@ public class VillageState : MonoBehaviour
     {
         if (villager != null && !villagers.Contains(villager))
         {
+            if (villager.VillagerId == 0)
+            {
+                _nextVillagerId++;
+                villager.AssignId(_nextVillagerId);
+            }
             villagers.Add(villager);
             OnVillagerRegistered?.Invoke(villager);
             SpawnVillagerUI(villager);
-            LogInfo($"Registered villager: {villager.villagerName}");
+            LogInfo($"Registered villager: [{villager.VillagerId}] {villager.villagerName}");
         }
     }
 
@@ -171,7 +177,7 @@ public class VillageState : MonoBehaviour
         if (villager != null && villagers.Remove(villager))
         {
             OnVillagerUnregistered?.Invoke(villager);
-            LogInfo($"Unregistered villager: {villager.villagerName}");
+            LogInfo($"Unregistered villager: [{villager.VillagerId}] {villager.villagerName}");
         }
     }
     
@@ -286,7 +292,7 @@ public class VillageState : MonoBehaviour
         }
 
         populationCap++;
-        LogInfo($"Spawned new villager '{go.name}' (population cap now {populationCap})");
+        LogInfo($"Spawned new villager [{villager?.VillagerId ?? 0}] '{go.name}' (population cap now {populationCap})");
     }
 
     private Vector3 FindNavMeshSpawnPoint(Vector3 origin)
@@ -468,6 +474,7 @@ public class VillageState : MonoBehaviour
             var data = v.GetData();
             snapshot.villagers.Add(new VillagerSnapshot
             {
+                id = data.id,
                 name = data.name,
                 x = data.x,
                 y = data.y,
@@ -506,7 +513,7 @@ public class VillageState : MonoBehaviour
         {
             if (v == null) continue;
             var d = v.GetData();
-            sb.AppendLine($"- {d.name} at ({d.x},{d.y}) [{d.tileType}]: {d.currentJob} (Lvl {d.jobLevel}) - {d.jobStatus}");
+            sb.AppendLine($"- [{d.id}] {d.name} at ({d.x},{d.y}) [{d.tileType}]: {d.currentJob} (Lvl {d.jobLevel}) - {d.jobStatus}");
         }
         
         return sb.ToString();
@@ -610,6 +617,7 @@ public class ResourceSnapshot
 [Serializable]
 public class VillagerSnapshot
 {
+    public int id;
     public string name;
     public int x;
     public int y;

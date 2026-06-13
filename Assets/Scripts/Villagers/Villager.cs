@@ -8,6 +8,9 @@ public class Villager : MonoBehaviour
 {
     [Header("Identity")]
     public string villagerName;
+    private int _villagerId;
+    public int VillagerId => _villagerId;
+    public void AssignId(int id) => _villagerId = id;
     
     [Header("References")]
     [SerializeField] private TileGrid tileGrid;
@@ -163,6 +166,7 @@ public class Villager : MonoBehaviour
     {
         return new VillagerData
         {
+            id = _villagerId,
             name = villagerName,
             x = currentGridPos.x,
             y = currentGridPos.y,
@@ -179,7 +183,7 @@ public class Villager : MonoBehaviour
     private void LogState()
     {
         var data = GetData();
-        LogInfo($"{data.name} at ({data.x},{data.y}) on {data.tileType}, " +
+        LogInfo($"[{data.id}] {data.name} at ({data.x},{data.y}) on {data.tileType}, " +
                 $"job={data.currentJob} (lvl {data.jobLevel}), status={data.jobStatus}");
     }
 #endif
@@ -191,6 +195,7 @@ public class Villager : MonoBehaviour
 [System.Serializable]
 public class VillagerData
 {
+    public int id;
     public string name;
     public int x;
     public int y;
