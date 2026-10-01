@@ -2,6 +2,8 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
+using System.Security.Cryptography;
+using System.Text;
 using Tiles;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -16,11 +18,16 @@ namespace Benchmark
     {
         [Header("Benchmark Configuration")]
         [Tooltip("LLM models to benchmark, each with its own think mode")]
-        [SerializeField] private ModelConfig[] models = {
-            new() { modelName = "gemma3:12b", thinkMode = ThinkMode.ModelDefault, contextSize = 32768 },
-            new() { modelName = "qwen3:8b", thinkMode = ThinkMode.Low },
-            new() { modelName = "gpt-oss:20b-cloud", thinkMode = ThinkMode.Low },
-            new() { modelName = "nemotron-3-super:cloud", thinkMode = ThinkMode.ModelDefault }
+        [SerializeField] private ModelConfig[] models = DefaultModels();
+
+        // Uniform 16K context so no model silently truncates the prompt at a small Ollama default.
+        // Thinking as low as each model allows: gpt-oss cannot turn it off (Low is its minimum), gemma has none.
+        private static ModelConfig[] DefaultModels() => new ModelConfig[]
+        {
+            new() { modelName = "gpt-oss:20b-cloud", thinkMode = ThinkMode.Low, promptStyle = PromptStyle.Lean, forceJsonFormat = true, contextSize = 16384 },
+            new() { modelName = "nemotron-3-super:cloud", thinkMode = ThinkMode.Off,promptStyle = PromptStyle.Lean, forceJsonFormat = true, contextSize = 16384 },
+            new() { modelName = "gemma3:12b", thinkMode = ThinkMode.ModelDefault, promptStyle = PromptStyle.Lean, forceJsonFormat = true, contextSize = 16384 },
+            new() { modelName = "qwen3.5:9b", thinkMode = ThinkMode.Off, promptStyle = PromptStyle.Lean, forceJsonFormat = true, contextSize = 16384 }
         };
 
         [Tooltip("Map filenames (.twcmap) in persistentDataPath")]
@@ -37,6 +44,28 @@ namespace Benchmark
 
         [Tooltip("Game speed during benchmark runs")]
         [SerializeField] private float benchmarkGameSpeed = 50f;
+
+        [Tooltip("Game seconds to collect further idle villagers into the same LLM call after the first one triggers")]
+        [SerializeField] private float decisionCollectWindowSeconds = 10f;
+
+        [Tooltip("Game seconds without any decision before a fallback LLM call fires")]
+        [SerializeField] private float fallbackIntervalSeconds = 30f;
+
+        [Header("Watchdog")]
+        [Tooltip("Abort the run as failed after this many LLM requests in a row failed (HTTP error, timeout)")]
+        [SerializeField] private int maxConsecutiveFailures = 5;
+
+        [Tooltip("Abort the run as failed after this many real-time minutes")]
+        [SerializeField] private float maxRealTimeMinutesPerRun = 90f;
+
+        [Tooltip("Real-time seconds to wait for the LLMController to become ready (includes a possible model pull)")]
+        [SerializeField] private float llmReadyTimeoutSeconds = 300f;
+
+        [Tooltip("Real-time seconds the idle detection keeps the game paused waiting for a decision before resuming anyway")]
+        [SerializeField] private float decisionWaitTimeoutSeconds = 120f;
+
+        [Tooltip("Seconds allowed per Ollama request before it is aborted")]
+        [SerializeField] private float requestTimeoutSeconds = 180f;
 
         [Header("Goal Sets (configure exact goals per preset in Inspector)")]
         [SerializeField] private GoalPreset[] goalPresets = {
@@ -89,7 +118,8 @@ namespace Benchmark
         public bool IsRunning => _isRunning;
         public BenchmarkRunConfig CurrentRun => _currentRun;
         public BenchmarkManifest Manifest => _manifest;
-        public int CompletedRunCount => _manifest?.runs.FindAll(r => r.status == RunStatus.Completed).Count ?? 0;
+        /// <summary>Runs that are finished, whether completed or failed.</summary>
+        public int CompletedRunCount => _manifest?.runs.FindAll(r => r.status == RunStatus.Completed || r.status == RunStatus.Failed).Count ?? 0;
         public int TotalRunCount => _manifest?.runs.Count ?? 0;
 
         private string ManifestPath => Path.Combine(Application.persistentDataPath, "BenchmarkRuns",
@@ -140,7 +170,8 @@ namespace Benchmark
 
         // Idle detection
         private bool _waitingForDecision;
-        private float _lastIdleDetectionTime;
+        private float _waitingForDecisionSince;
+        private float _lastIdleDetectionTime = float.NegativeInfinity;
 
         void Update()
         {
@@ -162,6 +193,27 @@ namespace Benchmark
                 return;
             }
 
+            // Watchdog: persistent LLM failures or a run that takes far too long in real time
+            if (LLMController.Instance != null && LLMController.Instance.ConsecutiveFailures >= maxConsecutiveFailures)
+            {
+                Debug.LogError($"[BenchmarkRunner] {LLMController.Instance.ConsecutiveFailures} LLM failures in a row — aborting run");
+                CompleteCurrentRun("error:llm_failures");
+                return;
+            }
+            if (Time.realtimeSinceStartup - _runStartRealTime > maxRealTimeMinutesPerRun * 60f)
+            {
+                Debug.LogError($"[BenchmarkRunner] Real-time limit of {maxRealTimeMinutesPerRun} min reached — aborting run");
+                CompleteCurrentRun("error:realtime_limit");
+                return;
+            }
+
+            // Never stay paused forever if the forced decision does not come back
+            if (_waitingForDecision && Time.realtimeSinceStartup - _waitingForDecisionSince > decisionWaitTimeoutSeconds)
+            {
+                Debug.LogWarning("[BenchmarkRunner] No decision after idle detection — resuming speed");
+                OnDecisionResumesSpeed(null);
+            }
+
             // When all villagers are idle and we're running at speed, pause and force a new LLM decision
             // But NOT if there are growing crops — villagers may be intentionally waiting for harvest
             // Cooldown of 30 game-seconds between idle detections to avoid spamming LLM when
@@ -171,13 +223,21 @@ namespace Benchmark
                 && Time.time - _lastIdleDetectionTime > 30f)
             {
                 _lastIdleDetectionTime = Time.time;
-                _waitingForDecision = true;
-                VillageState.Instance?.SetGameSpeed(0f);
 
+                // Only pause if a request actually started — otherwise nothing would resume the game
                 if (LLMController.Instance != null)
                 {
                     LLMController.Instance.OnBatchDecisionMade += OnDecisionResumesSpeed;
-                    LLMController.Instance.RequestImmediateBatchDecision();
+                    if (LLMController.Instance.RequestImmediateBatchDecision())
+                    {
+                        _waitingForDecision = true;
+                        _waitingForDecisionSince = Time.realtimeSinceStartup;
+                        VillageState.Instance?.SetGameSpeed(0f);
+                    }
+                    else
+                    {
+                        LLMController.Instance.OnBatchDecisionMade -= OnDecisionResumesSpeed;
+                    }
                 }
             }
         }
@@ -259,9 +319,18 @@ namespace Benchmark
         /// <summary>Start the full benchmark (or test run). Generates manifest if needed.</summary>
         public void StartBenchmark()
         {
-            if (_isRunning) return; // Prevent double-start
-            LoadOrGenerateManifest();
-            StartCoroutine(ConfigureAndStartNextRun());
+            if (_isRunning || _waitingForSceneReload) return; // Prevent double-start
+            if (!LoadOrGenerateManifest()) return;
+
+            // Reload the scene so the first run starts from the same clean state as all later runs
+            ReloadSceneForNextRun();
+        }
+
+        private void ReloadSceneForNextRun()
+        {
+            _waitingForSceneReload = true;
+            Time.timeScale = 1f; // Must be >0 for scene load to work
+            SceneManager.LoadScene("CombinedScene");
         }
 
         /// <summary>Skip the current run and move to the next.</summary>
@@ -301,6 +370,7 @@ namespace Benchmark
         }
 
         /// <summary>Force regenerate the manifest (clears all progress!).</summary>
+        [ContextMenu("Regenerate Manifest (clears progress!)")]
         public void RegenerateManifest()
         {
             _manifest = GenerateManifest();
@@ -310,7 +380,8 @@ namespace Benchmark
 
         // ── Manifest management ─────────────────────────────────────────
 
-        private void LoadOrGenerateManifest()
+        /// <summary>Loads or creates the manifest. Returns false if the stored manifest no longer matches the Inspector config.</summary>
+        private bool LoadOrGenerateManifest()
         {
             // In test mode, always regenerate so changing testModelIndex/testGoalPresetIndex takes effect
             if (testMode)
@@ -318,13 +389,24 @@ namespace Benchmark
                 _manifest = GenerateManifest();
                 SaveManifest();
                 Debug.Log($"[BenchmarkRunner] Test mode: generated fresh manifest with {_manifest.runs.Count} run(s)");
-                return;
+                return true;
             }
 
             if (File.Exists(ManifestPath))
             {
                 string json = File.ReadAllText(ManifestPath);
-                _manifest = JsonUtility.FromJson<BenchmarkManifest>(json);
+                var loaded = JsonUtility.FromJson<BenchmarkManifest>(json);
+
+                // The manifest freezes the config at generation time — refuse to run a stale one
+                string currentHash = ComputeConfigHash();
+                if (loaded.configHash != currentHash)
+                {
+                    Debug.LogError($"[BenchmarkRunner] Manifest at {ManifestPath} was generated from a different config " +
+                                   $"(stored hash '{loaded.configHash}', current '{currentHash}'). " +
+                                   "Use the context menu 'Regenerate Manifest' (clears progress) or restore the old Inspector values.");
+                    return false;
+                }
+                _manifest = loaded;
 
                 // Reset any runs left in Running state (interrupted by crash/restart) back to Pending
                 int reset = 0;
@@ -352,6 +434,28 @@ namespace Benchmark
                 SaveManifest();
                 Debug.Log($"[BenchmarkRunner] Generated new manifest: {_manifest.runs.Count} runs");
             }
+            return true;
+        }
+
+        /// <summary>Hash over everything that shapes the run matrix, so config changes invalidate an old manifest.</summary>
+        private string ComputeConfigHash()
+        {
+            var sb = new StringBuilder();
+            foreach (var m in models)
+                sb.Append($"{m.modelName}|{m.thinkMode}|{m.promptStyle}|{m.forceJsonFormat}|{m.maxOutputTokens}|{m.contextSize};");
+            foreach (var p in goalPresets)
+            {
+                sb.Append(p.label).Append(':');
+                foreach (var g in p.goals)
+                    sb.Append($"{g.type}/{g.targetResource}/{g.targetAmount},");
+                sb.Append(';');
+            }
+            sb.Append(string.Join(",", mapFiles)).Append(';').Append(string.Join(",", mapSizeLabels));
+            sb.Append(FormattableString.Invariant($";{repetitions};{cutoffTicks};{benchmarkGameSpeed};{decisionCollectWindowSeconds};{fallbackIntervalSeconds}"));
+
+            using var sha = SHA1.Create();
+            byte[] hash = sha.ComputeHash(Encoding.UTF8.GetBytes(sb.ToString()));
+            return BitConverter.ToString(hash, 0, 8).Replace("-", "").ToLowerInvariant();
         }
 
         private void SaveManifest()
@@ -368,6 +472,7 @@ namespace Benchmark
             var manifest = new BenchmarkManifest
             {
                 createdAt = DateTime.Now.ToString("o"),
+                configHash = ComputeConfigHash(),
                 runs = new List<BenchmarkRunConfig>()
             };
 
@@ -390,7 +495,8 @@ namespace Benchmark
                     mapSize = mapSizeLabels[mapIdx],
                     goals = new List<GoalConfig>(preset.goals),
                     repetition = 1,
-                    cutoffTicks = testCutoffTicks
+                    cutoffTicks = testCutoffTicks,
+                    gameSpeed = benchmarkGameSpeed
                 });
 
                 return manifest;
@@ -420,7 +526,8 @@ namespace Benchmark
                                 mapSize = mapSizeLabels[mapIdx],
                                 goals = new List<GoalConfig>(preset.goals),
                                 repetition = rep,
-                                cutoffTicks = cutoffTicks
+                                cutoffTicks = cutoffTicks,
+                                gameSpeed = benchmarkGameSpeed
                             });
                         }
                     }
@@ -491,10 +598,7 @@ namespace Benchmark
                 if (!navMeshReady)
                 {
                     Debug.LogError("[BenchmarkRunner] NavMesh timeout! Skipping run.");
-                    _currentRun.status = RunStatus.Failed;
-                    _currentRun.abortReason = "error:navmesh_timeout";
-                    SaveManifest();
-                    StartCoroutine(ConfigureAndStartNextRun());
+                    FailRunBeforeStart("error:navmesh_timeout");
                     yield break;
                 }
             }
@@ -507,13 +611,37 @@ namespace Benchmark
             // Wait a frame for Awake() to run on newly activated objects
             yield return null;
 
-            // Configure model and think mode
+            // Configure model and prompt style
             if (GlobalSettings.Instance != null)
             {
                 GlobalSettings.Instance.LLMModel = _currentRun.modelName;
                 if (Enum.TryParse<PromptStyle>(_currentRun.promptStyle, out var ps))
                     GlobalSettings.Instance.PromptStyle = ps;
             }
+
+            // The controller picks its model once during async init — wait for it, then set the run
+            // model explicitly and verify it, instead of relying on init timing or a silent fallback
+            float readyWaited = 0f;
+            while ((LLMController.Instance == null || !LLMController.Instance.IsReady) && readyWaited < llmReadyTimeoutSeconds)
+            {
+                readyWaited += Time.unscaledDeltaTime;
+                yield return null;
+            }
+            if (LLMController.Instance == null || !LLMController.Instance.IsReady)
+            {
+                Debug.LogError($"[BenchmarkRunner] LLMController not ready after {llmReadyTimeoutSeconds}s — failing run.");
+                FailRunBeforeStart("error:llm_not_ready");
+                yield break;
+            }
+            if (!LLMController.Instance.SetModel(_currentRun.modelName))
+            {
+                Debug.LogError($"[BenchmarkRunner] Model '{_currentRun.modelName}' is not available in Ollama " +
+                               $"(available: {string.Join(", ", LLMController.Instance.AvailableModels)}) — failing run.");
+                FailRunBeforeStart("error:model_unavailable");
+                yield break;
+            }
+
+            ollama.OllamaExtensions.RequestTimeoutSeconds = requestTimeoutSeconds;
 
             if (LLMController.Instance != null)
             {
@@ -522,6 +650,8 @@ namespace Benchmark
                 LLMController.Instance.ForceJsonFormat = _currentRun.forceJsonFormat;
                 LLMController.Instance.MaxOutputTokens = _currentRun.maxOutputTokens;
                 LLMController.Instance.ContextSize = _currentRun.contextSize;
+                LLMController.Instance.DecisionDebounceDelay = decisionCollectWindowSeconds;
+                LLMController.Instance.BatchDecisionInterval = fallbackIntervalSeconds;
                 Debug.Log($"[BenchmarkRunner] Config applied: model={_currentRun.modelName}, prompt={_currentRun.promptStyle}, think={_currentRun.thinkMode}, jsonFormat={_currentRun.forceJsonFormat}, maxTokens={_currentRun.maxOutputTokens}, ctx={_currentRun.contextSize}");
             }
             else
@@ -551,7 +681,22 @@ namespace Benchmark
 
             _isRunning = true;
             _runStartRealTime = Time.realtimeSinceStartup;
+            _lastIdleDetectionTime = float.NegativeInfinity; // Time.time restarted with the scene reload
             Debug.Log($"[BenchmarkRunner] Run {_currentRun.runId} started (paused until first LLM decision)");
+        }
+
+        /// <summary>Marks the current run failed before it started and moves on via a clean scene reload.</summary>
+        private void FailRunBeforeStart(string reason)
+        {
+            _currentRun.status = RunStatus.Failed;
+            _currentRun.completedAt = DateTime.Now.ToString("o");
+            _currentRun.abortReason = reason;
+            SaveManifest();
+
+            if (FindNextPendingRun() != null)
+                ReloadSceneForNextRun();
+            else
+                Debug.Log("[BenchmarkRunner] All benchmark runs completed!");
         }
 
         private void OnFirstDecisionSetSpeed(Dictionary<string, JobDecision> _)
@@ -596,7 +741,7 @@ namespace Benchmark
                 BenchmarkLogger.Instance.FinalizeRun(abortReason, sessionStats);
 
             // Update manifest
-            _currentRun.status = RunStatus.Completed;
+            _currentRun.status = abortReason.StartsWith("error:") ? RunStatus.Failed : RunStatus.Completed;
             _currentRun.completedAt = DateTime.Now.ToString("o");
             _currentRun.abortReason = abortReason;
             SaveManifest();
@@ -608,9 +753,7 @@ namespace Benchmark
             if (FindNextPendingRun() != null)
             {
                 // Reload scene for clean state, then start next run
-                _waitingForSceneReload = true;
-                Time.timeScale = 1f; // Must be >0 for scene load to work
-                SceneManager.LoadScene("CombinedScene");
+                ReloadSceneForNextRun();
             }
             else
             {
@@ -626,13 +769,7 @@ namespace Benchmark
         [ContextMenu("Reset Models to Defaults")]
         private void ResetModelsToDefaults()
         {
-            models = new[]
-            {
-                new ModelConfig { modelName = "gpt-oss:20b-cloud", thinkMode = ThinkMode.Low, forceJsonFormat = false, maxOutputTokens = 0 },
-                new ModelConfig { modelName = "nemotron-3-super:cloud", thinkMode = ThinkMode.Off, forceJsonFormat = true, maxOutputTokens = 0 },
-                new ModelConfig { modelName = "gemma3:12b", thinkMode = ThinkMode.ModelDefault, forceJsonFormat = true, maxOutputTokens = 0, contextSize = 32768 },
-                new ModelConfig { modelName = "qwen3:8b", thinkMode = ThinkMode.Off, forceJsonFormat = false, maxOutputTokens = 0 }
-            };
+            models = DefaultModels();
             Debug.Log("[BenchmarkRunner] Models reset to defaults");
         }
 

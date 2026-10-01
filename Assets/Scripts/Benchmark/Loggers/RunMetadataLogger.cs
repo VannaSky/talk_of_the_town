@@ -25,6 +25,14 @@ namespace Benchmark.Loggers
             {
                 runId = config.runId,
                 modelName = config.modelName,
+                thinkMode = config.thinkMode,
+                promptStyle = config.promptStyle,
+                forceJsonFormat = config.forceJsonFormat,
+                maxOutputTokens = config.maxOutputTokens,
+                contextSize = config.contextSize,
+                gameSpeed = config.gameSpeed,
+                unityVersion = Application.unityVersion,
+                gitCommit = ReadGitCommit(),
                 mapFile = config.mapFile,
                 mapSize = config.mapSize,
                 goals = config.goals,
@@ -97,7 +105,7 @@ namespace Benchmark.Loggers
             _metadata.endTime = DateTime.Now.ToString("o");
             _metadata.abortReason = abortReason;
             _metadata.finalTick = SimTickTracker.CurrentTick;
-            _metadata.elapsedGameTimeSeconds = Time.time;
+            _metadata.elapsedGameTimeSeconds = _metadata.finalTick * SimTickTracker.TickQuantum;
             _metadata.elapsedRealTimeSeconds = Time.realtimeSinceStartup - _startRealTime;
             _metadata.sessionStats = sessionStats;
 
@@ -105,12 +113,15 @@ namespace Benchmark.Loggers
             var llm = LLMController.Instance;
             if (llm != null)
             {
+                _metadata.actualModel = llm.CurrentModel;
                 _metadata.llmSettings = new LLMSettings
                 {
                     useConversationMemory = llm.UseConversationMemory,
                     memoryPairs = llm.MemoryPairs,
                     thinkMode = llm.CurrentThinkMode.ToString(),
                     contextSize = llm.ContextSize,
+                    decisionDebounceSeconds = llm.DecisionDebounceDelay,
+                    fallbackIntervalSeconds = llm.BatchDecisionInterval,
                     promptStyle = GlobalSettings.Instance != null ? GlobalSettings.Instance.PromptStyle.ToString() : "Normal"
                 };
             }
@@ -118,6 +129,31 @@ namespace Benchmark.Loggers
             string json = JsonUtility.ToJson(_metadata, true);
             string path = Path.Combine(_outputDir, "run_metadata.json");
             File.WriteAllText(path, json);
+        }
+
+        /// <summary>Reads the current commit from .git next to the Assets folder. "unknown" in builds or on failure.</summary>
+        private static string ReadGitCommit()
+        {
+            try
+            {
+                string gitDir = Path.Combine(Application.dataPath, "..", ".git");
+                string head = File.ReadAllText(Path.Combine(gitDir, "HEAD")).Trim();
+                if (!head.StartsWith("ref: ")) return head; // detached HEAD
+
+                string refName = head.Substring(5);
+                string refPath = Path.Combine(gitDir, refName);
+                if (File.Exists(refPath)) return File.ReadAllText(refPath).Trim();
+
+                // Ref may only exist in packed-refs
+                string packed = Path.Combine(gitDir, "packed-refs");
+                if (File.Exists(packed))
+                {
+                    var line = File.ReadAllLines(packed).FirstOrDefault(l => l.EndsWith(" " + refName));
+                    if (line != null) return line.Split(' ')[0];
+                }
+            }
+            catch (Exception) { /* fall through */ }
+            return "unknown";
         }
     }
 }

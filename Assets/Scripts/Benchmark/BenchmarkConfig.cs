@@ -16,7 +16,7 @@ namespace Benchmark
     /// <summary>
     /// A model with its per-model think mode setting.
     /// Non-reasoning models (llama, gemma, qwen2.5) should use ModelDefault.
-    /// Reasoning models (gpt-oss, qwen3) should use Low or another level.
+    /// gpt-oss supports levels (Low/Medium/High); on/off thinking models (qwen) use On or Off.
     /// </summary>
     [Serializable]
     public class ModelConfig
@@ -84,6 +84,7 @@ namespace Benchmark
         public List<GoalConfig> goals = new();
         public int repetition;       // 1 or 2
         public long cutoffTicks;     // max sim-ticks before forced abort
+        public float gameSpeed;      // Time.timeScale during the run
         public RunStatus status = RunStatus.Pending;
         public string completedAt;   // ISO 8601 timestamp
         public string abortReason;   // "goals_reached", "cutoff", "error:...", "skipped"
@@ -93,6 +94,7 @@ namespace Benchmark
     public class BenchmarkManifest
     {
         public string createdAt;
+        public string configHash;    // hash of the Inspector config the manifest was generated from
         public List<BenchmarkRunConfig> runs = new();
     }
 
@@ -142,6 +144,8 @@ namespace Benchmark
     public class TokenCount
     {
         public int prompt;
+        // Ollama quirk: local models with format=json leave thinking tokens out of eval_count, so this
+        // undercounts reasoning models (e.g. qwen3.5). Compare reasoning via responseTimeSeconds and thinkingChars.
         public int response;
         public int total;
     }
@@ -154,6 +158,12 @@ namespace Benchmark
         public string contextType; // "full" or "delta"
         public InputStateSnapshot inputState;
         public string rawResponse;
+        public string thinking;          // separate reasoning trace from Ollama (empty if none)
+        public int thinkingChars;        // length of thinking (token counts can miss it, see TokenCount)
+        public string doneReason;        // "stop", or "length" if truncated
+        public string actualModel;       // model name reported by Ollama
+        public string systemPromptFile;  // file in the run folder holding the system prompt used for this call
+        public string userPrompt;        // full context sent with this call
         public List<ParsedAssignment> parsedAssignments = new();
         public List<ParsedGoal> parsedGoals = new();
         public TokenCount tokenCount;
@@ -171,6 +181,8 @@ namespace Benchmark
         public string contextType; // "full" or "delta"
         public InputStateSnapshot inputState;
         public string rawResponse;
+        public string systemPrompt;
+        public string userPrompt;
         public Dictionary<string, JobDecision> parsedDecisions;
         public List<RawGoalDecision> parsedGoals;
         public LLMMetrics metrics;
@@ -212,6 +224,8 @@ namespace Benchmark
         public string thinkMode;
         public int contextSize;
         public string promptStyle;
+        public float decisionDebounceSeconds;  // game seconds collect window before a call
+        public float fallbackIntervalSeconds;  // game seconds before a fallback call
     }
 
     [Serializable]
@@ -219,6 +233,15 @@ namespace Benchmark
     {
         public string runId;
         public string modelName;
+        public string actualModel;       // model the LLMController actually used
+        public string thinkMode;
+        public string promptStyle;
+        public bool forceJsonFormat;
+        public int maxOutputTokens;
+        public int contextSize;
+        public float gameSpeed;
+        public string unityVersion;
+        public string gitCommit;
         public string mapFile;
         public string mapSize;
         public int mapSeed;
@@ -229,7 +252,7 @@ namespace Benchmark
         public string endTime;
         public string abortReason;
         public long finalTick;
-        public float elapsedGameTimeSeconds;
+        public float elapsedGameTimeSeconds; // finalTick * TickQuantum (game time since run start)
         public float elapsedRealTimeSeconds;
         public MapStatistics mapStats;
         public LLMSettings llmSettings;

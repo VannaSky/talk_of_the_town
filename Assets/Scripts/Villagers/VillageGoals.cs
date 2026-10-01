@@ -232,6 +232,10 @@ public class VillageGoals : MonoBehaviour
         });
     }
 #endif
+    protected virtual void OnOnGoalFailed(VillageGoal obj)
+    {
+        OnGoalFailed?.Invoke(obj);
+    }
 }
 
 #region Data Types

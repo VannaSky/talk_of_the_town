@@ -45,6 +45,9 @@ namespace ollama
         public string role;
         public string content;
         public string[] images;
+        /// <summary>Reasoning trace returned separately by Ollama when thinking is enabled.</summary>
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public string thinking;
     }
 
     /// <summary>Extended response with full metadata</summary>
@@ -156,6 +159,12 @@ namespace ollama
         private const string SERVER = "http://localhost:11434/";
         private const string CHAT_ENDPOINT = "api/chat";
 
+        /// <summary>
+        /// Max seconds to wait for a chat response. HttpWebRequest.Timeout is ignored by
+        /// GetResponseAsync, so the request is aborted manually once this elapses.
+        /// </summary>
+        public static float RequestTimeoutSeconds { get; set; } = 180f;
+
         /// <summary>Chat with full metadata response</summary>
         public static async Task<ChatResponse> ChatWithMetadataExt(
             string model,
@@ -200,16 +209,17 @@ namespace ollama
                 using (var streamWriter = new StreamWriter(await httpWebRequest.GetRequestStreamAsync()))
                     await streamWriter.WriteAsync(payload);
 
-                string result;
-                using (var httpResponse = await httpWebRequest.GetResponseAsync())
-                using (var streamReader = new StreamReader(httpResponse.GetResponseStream()))
-                    result = await streamReader.ReadToEndAsync();
+                string result = await ReadResponseWithTimeout(httpWebRequest);
+                if (result == null)
+                    return CreateErrorResponse($"Request timed out after {RequestTimeoutSeconds:F0}s");
 
                 var fullResponse = JsonConvert.DeserializeObject<ChatResponseExtended>(result);
 
                 return new ChatResponse
                 {
                     content = fullResponse.message.content,
+                    thinking = fullResponse.message.thinking,
+                    doneReason = fullResponse.doneReason,
                     model = fullResponse.model,
                     promptEvalCount = fullResponse.prompt_eval_count,
                     promptEvalDuration = fullResponse.prompt_eval_duration,
@@ -288,10 +298,9 @@ namespace ollama
                 using (var streamWriter = new StreamWriter(await httpWebRequest.GetRequestStreamAsync()))
                     await streamWriter.WriteAsync(payload);
 
-                string result;
-                using (var httpResponse = await httpWebRequest.GetResponseAsync())
-                using (var streamReader = new StreamReader(httpResponse.GetResponseStream()))
-                    result = await streamReader.ReadToEndAsync();
+                string result = await ReadResponseWithTimeout(httpWebRequest);
+                if (result == null)
+                    return CreateErrorResponse($"Request timed out after {RequestTimeoutSeconds:F0}s");
 
                 var fullResponse = JsonConvert.DeserializeObject<ChatResponseExtended>(result);
 
@@ -307,6 +316,8 @@ namespace ollama
                 return new ChatResponse
                 {
                     content = fullResponse.message.content,
+                    thinking = fullResponse.message.thinking,
+                    doneReason = fullResponse.doneReason,
                     model = fullResponse.model,
                     promptEvalCount = fullResponse.prompt_eval_count,
                     promptEvalDuration = fullResponse.prompt_eval_duration,
@@ -335,6 +346,24 @@ namespace ollama
             }
         }
 
+        /// <summary>Returns the response body, or null if the request exceeded RequestTimeoutSeconds.</summary>
+        private static async Task<string> ReadResponseWithTimeout(HttpWebRequest httpWebRequest)
+        {
+            var responseTask = httpWebRequest.GetResponseAsync();
+            var timeoutTask = Task.Delay(TimeSpan.FromSeconds(RequestTimeoutSeconds));
+            if (await Task.WhenAny(responseTask, timeoutTask) != responseTask)
+            {
+                httpWebRequest.Abort();
+                // Observe the faulted task so the abort exception is not reported as unobserved
+                _ = responseTask.ContinueWith(t => _ = t.Exception, TaskContinuationOptions.OnlyOnFaulted);
+                return null;
+            }
+
+            using (var httpResponse = await responseTask)
+            using (var streamReader = new StreamReader(httpResponse.GetResponseStream()))
+                return await streamReader.ReadToEndAsync();
+        }
+
         private static string Texture2Base64(Texture2D texture, bool fullQuality = true)
         {
             if (texture == null) return null;
@@ -347,6 +376,8 @@ namespace ollama
             {
                 content = $"Error: {error}",
                 model = "error",
+                isError = true,
+                errorMessage = error,
                 promptEvalCount = 0,
                 evalCount = 0,
                 promptEvalDuration = 0,
@@ -362,7 +393,13 @@ namespace ollama
     public class ChatResponse
     {
         public string content;
+        public string thinking;
+        public string doneReason;
         public string model;
+
+        /// <summary>True when the request failed (HTTP error, timeout, exception). content then holds the error text.</summary>
+        public bool isError;
+        public string errorMessage;
         
         public int promptEvalCount;
         public int evalCount;

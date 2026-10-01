@@ -23,7 +23,8 @@ namespace Benchmark
         private string _runOutputDir;
         private bool _isLogging;
         private bool _subscribedToLLM;
-        private bool _savedSystemPrompt;
+        private string _lastSystemPrompt;
+        private string _lastSystemPromptFile;
 
         // Sub-loggers
         private RunMetadataLogger _metadataLogger;
@@ -62,7 +63,8 @@ namespace Benchmark
 
             // Subscribe to LLM decisions
             _subscribedToLLM = false;
-            _savedSystemPrompt = false;
+            _lastSystemPrompt = null;
+            _lastSystemPromptFile = null;
             TrySubscribeToLLM();
 
             // Subscribe to world events
@@ -111,37 +113,32 @@ namespace Benchmark
 
         private void OnBatchDecisionLogged(BatchDecisionLog log)
         {
-            // Save the full system prompt once on the first LLM call
-            if (!_savedSystemPrompt && _runOutputDir != null)
-            {
-                _savedSystemPrompt = true;
-                try
-                {
-                    // Get available job names to build the prompt
-                    var jobNames = LLMController.Instance?.GetAvailableJobNames();
-                    int villagerCount = VillageState.Instance?.Villagers.Count ?? 2;
-                    if (jobNames != null)
-                    {
-                        var energyRates = (1f, 0.3f, 2f); // defaults
-                        var villagers = VillageState.Instance?.Villagers;
-                        if (villagers != null && villagers.Count > 0 && villagers[0] != null)
-                            energyRates = (villagers[0].EnergyDrainRate, villagers[0].EnergyWalkDrainRate, villagers[0].EnergyRecoveryRate);
+            SaveSystemPromptIfChanged(log);
 
-                        string buildingCosts = LLMController.Instance.GetBuildingCostsString();
-                        string prompt = LLMPromptNormal.BuildBatchSystemPrompt(jobNames, villagerCount, energyRates, buildingCosts);
-                        string path = System.IO.Path.Combine(_runOutputDir, "system_prompt.txt");
-                        System.IO.File.WriteAllText(path, prompt);
-                        Debug.Log($"[BenchmarkLogger] System prompt saved to: {path}");
-                    }
-                }
-                catch (System.Exception e)
-                {
-                    Debug.LogWarning($"[BenchmarkLogger] Failed to save system prompt: {e.Message}");
-                }
-            }
-
-            _decisionLogger?.LogDecision(log);
+            _decisionLogger?.LogDecision(log, _lastSystemPromptFile);
             _resourceLogger?.LogAtDecision(log.simTick);
+        }
+
+        /// <summary>
+        /// Writes the system prompt actually sent to the model. It embeds the villager count, so a new
+        /// file is written whenever it changes: system_prompt.txt first, then system_prompt_tick{N}.txt.
+        /// </summary>
+        private void SaveSystemPromptIfChanged(BatchDecisionLog log)
+        {
+            if (_runOutputDir == null || string.IsNullOrEmpty(log.systemPrompt)) return;
+            if (log.systemPrompt == _lastSystemPrompt) return;
+
+            string fileName = _lastSystemPrompt == null ? "system_prompt.txt" : $"system_prompt_tick{log.simTick}.txt";
+            try
+            {
+                File.WriteAllText(Path.Combine(_runOutputDir, fileName), log.systemPrompt);
+                _lastSystemPrompt = log.systemPrompt;
+                _lastSystemPromptFile = fileName;
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogWarning($"[BenchmarkLogger] Failed to save system prompt: {e.Message}");
+            }
         }
 
         /// <summary>

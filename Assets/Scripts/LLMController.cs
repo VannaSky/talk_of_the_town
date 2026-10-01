@@ -27,10 +27,10 @@ public class LLMController : MonoBehaviour
     [SerializeField] private int maxResourceLocationsToShow = 6;
 
     [Header("Batch Decision Settings")]
-    [Tooltip("Fallback interval for batch decisions when no events fire (seconds)")]
+    [Tooltip("Fallback interval for batch decisions when no events fire (game seconds)")]
     [SerializeField] private float batchDecisionInterval = 60f;
     [SerializeField] private bool useBatchDecisions = true;
-    [Tooltip("Seconds to wait after an event before triggering a decision (collects multiple events into one call)")]
+    [Tooltip("Game seconds to wait after an event before triggering a decision (collects multiple events into one call)")]
     [SerializeField] private float decisionDebounceDelay = 1f;
 
     [Header("Game Pause Settings")]
@@ -88,6 +88,10 @@ public class LLMController : MonoBehaviour
     public bool ForceJsonFormat { get => forceJsonFormat; set => forceJsonFormat = value; }
     public int MaxOutputTokens { get => maxOutputTokens; set => maxOutputTokens = value; }
     public int ContextSize { get => contextSize; set => contextSize = value; }
+    /// <summary>Game seconds to collect further triggers before a batch call fires.</summary>
+    public float DecisionDebounceDelay { get => decisionDebounceDelay; set => decisionDebounceDelay = value; }
+    /// <summary>Game seconds without any decision before the fallback call fires.</summary>
+    public float BatchDecisionInterval { get => batchDecisionInterval; set => batchDecisionInterval = value; }
     
     
     void LogError(string msg)   => GameLog.LogError(LogCategory, msg, this);
@@ -124,7 +128,11 @@ public class LLMController : MonoBehaviour
     private const int MaxRecentEvents = 8;
 
     public bool IsBatchProcessing => _isBatchProcessing;
-    public float TimeSinceLastBatch => Time.realtimeSinceStartup - _lastBatchDecisionTime;
+    /// <summary>Game-time seconds since the last batch decision (freezes while paused).</summary>
+    public float TimeSinceLastBatch => Time.time - _lastBatchDecisionTime;
+
+    /// <summary>Number of batch requests in a row that failed (HTTP error, timeout, exception). Reset on success.</summary>
+    public int ConsecutiveFailures { get; private set; }
 
     // Conversation memory
     private ollama.ConversationHistory _conversation;
@@ -273,7 +281,30 @@ public class LLMController : MonoBehaviour
     private void OnVillagerBecameIdle(JobHandler handler)
     {
         string status = handler.ActiveJobLogic?.GetCurrentStatus() ?? "no work";
-        TriggerDecision($"{handler.gameObject.name} idle: {status}");
+
+        // Same villager, same status, nothing changed in the village since its last trigger:
+        // a new call would get the same input and most likely the same answer, which re-triggers
+        // the same idle — a loop. Leave it to the next real change or the fallback interval.
+        string snapshot = BuildWorldSnapshot();
+        string key = handler.gameObject.name;
+        if (_lastIdleTrigger.TryGetValue(key, out var last) && last.status == status && last.snapshot == snapshot)
+        {
+            LogInfo($"Skipping repeated idle trigger for {key} (unchanged: {status})");
+            return;
+        }
+        _lastIdleTrigger[key] = (status, snapshot);
+
+        TriggerDecision($"{key} idle: {status}");
+    }
+
+    private readonly Dictionary<string, (string status, string snapshot)> _lastIdleTrigger = new();
+
+    /// <summary>Coarse village state used to detect whether anything changed between two idle triggers.</summary>
+    private string BuildWorldSnapshot()
+    {
+        var vs = VillageState.Instance;
+        if (vs == null) return "";
+        return $"{vs.Wood}:{vs.Stone}:{vs.Seeds}:{vs.Food}:{vs.InventoryCapacity}:{vs.Villagers.Count}:{CountFinishedBuildings()}";
     }
 
     private void OnVillageGoalCompleted(VillageGoal goal)
@@ -313,7 +344,8 @@ public class LLMController : MonoBehaviour
 
     private IEnumerator DebouncedDecision(string reason)
     {
-        yield return new WaitForSecondsRealtime(decisionDebounceDelay);
+        // Game time, so the debounce costs the same number of sim-ticks at any game speed
+        yield return new WaitForSeconds(decisionDebounceDelay);
         _pendingDecisionCoroutine = null;
         LogEvent($"Event-triggered decision: {reason}");
         if (_isBatchProcessing)
@@ -342,7 +374,8 @@ public class LLMController : MonoBehaviour
 
         while (true)
         {
-            yield return new WaitForSecondsRealtime(batchDecisionInterval);
+            // Game time, so the fallback fires after the same number of sim-ticks at any game speed
+            yield return new WaitForSeconds(batchDecisionInterval);
 
             if (!IsReady || VillageState.Instance == null || VillageState.Instance.Villagers.Count == 0)
                 continue;
@@ -357,12 +390,12 @@ public class LLMController : MonoBehaviour
         }
     }
 
-    public void RequestImmediateBatchDecision()
+    /// <summary>Starts a batch decision right away. Returns false if one is already running or the controller is not ready.</summary>
+    public bool RequestImmediateBatchDecision()
     {
-        if (!_isBatchProcessing && IsReady)
-        {
-            StartCoroutine(RequestBatchDecisions());
-        }
+        if (_isBatchProcessing || !IsReady) return false;
+        StartCoroutine(RequestBatchDecisions());
+        return true;
     }
 
     private IEnumerator RequestBatchDecisions()
@@ -392,7 +425,7 @@ public class LLMController : MonoBehaviour
             yield return null;
 
         _latestBatchDecisions = task.Result;
-        _lastBatchDecisionTime = Time.realtimeSinceStartup;
+        _lastBatchDecisionTime = Time.time;
         if (pauseGameDuringLLM) RestoreGameSpeed();
         _isBatchProcessing = false;
 
@@ -463,10 +496,10 @@ public class LLMController : MonoBehaviour
         };
 
         // Inject reasoning level directive for models that read it from the system prompt (e.g. gpt-oss)
-        if (thinkMode != ThinkMode.ModelDefault)
+        // Only for actual levels — Off/On are plain think:false/true and need no prompt text
+        if (thinkMode is ThinkMode.Low or ThinkMode.Medium or ThinkMode.High)
         {
-            string level = thinkMode == ThinkMode.Off ? "none" : thinkMode.ToString().ToLower();
-            prompt = $"Reasoning: {level}\n{prompt}";
+            prompt = $"Reasoning: {thinkMode.ToString().ToLower()}\n{prompt}";
         }
 
         return prompt;
@@ -562,6 +595,7 @@ public class LLMController : MonoBehaviour
             }
 
             bool isStuck = d.jobStatus == "Idle"
+                || d.jobStatus.StartsWith("Need ") // builder blocked by missing resources
                 || d.jobStatus.Contains("Waiting")
                 || d.jobStatus.Contains("No ")
                 || d.jobStatus.Contains("not found")
@@ -573,8 +607,8 @@ public class LLMController : MonoBehaviour
             string errorTag = "";
             if (d.jobStatus.Contains("already completed"))
                 errorTag = " !! PREVIOUS ASSIGNMENT FAILED: building at that location is already finished. Assign a DIFFERENT location or job !!";
-            else if (d.jobStatus.Contains("Waiting for resources"))
-                errorTag = " !! PREVIOUS ASSIGNMENT FAILED: not enough resources to build. Gather resources first !!";
+            else if (d.jobStatus.Contains("Waiting for resources") || (d.currentJob == "Builder" && d.jobStatus.StartsWith("Need ")))
+                errorTag = " !! PREVIOUS ASSIGNMENT FAILED: not enough resources to build. Assign a gathering job until the cost is covered !!";
             else if (d.jobStatus.Contains("No farm"))
                 errorTag = " !! PREVIOUS ASSIGNMENT FAILED: no completed Farm exists. Build a Farm first !!";
             else if (d.jobStatus.Contains("field cap") || d.jobStatus.Contains("Field limit"))
@@ -595,6 +629,7 @@ public class LLMController : MonoBehaviour
             if (v == null) continue;
             var d = v.GetData();
             bool isStuck = d.jobStatus == "Idle"
+                || d.jobStatus.StartsWith("Need ") // builder blocked by missing resources
                 || d.jobStatus.Contains("Waiting")
                 || d.jobStatus.Contains("No ")
                 || d.jobStatus.Contains("not found")
@@ -910,6 +945,7 @@ public class LLMController : MonoBehaviour
             }
 
             bool isStuck = d.jobStatus == "Idle"
+                || d.jobStatus.StartsWith("Need ") // builder blocked by missing resources
                 || d.jobStatus.Contains("Waiting")
                 || d.jobStatus.Contains("No ")
                 || d.jobStatus.Contains("not found")
@@ -926,8 +962,8 @@ public class LLMController : MonoBehaviour
             string errorTag = "";
             if (d.jobStatus.Contains("already completed"))
                 errorTag = " !! PREVIOUS ASSIGNMENT FAILED: building at that location is already finished. Assign a DIFFERENT location or job !!";
-            else if (d.jobStatus.Contains("Waiting for resources"))
-                errorTag = " !! PREVIOUS ASSIGNMENT FAILED: not enough resources to build. Gather resources first !!";
+            else if (d.jobStatus.Contains("Waiting for resources") || (d.currentJob == "Builder" && d.jobStatus.StartsWith("Need ")))
+                errorTag = " !! PREVIOUS ASSIGNMENT FAILED: not enough resources to build. Assign a gathering job until the cost is covered !!";
             else if (d.jobStatus.Contains("No farm"))
                 errorTag = " !! PREVIOUS ASSIGNMENT FAILED: no completed Farm exists. Build a Farm first !!";
             else if (d.jobStatus.Contains("field cap") || d.jobStatus.Contains("Field limit"))
@@ -1036,6 +1072,7 @@ public class LLMController : MonoBehaviour
             object thinkParam = thinkMode switch
             {
                 ThinkMode.Off => false,
+                ThinkMode.On => true,
                 ThinkMode.Low => "low",
                 ThinkMode.Medium => "medium",
                 ThinkMode.High => "high",
@@ -1054,6 +1091,12 @@ public class LLMController : MonoBehaviour
                 : await OllamaExtensions.ChatWithMetadataExt(defaultModel, fullPrompt, keepAliveSeconds, contextSize, null, thinkParam, formatParam, runtimeOptions);
             
             metrics.responseTime = (DateTime.Now - startTime).TotalSeconds;
+            if (chatResponse.isError)
+                throw new Exception(chatResponse.errorMessage);
+
+            metrics.actualModel = chatResponse.model;
+            metrics.thinking = chatResponse.thinking;
+            metrics.doneReason = chatResponse.doneReason;
             metrics.responseLength = chatResponse.content.Length;
             
             // Extract ACTUAL token counts from metadata
@@ -1084,6 +1127,7 @@ public class LLMController : MonoBehaviour
 
             metrics.success = true;
             metrics.decisionsCount = results.Count;
+            ConsecutiveFailures = 0;
         }
         catch (Exception e)
         {
@@ -1091,7 +1135,8 @@ public class LLMController : MonoBehaviour
             metrics.errorMessage = e.Message;
             metrics.responseTime = (DateTime.Now - startTime).TotalSeconds;
             
-            LogError($"Batch Error: {e.Message}");
+            ConsecutiveFailures++;
+            LogError($"Batch Error ({ConsecutiveFailures} in a row): {e.Message}");
 
             OnError?.Invoke(e.Message);
 
@@ -1176,6 +1221,8 @@ public class LLMController : MonoBehaviour
                 contextType = fullSnapshot ? "full" : "delta",
                 inputState = inputState,
                 rawResponse = rawResponseText,
+                systemPrompt = systemPrompt,
+                userPrompt = context,
                 parsedDecisions = results,
                 metrics = metrics
             });
@@ -1526,6 +1573,7 @@ public class LLMController : MonoBehaviour
         _sessionStats.totalPromptTokens += metrics.promptEvalCount;
         _sessionStats.totalResponseTokens += metrics.evalCount;
         _sessionStats.totalTokens += metrics.totalTokens;
+        _sessionStats.totalThinkingChars += metrics.thinking?.Length ?? 0;
         _sessionStats.totalResponseTime += metrics.responseTime;
         _sessionStats.totalDecisions += metrics.decisionsCount;
 
@@ -1747,14 +1795,14 @@ Response Times:
 
     public int CurrentRetainedPairs => _conversation?.PairCount ?? 0;
 
-    public void SetModel(string modelName)
+    /// <summary>Switches to the given model. Returns false if Ollama does not list it.</summary>
+    public bool SetModel(string modelName)
     {
-        if (_availableModels.Contains(modelName))
-        {
-            defaultModel = modelName;
-            ResetChat();
-            OnModelLoaded?.Invoke(modelName);
-        }
+        if (!_availableModels.Contains(modelName)) return false;
+        defaultModel = modelName;
+        ResetChat();
+        OnModelLoaded?.Invoke(modelName);
+        return true;
     }
 
     public void SetBatchMode(bool enabled)
@@ -1813,7 +1861,8 @@ public enum ThinkMode
     Off,
     Low,
     Medium,
-    High
+    High,
+    On // think:true — for models with on/off thinking only (e.g. qwen). Appended to keep serialized indices.
 }
 
 #region Data Classes
@@ -1912,6 +1961,10 @@ public class LLMMetrics
     public bool success;
     public int decisionsCount;
     public string errorMessage;
+
+    public string actualModel;   // model name reported back by Ollama
+    public string thinking;      // separate reasoning trace (null if none)
+    public string doneReason;    // "stop", or "length" if truncated by num_predict
 }
 
 [Serializable]
@@ -1924,6 +1977,7 @@ public class LLMSessionStats
     public int totalPromptTokens;
     public int totalResponseTokens;
     public int totalTokens;
+    public int totalThinkingChars; // thinking tokens are missing from eval_count for local models with format=json
 
     public double totalResponseTime;
     public double minResponseTime;

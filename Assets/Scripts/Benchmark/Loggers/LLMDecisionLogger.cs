@@ -22,7 +22,7 @@ namespace Benchmark.Loggers
             File.WriteAllText(_filePath, "");
         }
 
-        public void LogDecision(BatchDecisionLog log)
+        public void LogDecision(BatchDecisionLog log, string systemPromptFile)
         {
             var entry = new LLMDecisionLogEntry
             {
@@ -31,6 +31,12 @@ namespace Benchmark.Loggers
                 contextType = log.contextType,
                 inputState = log.inputState,
                 rawResponse = log.rawResponse,
+                thinking = log.metrics.thinking,
+                thinkingChars = log.metrics.thinking?.Length ?? 0,
+                doneReason = log.metrics.doneReason,
+                actualModel = log.metrics.actualModel,
+                systemPromptFile = systemPromptFile,
+                userPrompt = log.userPrompt,
                 tokenCount = new TokenCount
                 {
                     prompt = log.metrics.promptEvalCount,
