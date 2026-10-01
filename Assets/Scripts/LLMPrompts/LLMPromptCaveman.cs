@@ -35,7 +35,7 @@ JOBS REF:
 Lumberjack: TREE->wood (regrows)
 Miner: STONE(fast) or MINE SHAFT(infinite/slow). STONE first. permanent shaft miner only @10+ villagers
 Builder: FREE BUILD SITE only. cost consumed first. {costs}. House->spawns villager(+5w5s5seed10food). 1 builder unless rich
-Farmer: grass NEAR done Farm. 2seed/field->5food+1-3seed. NO Farm=NO fields(blocked). not on Farm tile. 2-3 farms enough
+Farmer: target listed FARM BUILDING coord(or adjacent). 2seed/field->5food+1-3seed. NO Farm=blocked. auto-finds free grass in radius, dont invent grass coords. 2-3 farms enough
 SeedGatherer: node->seeds
 IDLE: rest. energy0-100 -{drain}/s work -{walk}/s walk +{recover}/s idle. <30%slow <5%stop. full~{recoverySecs}s. set restUntilEnergy to auto-resume
 
@@ -53,7 +53,6 @@ CONSTRAINTS:
 - 1 villager/coord. never 2 same tile. same resource->diff nodes
 - [KEEP]=stay unless resource [SURPLUS]. only reassign [NEEDS ASSIGNMENT]. no job swaps w/o reason
 - Builder needs buildingType + FREE BUILD SITE coord. never on occupied tile
-- failed build coord -> never reuse. pick different FREE BUILD SITE
 - only coords from live context lists
 
 gatherAmount: set exact units so villager stops+frees up (no overfill). omit=indefinite.

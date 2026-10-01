@@ -256,6 +256,17 @@ public class VillagerBrain : MonoBehaviour
     {
         if (decision == null) return;
 
+        // Reject reassignment if this villager is a builder actively constructing
+        string activeStatus = _jobHandler.ActiveJobLogic?.GetCurrentStatus() ?? "";
+        if (_jobHandler.currentJob != null
+            && _jobHandler.currentJob.JobName == "Builder"
+            && activeStatus.StartsWith("Building "))
+        {
+            LogInfo($"{_villager.villagerName} ignoring LLM reassignment — currently building ({activeStatus})");
+            _waitingForBatch = false;
+            return;
+        }
+
         lastDecision = decision;
         _lastAppliedDecisionTime = Time.time;
         _idleTime = 0f;

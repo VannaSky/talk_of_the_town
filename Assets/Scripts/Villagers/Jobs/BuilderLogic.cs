@@ -139,7 +139,7 @@ public class BuilderLogic : JobLogic
         {
             var buildingData = PickBuildingData(handler);
 
-            // Check resources BEFORE placing foundation — don't create orphaned construction sites
+            // Check and SPEND resources BEFORE placing foundation — don't create orphaned construction sites
             if (buildingData != null && buildingData.levels.Count > 0)
             {
                 var levelData = buildingData.levels[0];
@@ -154,6 +154,12 @@ public class BuilderLogic : JobLogic
                     ChangeState(AnimationState.Idle, handler);
                     return;
                 }
+
+                // Spend resources immediately so nothing else can claim them
+                VillageState.Instance.TrySpendResource(ResourceType.Wood, levelData.woodCost);
+                VillageState.Instance.TrySpendResource(ResourceType.Stone, levelData.stoneCost);
+                if (levelData.foodCost > 0)
+                    VillageState.Instance.TrySpendResource(ResourceType.Food, levelData.foodCost);
             }
 
             var placementTile = _targetTile;
@@ -172,6 +178,8 @@ public class BuilderLogic : JobLogic
             }
 
             _currentTarget.Reserve();
+            // Mark resources as paid so TryConsumeResourcesForCurrentLevel() is a no-op
+            _currentTarget.resourcesPaidForCurrentLevel = true;
         }
 
         // Consume resources once before starting to build the current level

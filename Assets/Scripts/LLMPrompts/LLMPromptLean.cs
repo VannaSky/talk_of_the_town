@@ -43,7 +43,7 @@ JOB REFERENCE (job | where / cost | yield or key constraint):
 Lumberjack   | TREE coord                    | wood (trees regrow, renewable)
 Miner        | STONE coord (fast) or MINE SHAFT (infinite, slow) | stone. STONE first; permanent MINE SHAFT miner only at 10+ villagers
 Builder      | FREE BUILD SITE coord         | places+builds. Cost consumed first. {costs}. House spawns a villager (+5w+5s+5seed+10food). ONE builder at a time unless resources abundant
-Farmer       | grass NEAR a completed Farm   | 5 food +1-3 seeds. Costs 2 seeds/field. BLOCKED with no Farm (no Farm = no fields). Never target the Farm tile itself. 2-3 Farms is plenty
+Farmer       | target a listed FARM BUILDING coord (or adjacent) | 5 food +1-3 seeds. Costs 2 seeds/field. BLOCKED with no Farm. Farmer auto-finds free grass in the Farm radius — don't invent grass coords. 2-3 Farms is plenty
 SeedGatherer | seed node coord               | seeds
 IDLE         | rest                          | energy 0-100: -{drain}/s work, -{walk}/s walk, +{recover}/s idle. <30% = slow, <5% = stops. Full recovery ~{recoverySecs}s. Set restUntilEnergy to auto-resume
 
@@ -63,7 +63,6 @@ Decide each villager top-down. The FIRST rule that matches wins — do not keep 
 - One villager per coordinate. Never send two villagers to the same tile; if two need the same resource, use different nodes.
 - Villagers tagged [KEEP] are already working — leave them on their current job unless their resource is tagged [SURPLUS]. Only freely reassign villagers tagged [NEEDS ASSIGNMENT]. Never swap two villagers' jobs without a specific reason.
 - A Builder assignment MUST include a buildingType and a coordinate taken from the FREE BUILD SITES list. Never build on an occupied tile.
-- If a previous Builder assignment failed (see error tags), NEVER re-issue the same coordinate. Choose a different FREE BUILD SITE.
 - Use ONLY coordinates that appear in the live context lists.
 
 gatherAmount: on any Lumberjack/Miner/SeedGatherer/Farmer, set it to the exact units needed so the villager stops and frees up instead of overfilling storage. Omit only for intentional indefinite gathering.

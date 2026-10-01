@@ -553,6 +553,14 @@ public class LLMController : MonoBehaviour
         {
             if (v == null) continue;
             var d = v.GetData();
+
+            // Builders actively constructing are not assignable — they will finish automatically
+            if (d.currentJob == "Builder" && d.jobStatus.StartsWith("Building "))
+            {
+                sb.AppendLine($"- {d.name} [BUSY]: {d.jobStatus} — will finish automatically, do NOT reassign");
+                continue;
+            }
+
             bool isStuck = d.jobStatus == "Idle"
                 || d.jobStatus.Contains("Waiting")
                 || d.jobStatus.Contains("No ")
@@ -893,6 +901,14 @@ public class LLMController : MonoBehaviour
         {
             if (v == null) continue;
             var d = v.GetData();
+
+            // Builders actively constructing are not assignable — they will finish automatically
+            if (d.currentJob == "Builder" && d.jobStatus.StartsWith("Building "))
+            {
+                sb.AppendLine($"- {d.name} [BUSY]: {d.jobStatus} — will finish automatically, do NOT reassign");
+                continue;
+            }
+
             bool isStuck = d.jobStatus == "Idle"
                 || d.jobStatus.Contains("Waiting")
                 || d.jobStatus.Contains("No ")
