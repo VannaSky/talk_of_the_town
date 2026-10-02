@@ -447,7 +447,7 @@ MonoBehaviour:
   maxEnergy: 100
   energyDrainRate: 1
   energyWalkDrainRate: 0.3
-  energyRecoveryRate: 0.2
+  energyRecoveryRate: 0.4
   currentGridPos: {x: 0, y: 0}
 --- !u!114 &6186792565546169701
 MonoBehaviour:

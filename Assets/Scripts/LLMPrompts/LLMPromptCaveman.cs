@@ -46,16 +46,18 @@ DECISION (each villager top-down, FIRST match wins, stop):
    pop goal: 0 Farms->Builder Farm(no food cost). elif food LOW->1 Farmer. elif free house slots=0->Builder House. else->gather House bottleneck
    resource goal: only that resource's nodes
 4. Farm exists AND seeds>=10 AND food not NEARLY FULL/BLOCKED ->1 Farmer(max1 on pop goal)
-5. any [LOW] resource ->matching gatherer, gatherAmount=clear shortage
+5. any [LOW] resource ->matching gatherer, gatherAmount=next 1-2 buildings+buffer
 6. else->gather scarcest non-[SURPLUS]. never leave [NEEDS ASSIGNMENT] unassigned
 
 CONSTRAINTS:
 - 1 villager/coord. never 2 same tile. same resource->diff nodes
 - [KEEP]=stay unless resource [SURPLUS]. only reassign [NEEDS ASSIGNMENT]. no job swaps w/o reason
-- Builder needs buildingType + FREE BUILD SITE coord. never on occupied tile
+- NEW building only if ✓ in AFFORDABLE NOW, else gather shortfall
+- Builder needs buildingType + FREE BUILD SITE coord. never on occupied tile. STALLED building (paid) -> target its own coord to finish
+- [RESTING]/[BUSY] -> not assignable, they ask by themselves
 - only coords from live context lists
 
-gatherAmount: set exact units so villager stops+frees up (no overfill). omit=indefinite.
+gatherAmount: next 1-2 buildings+buffer, 20-40 > 5 (each done goal = new call). max=free storage. omit=needed nonstop.
 goals(opt): ""goals"" replaces existing. type=GatherResource(Wood/Stone/Seed/Food)/ReachPopulation, amount, priority Low/Normal/High/Critical, description.
 reason=how job advances researcher goal (or village need).
 

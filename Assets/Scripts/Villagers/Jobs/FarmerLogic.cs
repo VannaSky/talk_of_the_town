@@ -105,9 +105,16 @@ public class FarmerLogic : JobLogic
             }
         }
 
-        currentStatus = _targetCrop == null && !HasRequiredSeeds()
-            ? $"Need {seedCost} seeds! Have: {VillageState.Instance?.Seeds ?? 0}. Waiting..."
-            : "No crops or planting spots. Waiting...";
+        int fieldCap = VillageState.Instance?.FieldCapacity ?? 0;
+        int planted = fieldCap > 0 ? CountPlantedCrops() : 0;
+        if (fieldCap > 0 && planted >= fieldCap)
+            // Not stuck: every field is growing and ExecuteIdle re-checks for mature crops each second.
+            // Worded without "Waiting"/"No " so neither the brain nor the prompt flag it as needing a job.
+            currentStatus = $"Tending fields ({planted}/{fieldCap} growing) — harvests automatically when mature";
+        else
+            currentStatus = _targetCrop == null && !HasRequiredSeeds()
+                ? $"Need {seedCost} seeds! Have: {VillageState.Instance?.Seeds ?? 0}. Waiting..."
+                : "No crops or planting spots. Waiting...";
         handler.villagerMover.StopMoving();
         ChangeState(AnimationState.Idle, handler);
     }

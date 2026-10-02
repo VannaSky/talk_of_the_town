@@ -35,6 +35,7 @@ public class Villager : MonoBehaviour
 
     // Cached references
     private JobHandler _jobHandler;
+    private VillagerBrain _brain;
     private Tile _currentTile;
     
     // Public accessors
@@ -65,6 +66,7 @@ public class Villager : MonoBehaviour
     void Awake()
     {
         _jobHandler = GetComponent<JobHandler>();
+        _brain = GetComponent<VillagerBrain>();
 
         if (string.IsNullOrEmpty(villagerName))
             villagerName = gameObject.name;
@@ -174,7 +176,8 @@ public class Villager : MonoBehaviour
             jobStatus = GetCurrentJobStatus(),
             jobLevel = _jobHandler?.GetCurrentJobLevel() ?? 0,
             tileType = _currentTile?.Archetype?.Style.ToString() ?? "Unknown",
-            energy = EnergyPercent
+            energy = EnergyPercent,
+            restTarget = _brain != null ? _brain.RestUntilEnergy : 0
         };
     }
 
@@ -204,4 +207,5 @@ public class VillagerData
     public int jobLevel;
     public string tileType;
     public int energy;
+    public int restTarget; // 0 = not resting; >0 = resting until this energy %
 }

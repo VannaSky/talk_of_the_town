@@ -55,7 +55,7 @@ public class LLMController : MonoBehaviour
 
     [Header("Memory Settings")]
     [Tooltip("Number of past user/assistant message pairs to retain. 0 = stateless.")]
-    [SerializeField] private int memoryPairs = 3;
+    [SerializeField] private int memoryPairs = 2;
     [SerializeField] private bool useConversationMemory = true;
     [Tooltip("Pinned system message sent on every call. Leave empty to omit.")]
     [SerializeField, TextArea(2, 6)] private string pinnedSystemMessage = "";
@@ -109,6 +109,7 @@ public class LLMController : MonoBehaviour
     private string _currentTriggerReason = "startup";
     private Dictionary<string, JobDecision> _latestBatchDecisions = new ();
     private float _lastBatchDecisionTime;
+    private float _lastBatchStartTime = float.NegativeInfinity;
     private Coroutine _pendingDecisionCoroutine;
 
     // State tracking for delta context
@@ -282,6 +283,14 @@ public class LLMController : MonoBehaviour
     {
         string status = handler.ActiveJobLogic?.GetCurrentStatus() ?? "no work";
 
+        // Job logics also pass through their idle state while working normally (a Farmer re-checks its
+        // growing fields every second). Only a stuck status is worth asking the LLM about.
+        if (!IsStuckStatus(status))
+        {
+            LogInfo($"Ignoring idle event for {handler.gameObject.name} (not stuck: {status})");
+            return;
+        }
+
         // Same villager, same status, nothing changed in the village since its last trigger:
         // a new call would get the same input and most likely the same answer, which re-triggers
         // the same idle — a loop. Leave it to the next real change or the fallback interval.
@@ -304,7 +313,151 @@ public class LLMController : MonoBehaviour
     {
         var vs = VillageState.Instance;
         if (vs == null) return "";
-        return $"{vs.Wood}:{vs.Stone}:{vs.Seeds}:{vs.Food}:{vs.InventoryCapacity}:{vs.Villagers.Count}:{CountFinishedBuildings()}";
+        string goals = VillageGoals.Instance != null
+            ? string.Join(",", VillageGoals.Instance.ActiveGoals.Select(g => g.description))
+            : "";
+        return $"{vs.Wood}:{vs.Stone}:{vs.Seeds}:{vs.Food}:{vs.InventoryCapacity}:{vs.Villagers.Count}:{CountFinishedBuildings()}:{goals}";
+    }
+
+    /// <summary>
+    /// Village state that can change a decision, compared between batches. Raw resource amounts are
+    /// left out on purpose: working gatherers change them all the time, so every fallback would fire.
+    /// Affordability is tracked separately in <see cref="GetNewlyAffordable"/>.
+    /// </summary>
+    private string BuildDecisionSnapshot()
+    {
+        var vs = VillageState.Instance;
+        if (vs == null) return "";
+        string goals = VillageGoals.Instance != null
+            ? string.Join(",", VillageGoals.Instance.ActiveGoals.Select(g => g.description))
+            : "";
+        return $"{vs.InventoryCapacity}:{vs.Villagers.Count}:{CountFinishedBuildings()}:{goals}";
+    }
+
+    private HashSet<Buildings.BuildingType> GetAffordableTypes() =>
+        new(GetAffordability().Where(a => a.missing.Count == 0).Select(a => a.type));
+
+    /// <summary>
+    /// Building types that are affordable now but were not at the last batch. Only this direction opens
+    /// a new option; a building dropping to unaffordable is usually the villagers' own spending.
+    /// </summary>
+    private List<Buildings.BuildingType> GetNewlyAffordable() =>
+        GetAffordableTypes().Where(t => !_lastBatchAffordable.Contains(t)).ToList();
+
+    /// <summary>Missing resources per building type for a new foundation (empty list = affordable now).</summary>
+    private List<(Buildings.BuildingType type, List<string> missing)> GetAffordability()
+    {
+        var result = new List<(Buildings.BuildingType, List<string>)>();
+        var vs = VillageState.Instance;
+        if (vs == null) return result;
+        foreach (var data in Resources.LoadAll<BuildingData>(""))
+        {
+            if (data.levels == null || data.levels.Count == 0) continue;
+            var level = data.levels[0];
+            var missing = new List<string>();
+            if (vs.Wood < level.woodCost) missing.Add($"{level.woodCost - vs.Wood} wood");
+            if (vs.Stone < level.stoneCost) missing.Add($"{level.stoneCost - vs.Stone} stone");
+            if (vs.Food < level.foodCost) missing.Add($"{level.foodCost - vs.Food} food");
+            result.Add((data.buildingType, missing));
+        }
+        return result;
+    }
+
+    /// <summary>Job statuses that mean the villager has nothing useful to do and needs a new assignment.</summary>
+    private static bool IsStuckStatus(string status) =>
+        status == "Idle"
+        || status.StartsWith("Need ") // builder blocked by missing resources
+        || status.Contains("Waiting")
+        || status.Contains("No ")
+        || status.Contains("not found")
+        // "Looking for work." is only the initial status of a freshly assigned job, not a stuck one
+        || status.Contains("already completed")
+        || status.Contains("Storage full") // gatherer cannot deposit — needs a Stockpile or another job
+        || status.Contains("Failed");
+
+    private static bool IsBusyBuilder(VillagerData d) => d.currentJob == "Builder" && d.jobStatus.StartsWith("Building ");
+
+    // Snapshot of the village when the last batch was built, to tell whether a fallback would see anything new
+    private string _lastBatchSnapshot = "";
+    private HashSet<Buildings.BuildingType> _lastBatchAffordable = new();
+
+    // Villager states the last batch prompt showed, so a villager stuck in the same state is not re-sent
+    // to the LLM again and again (e.g. a Lumberjack re-assigned while every tree is regrowing)
+    private readonly Dictionary<string, string> _lastSeenStatus = new();
+
+    /// <summary>Raised when an event trigger is dropped without a call, so brains waiting on it can re-arm.</summary>
+    public event Action OnTriggerDropped;
+
+    private static string SeenKey(VillagerData d) => d.restTarget > 0 ? "[resting]" : d.jobStatus;
+
+    /// <summary>
+    /// Called when a decision actually switched the villager to another job. If it later falls back into
+    /// the state the LLM saw (e.g. Idle → Builder → exhausted → Idle), that is a new situation, not a repeat.
+    /// </summary>
+    public void ForgetSeenStatus(string villagerName) => _lastSeenStatus.Remove(villagerName);
+
+    private void RememberSeenStatuses()
+    {
+        _lastSeenStatus.Clear();
+        foreach (var v in VillageState.Instance.Villagers)
+        {
+            if (v == null) continue;
+            var d = v.GetData();
+            _lastSeenStatus[d.name] = SeenKey(d);
+        }
+    }
+
+    // A fallback is skipped while nothing changed, but at most this many intervals in a row while
+    // villagers are working — a safety net in case a job hangs in a state that is not detected as stuck.
+    private const float FallbackMaxSkipIntervals = 4f;
+
+    /// <summary>True if at least one villager could act on a decision (not resting, not busy building).</summary>
+    private bool AnyAssignableVillager()
+    {
+        foreach (var v in VillageState.Instance.Villagers)
+        {
+            if (v == null) continue;
+            var d = v.GetData();
+            if (d.restTarget == 0 && !IsBusyBuilder(d)) return true;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Decides whether a batch would see anything new. Used for the fallback interval and for triggers
+    /// queued while a batch was running (the batch already covered every villager). A call is only
+    /// useful if a villager can act on it and either needs a job or the village changed since the last
+    /// batch. Resting villagers and busy builders end their state on their own and trigger a decision then.
+    /// </summary>
+    private bool IsBatchUseful(bool allowHeartbeat, out string reason)
+    {
+        if (!AnyAssignableVillager()) { reason = "all villagers resting or building"; return false; }
+
+        foreach (var v in VillageState.Instance.Villagers)
+        {
+            if (v == null) continue;
+            var d = v.GetData();
+            if (d.restTarget > 0 || IsBusyBuilder(d)) continue;
+            if (!IsStuckStatus(d.jobStatus)) continue;
+            // The LLM already decided on this villager in exactly this state — asking again gets the same answer
+            if (_lastSeenStatus.TryGetValue(d.name, out var seen) && seen == SeenKey(d)) continue;
+            reason = $"{d.name} needs assignment ({d.jobStatus})";
+            return true;
+        }
+
+        var newlyAffordable = GetNewlyAffordable();
+        if (newlyAffordable.Count > 0) { reason = $"now affordable: {string.Join(", ", newlyAffordable)}"; return true; }
+
+        if (BuildDecisionSnapshot() != _lastBatchSnapshot) { reason = "buildings, capacity or goals changed"; return true; }
+
+        if (allowHeartbeat && TimeSinceLastBatch >= batchDecisionInterval * FallbackMaxSkipIntervals)
+        {
+            reason = $"no call for {TimeSinceLastBatch:F0}s (safety heartbeat)";
+            return true;
+        }
+
+        reason = "all villagers working, nothing changed";
+        return false;
     }
 
     private void OnVillageGoalCompleted(VillageGoal goal)
@@ -344,10 +497,10 @@ public class LLMController : MonoBehaviour
 
     private IEnumerator DebouncedDecision(string reason)
     {
+        float scheduledAt = Time.time;
         // Game time, so the debounce costs the same number of sim-ticks at any game speed
         yield return new WaitForSeconds(decisionDebounceDelay);
         _pendingDecisionCoroutine = null;
-        LogEvent($"Event-triggered decision: {reason}");
         if (_isBatchProcessing)
         {
             // A batch started while we were waiting — queue for after it finishes.
@@ -355,6 +508,18 @@ public class LLMController : MonoBehaviour
             _pendingTriggerReason = reason;
             yield break;
         }
+        // Drop the trigger if the call would show the LLM nothing new: nobody can act (resting / building
+        // end on their own), a batch during the debounce already covered it, or the villager is stuck in
+        // the same state the LLM already decided on
+        if (!IsBatchUseful(false, out string usefulReason))
+        {
+            _sessionStats.skippedTriggers++;
+            string covered = _lastBatchStartTime >= scheduledAt ? ", a batch ran during the debounce" : "";
+            LogInfo($"Event trigger dropped ({usefulReason}{covered}): {reason}");
+            OnTriggerDropped?.Invoke();
+            yield break;
+        }
+        LogEvent($"Event-triggered decision: {reason}");
         _currentTriggerReason = reason;
         yield return RequestBatchDecisions();
     }
@@ -365,10 +530,13 @@ public class LLMController : MonoBehaviour
     {
         yield return new WaitForSecondsRealtime(2f);
 
-        // Fire once immediately at startup so the game doesn't wait the full interval.
-        if (IsReady && VillageState.Instance != null && VillageState.Instance.Villagers.Count > 0)
+        // Fire once immediately at startup so the game doesn't wait the full interval —
+        // unless a batch already ran (the benchmark runner requests one as soon as all villagers are idle).
+        if (IsReady && VillageState.Instance != null && VillageState.Instance.Villagers.Count > 0
+            && float.IsNegativeInfinity(_lastBatchStartTime))
         {
             LogEvent("Startup batch decision.");
+            _currentTriggerReason = "startup";
             yield return RequestBatchDecisions();
         }
 
@@ -384,16 +552,24 @@ public class LLMController : MonoBehaviour
             if (TimeSinceLastBatch < batchDecisionInterval * 0.9f)
                 continue;
 
-            LogEvent($"Fallback interval triggered batch decision.");
-            _currentTriggerReason = "fallback_interval";
+            if (!IsBatchUseful(true, out string fallbackReason))
+            {
+                _sessionStats.skippedFallbacks++;
+                LogInfo($"Fallback interval skipped: {fallbackReason}");
+                continue;
+            }
+
+            LogEvent($"Fallback interval triggered batch decision ({fallbackReason}).");
+            _currentTriggerReason = $"fallback_interval: {fallbackReason}";
             yield return RequestBatchDecisions();
         }
     }
 
     /// <summary>Starts a batch decision right away. Returns false if one is already running or the controller is not ready.</summary>
-    public bool RequestImmediateBatchDecision()
+    public bool RequestImmediateBatchDecision(string reason = "immediate_request")
     {
         if (_isBatchProcessing || !IsReady) return false;
+        _currentTriggerReason = reason;
         StartCoroutine(RequestBatchDecisions());
         return true;
     }
@@ -403,6 +579,8 @@ public class LLMController : MonoBehaviour
         if (_isBatchProcessing) yield break;
 
         _isBatchProcessing = true;
+        _lastBatchStartTime = Time.time;
+        RememberSeenStatuses();
         if (pauseGameDuringLLM)
         {
             _preLLMTimeScale = Time.timeScale;
@@ -425,6 +603,9 @@ public class LLMController : MonoBehaviour
             yield return null;
 
         _latestBatchDecisions = task.Result;
+        // Taken after the batch so the goals it just set do not count as a change next time
+        _lastBatchSnapshot = BuildDecisionSnapshot();
+        _lastBatchAffordable = GetAffordableTypes();
         _lastBatchDecisionTime = Time.time;
         if (pauseGameDuringLLM) RestoreGameSpeed();
         _isBatchProcessing = false;
@@ -432,10 +613,19 @@ public class LLMController : MonoBehaviour
         OnBatchDecisionMade?.Invoke(_latestBatchDecisions);
 
         // Re-fire any trigger that was queued while the batch was running.
+        // The batch just answered for every villager, so the trigger is only worth a call if
+        // someone still needs a job or the village changed since the batch was built.
         if (_triggerPendingAfterBatch)
         {
             _triggerPendingAfterBatch = false;
-            TriggerDecision(_pendingTriggerReason);
+            if (IsBatchUseful(false, out string usefulReason))
+                TriggerDecision($"{_pendingTriggerReason} ({usefulReason})");
+            else
+            {
+                _sessionStats.skippedTriggers++;
+                LogInfo($"Queued trigger dropped, batch already covered it ({usefulReason}): {_pendingTriggerReason}");
+                OnTriggerDropped?.Invoke();
+            }
         }
 
     }
@@ -594,12 +784,13 @@ public class LLMController : MonoBehaviour
                 continue;
             }
 
-            bool isStuck = d.jobStatus == "Idle"
-                || d.jobStatus.StartsWith("Need ") // builder blocked by missing resources
-                || d.jobStatus.Contains("Waiting")
-                || d.jobStatus.Contains("No ")
-                || d.jobStatus.Contains("not found")
-                || d.jobStatus.Contains("Looking");
+            if (d.restTarget > 0)
+            {
+                sb.AppendLine($"- {d.name} [RESTING]: Idle at ({d.x},{d.y}), resting until {d.restTarget}% energy (now {d.energy}%) — will request a new job automatically, do NOT reassign");
+                continue;
+            }
+
+            bool isStuck = IsStuckStatus(d.jobStatus);
             string tag = isStuck ? "[NEEDS ASSIGNMENT]" : "[KEEP]";
             string energyTag = d.energy < 5 ? " [EXHAUSTED — must rest!]" : d.energy < 30 ? $" [TIRED — working at {d.energy}% speed]" : "";
 
@@ -617,6 +808,10 @@ public class LLMController : MonoBehaviour
                 errorTag = " !! LAST BUILD FAILED: tile occupied or invalid. Pick a DIFFERENT FREE BUILD SITE !!";
             else if (d.jobStatus.Contains("No building tasks"))
                 errorTag = " !! BUILDER HAS NOTHING TO DO: no valid build site found. Reassign to a different job !!";
+            else if (d.jobStatus.StartsWith("No ") && d.jobStatus.Contains(" found"))
+                errorTag = " !! NOTHING LEFT TO GATHER: every node of this resource is used up or regrowing. Assign a DIFFERENT job !!";
+            else if (d.jobStatus.Contains("Storage full"))
+                errorTag = " !! STORAGE FULL: this resource is at capacity. Build a Stockpile or assign a DIFFERENT job !!";
 
             sb.AppendLine($"- {d.name} {tag}: at ({d.x},{d.y}), Job={d.currentJob}, Status=\"{d.jobStatus}\", Energy={d.energy}%{energyTag}{errorTag}");
         }
@@ -628,13 +823,7 @@ public class LLMController : MonoBehaviour
         {
             if (v == null) continue;
             var d = v.GetData();
-            bool isStuck = d.jobStatus == "Idle"
-                || d.jobStatus.StartsWith("Need ") // builder blocked by missing resources
-                || d.jobStatus.Contains("Waiting")
-                || d.jobStatus.Contains("No ")
-                || d.jobStatus.Contains("not found")
-                || d.jobStatus.Contains("Looking");
-            if (!isStuck)
+            if (!IsStuckStatus(d.jobStatus))
                 takenPositions[new Vector2Int(d.x, d.y)] = d.name;
         }
 
@@ -775,7 +964,6 @@ public class LLMController : MonoBehaviour
     private void AppendBuildingSummary(System.Text.StringBuilder sb, ResourceLocations resourceLocations)
     {
         var counts = resourceLocations.completedBuildingCounts;
-        int unfinished = resourceLocations.buildingLocations.Count;
         int freeSlots = VillageState.Instance?.GetAvailableHouseSlots() ?? 0;
 
         counts.TryGetValue(Buildings.BuildingType.House,     out int houses);
@@ -816,8 +1004,7 @@ public class LLMController : MonoBehaviour
         if (fieldCap > 0)
             sb.AppendLine($"Fields: {currentCrops}/{fieldCap} planted (capacity from Farm bonuses)");
 
-        if (unfinished > 0)
-            sb.AppendLine($"Under construction: {unfinished} building(s)");
+        AppendUnderConstruction(sb);
 
         AppendBuildingCosts(sb);
         AppendFreeBuildLocations(sb);
@@ -855,12 +1042,39 @@ public class LLMController : MonoBehaviour
         sb.AppendLine();
     }
 
+    /// <summary>
+    /// Lists every unfinished building with its progress and payment state. Costs are spent when the
+    /// foundation is placed, so a stalled site only needs a Builder — without this the model reads the
+    /// cost table and gathers the full cost again.
+    /// </summary>
+    private void AppendUnderConstruction(System.Text.StringBuilder sb)
+    {
+        var buildings = UnityEngine.Object.FindObjectsByType<Buildings.Building>(FindObjectsSortMode.None);
+        var lines = new List<string>();
+        foreach (var b in buildings)
+        {
+            if (b == null || b.buildingData == null || b.IsFinished()) continue;
+            var tile = b.GetComponentInParent<Tiles.Tile>();
+            string pos = tile != null ? $" ({tile.GridPos.x},{tile.GridPos.y})" : "";
+            string state = b.IsReserved
+                ? "a Builder is working on it"
+                : b.resourcesPaidForCurrentLevel
+                    ? "ALREADY PAID, NO resources needed — STALLED, assign 1 Builder with targetX/targetY = this coordinate to finish it"
+                    : "STALLED, cost is spent when a Builder resumes — assign 1 Builder with targetX/targetY = this coordinate";
+            lines.Add($"  {b.buildingData.buildingType}{pos} {b.GetProgressPercent()}% — {state}");
+        }
+        if (lines.Count == 0) return;
+
+        sb.AppendLine($"Under construction: {lines.Count} building(s)");
+        foreach (var line in lines) sb.AppendLine(line);
+    }
+
     private void AppendBuildingCosts(System.Text.StringBuilder sb)
     {
         var allData = Resources.LoadAll<BuildingData>("");
         if (allData.Length == 0) return;
 
-        sb.AppendLine("Building costs (resources required to start construction):");
+        sb.AppendLine("Building costs (resources required to start a NEW construction — not needed to finish one under construction):");
         foreach (var data in allData)
         {
             if (data.levels == null || data.levels.Count == 0) continue;
@@ -879,6 +1093,13 @@ public class LLMController : MonoBehaviour
             }
             sb.AppendLine($"  {data.buildingType}: {level.woodCost} wood, {level.stoneCost} stone{foodPart}{bonusPart}");
         }
+
+        // Precomputed so the model does not have to compare inventory and costs itself
+        var parts = GetAffordability().Select(a => a.missing.Count == 0
+            ? $"{a.type} ✓"
+            : $"{a.type} ✗ (need {string.Join(", ", a.missing)} more)").ToList();
+        if (parts.Count > 0)
+            sb.AppendLine($"AFFORDABLE NOW: {string.Join(" | ", parts)}");
     }
 
     private void AppendRecentEvents(System.Text.StringBuilder sb)
@@ -944,14 +1165,13 @@ public class LLMController : MonoBehaviour
                 continue;
             }
 
-            bool isStuck = d.jobStatus == "Idle"
-                || d.jobStatus.StartsWith("Need ") // builder blocked by missing resources
-                || d.jobStatus.Contains("Waiting")
-                || d.jobStatus.Contains("No ")
-                || d.jobStatus.Contains("not found")
-                || d.jobStatus.Contains("Looking")
-                || d.jobStatus.Contains("already completed")
-                || d.jobStatus.Contains("Failed");
+            if (d.restTarget > 0)
+            {
+                sb.AppendLine($"- {d.name} [RESTING]: Idle at ({d.x},{d.y}), resting until {d.restTarget}% energy (now {d.energy}%) — will request a new job automatically, do NOT reassign");
+                continue;
+            }
+
+            bool isStuck = IsStuckStatus(d.jobStatus);
             string tag = isStuck ? "[NEEDS ASSIGNMENT]" : "[KEEP]";
             string previousJob = _lastAssignedJob.TryGetValue(d.name, out var prev) && prev != d.currentJob
                 ? $", was {prev}"
@@ -972,6 +1192,10 @@ public class LLMController : MonoBehaviour
                 errorTag = " !! LAST BUILD FAILED: tile occupied or invalid. Pick a DIFFERENT FREE BUILD SITE !!";
             else if (d.jobStatus.Contains("No building tasks"))
                 errorTag = " !! BUILDER HAS NOTHING TO DO: no valid build site found. Reassign to a different job !!";
+            else if (d.jobStatus.StartsWith("No ") && d.jobStatus.Contains(" found"))
+                errorTag = " !! NOTHING LEFT TO GATHER: every node of this resource is used up or regrowing. Assign a DIFFERENT job !!";
+            else if (d.jobStatus.Contains("Storage full"))
+                errorTag = " !! STORAGE FULL: this resource is at capacity. Build a Stockpile or assign a DIFFERENT job !!";
 
             sb.AppendLine($"- {d.name} {tag}: {d.currentJob} at ({d.x},{d.y}){previousJob}, Status=\"{d.jobStatus}\", Energy={d.energy}%{energyTag}{errorTag}");
         }
@@ -1286,7 +1510,8 @@ public class LLMController : MonoBehaviour
             {
                 if (v != null && !results.ContainsKey(v.villagerName))
                 {
-                    results[v.villagerName] = JobDecision.Idle("Not in response");
+                    // Keep the current job: an omitted [KEEP] villager would otherwise be stopped
+                    results[v.villagerName] = JobDecision.Keep("Not in response");
                     LogWarning($"Villager {v.villagerName} not in batch response");
                 }
             }
@@ -1391,7 +1616,7 @@ public class LLMController : MonoBehaviour
             if (existing != null && TimeSinceLastBatch < batchDecisionInterval)
                 return existing;
 
-            RequestImmediateBatchDecision();
+            RequestImmediateBatchDecision("individual_request");
 
             float timeout = 30f;
             float elapsed = 0f;
@@ -1822,7 +2047,7 @@ Response Times:
     private void EditorForceBatch()
     {
         if (Application.isPlaying)
-            RequestImmediateBatchDecision();
+            RequestImmediateBatchDecision("editor_force_batch");
     }
 
     [ContextMenu("Log Resource Locations")]
@@ -1914,6 +2139,20 @@ public class JobDecision
     public bool IsIdle => string.IsNullOrEmpty(jobName) ||
                           jobName.Equals("IDLE", StringComparison.OrdinalIgnoreCase);
 
+    /// <summary>Models echo the prompt tags as job names ("KEEP", "BUSY", "RESTING") — meaning: leave the villager as is.</summary>
+    public bool IsNoChange => jobName != null &&
+                              (jobName.Equals("KEEP", StringComparison.OrdinalIgnoreCase)
+                               || jobName.Equals("BUSY", StringComparison.OrdinalIgnoreCase)
+                               || jobName.Equals("RESTING", StringComparison.OrdinalIgnoreCase));
+
+    public static JobDecision Keep(string reason) => new JobDecision
+    {
+        jobName = "KEEP",
+        reason = reason,
+        success = true,
+        hasTargetArea = false
+    };
+
     public Vector2Int TargetPosition => new Vector2Int(targetX, targetY);
 
     public static JobDecision Idle(string reason) => new JobDecision
@@ -1984,6 +2223,8 @@ public class LLMSessionStats
     public double maxResponseTime;
 
     public int totalDecisions;
+    public int skippedFallbacks; // fallback intervals that found nothing new and made no call
+    public int skippedTriggers;  // event triggers dropped because nobody could act or the batch already covered them
 
     // Session timing
     public float sessionStartRealtime;

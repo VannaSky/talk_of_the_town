@@ -228,7 +228,7 @@ namespace Benchmark
                 if (LLMController.Instance != null)
                 {
                     LLMController.Instance.OnBatchDecisionMade += OnDecisionResumesSpeed;
-                    if (LLMController.Instance.RequestImmediateBatchDecision())
+                    if (LLMController.Instance.RequestImmediateBatchDecision("benchmark_all_idle"))
                     {
                         _waitingForDecision = true;
                         _waitingForDecisionSince = Time.realtimeSinceStartup;

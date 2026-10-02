@@ -33,9 +33,12 @@ public class VillagerBrain : MonoBehaviour
     private float _idleTime;
     private float _lastAppliedDecisionTime;
     private bool _waitingForBatch;
+    // Status at the time the LLM controller dropped our trigger as "nothing new"; no new trigger until it changes
+    private string _suppressedStatus;
     private int _restUntilEnergy; // 0 = no target; >0 = wait until villager reaches this % before requesting
     private bool _llmAssignedIdle; // LLM explicitly assigned IDLE — don't treat as "needs orders"
     public bool IsResting => _restUntilEnergy > 0;
+    public int RestUntilEnergy => _restUntilEnergy;
     public bool IsLLMAssignedIdle => _llmAssignedIdle;
 
     // Mini-goal tracking
@@ -73,6 +76,7 @@ public class VillagerBrain : MonoBehaviour
         if (LLMController.Instance != null)
         {
             LLMController.Instance.OnBatchDecisionMade -= OnBatchDecisionReceived;
+            LLMController.Instance.OnTriggerDropped -= OnTriggerDropped;
         }
 
         _jobHandler.OnResourceDeposited -= OnResourceDeposited;
@@ -89,8 +93,25 @@ public class VillagerBrain : MonoBehaviour
         // Subscribe if not already
         LLMController.Instance.OnBatchDecisionMade -= OnBatchDecisionReceived;
         LLMController.Instance.OnBatchDecisionMade += OnBatchDecisionReceived;
+        LLMController.Instance.OnTriggerDropped -= OnTriggerDropped;
+        LLMController.Instance.OnTriggerDropped += OnTriggerDropped;
 
         LogInfo($"{_villager.villagerName} subscribed to batch decisions");
+    }
+
+    private string CurrentStatusKey() =>
+        _restUntilEnergy > 0 ? "[resting]" : _jobHandler.ActiveJobLogic?.GetCurrentStatus() ?? "Idle";
+
+    /// <summary>
+    /// The controller dropped a trigger because the LLM already decided on this exact state. Stop waiting
+    /// for a batch that will not come, but stay quiet until our status changes.
+    /// </summary>
+    private void OnTriggerDropped()
+    {
+        if (!_waitingForBatch) return;
+        _waitingForBatch = false;
+        _suppressedStatus = CurrentStatusKey();
+        LogInfo($"{_villager.villagerName} trigger dropped — no new request until status changes from \"{_suppressedStatus}\"");
     }
 
     private void OnResourceDeposited(int amount)
@@ -127,8 +148,11 @@ public class VillagerBrain : MonoBehaviour
         {
             yield return new WaitForSeconds(checkInterval);
 
+            if (_suppressedStatus != null && CurrentStatusKey() != _suppressedStatus)
+                _suppressedStatus = null;
+
             // Check if we need to request a decision
-            if (!_waitingForBatch && ShouldRequestDecision())
+            if (!_waitingForBatch && ShouldRequestDecision() && _suppressedStatus == null)
             {
                 if (LLMController.Instance.UseBatchDecisions)
                 {
@@ -255,6 +279,14 @@ public class VillagerBrain : MonoBehaviour
     private void ApplyDecision(JobDecision decision)
     {
         if (decision == null) return;
+        _suppressedStatus = null;
+
+        if (decision.IsNoChange)
+        {
+            LogInfo($"{_villager.villagerName} keeps current state ({decision.jobName}: {decision.reason})");
+            _waitingForBatch = false;
+            return;
+        }
 
         // Reject reassignment if this villager is a builder actively constructing
         string activeStatus = _jobHandler.ActiveJobLogic?.GetCurrentStatus() ?? "";
@@ -263,6 +295,15 @@ public class VillagerBrain : MonoBehaviour
             && activeStatus.StartsWith("Building "))
         {
             LogInfo($"{_villager.villagerName} ignoring LLM reassignment — currently building ({activeStatus})");
+            _waitingForBatch = false;
+            return;
+        }
+
+        // Resting villagers keep resting until their target is reached; the rest end triggers
+        // its own decision. A fallback batch must not cut the recovery short.
+        if (_restUntilEnergy > 0)
+        {
+            LogInfo($"{_villager.villagerName} ignoring LLM decision ({decision.jobName}) — resting until {_restUntilEnergy}% (at {_villager.EnergyPercent}%)");
             _waitingForBatch = false;
             return;
         }
@@ -315,6 +356,10 @@ public class VillagerBrain : MonoBehaviour
         {
             bool jobChanged = _jobHandler.currentJob != matchedJob;
             bool targetChanged = decision.hasTargetArea && _jobHandler.HasDifferentTargetArea(decision.TargetPosition);
+            // Only a real job switch: re-issuing the same job (e.g. Lumberjack while all trees regrow) must
+            // still count as a repeat, otherwise the stuck-loop protection would not hold
+            if (jobChanged)
+                LLMController.Instance?.ForgetSeenStatus(_villager.villagerName);
 
             bool buildingTypeChanged = !string.IsNullOrEmpty(decision.buildingType)
                 && !decision.buildingType.Equals(_jobHandler.PreferredBuildingType, System.StringComparison.OrdinalIgnoreCase);
@@ -377,7 +422,7 @@ public class VillagerBrain : MonoBehaviour
         _idleTime = idleTimeout;
         if (LLMController.Instance != null && LLMController.Instance.UseBatchDecisions)
         {
-            LLMController.Instance.RequestImmediateBatchDecision();
+            LLMController.Instance.RequestImmediateBatchDecision("editor_force_decision");
         }
         else
         {

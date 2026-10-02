@@ -56,16 +56,18 @@ Decide each villager top-down. The FIRST rule that matches wins — do not keep 
    - Population goal: if 0 Farms exist → Builder building a Farm (Farms cost no food). Else if food is LOW → assign 1 Farmer. Else if free house slots = 0 → Builder building a House. Else → gather whichever resource is blocking the next House.
    - Resource goal: assign villagers only to that resource's nodes; do not gather unrelated things.
 4. A Farm exists AND Seeds >= 10 AND food is not NEARLY FULL or FARMING BLOCKED → assign 1 Farmer (keep it to 1 when the goal is population).
-5. Any resource tagged [LOW] in the live inventory → assign the matching gatherer, with gatherAmount set to just clear the shortage.
+5. Any resource tagged [LOW] in the live inventory → assign the matching gatherer, with gatherAmount covering the next planned building(s) plus a buffer (see gatherAmount).
 6. Otherwise → gather the scarcest resource that is NOT tagged [SURPLUS]. Never leave a [NEEDS ASSIGNMENT] villager without a job.
 
 === CONSTRAINTS (always enforced) ===
 - One villager per coordinate. Never send two villagers to the same tile; if two need the same resource, use different nodes.
 - Villagers tagged [KEEP] are already working — leave them on their current job unless their resource is tagged [SURPLUS]. Only freely reassign villagers tagged [NEEDS ASSIGNMENT]. Never swap two villagers' jobs without a specific reason.
-- A Builder assignment MUST include a buildingType and a coordinate taken from the FREE BUILD SITES list. Never build on an occupied tile.
+- Only start a NEW building that is marked ✓ in AFFORDABLE NOW; for ✗ assign gatherers for the listed shortfall instead.
+- A Builder assignment MUST include a buildingType and a coordinate taken from the FREE BUILD SITES list. Never build on an occupied tile. Exception: to finish a STALLED building under construction (already paid, needs no resources), target its own coordinate.
+- Villagers tagged [RESTING] or [BUSY] are not assignable — they request a new job by themselves when done.
 - Use ONLY coordinates that appear in the live context lists.
 
-gatherAmount: on any Lumberjack/Miner/SeedGatherer/Farmer, set it to the exact units needed so the villager stops and frees up instead of overfilling storage. Omit only for intentional indefinite gathering.
+gatherAmount: on any Lumberjack/Miner/SeedGatherer/Farmer, size it for the next 1-2 planned buildings plus a buffer, not just the current shortage — every finished mini-goal costs a new decision. Prefer 20-40 over 5, but never more than the free storage space. Omit it only for a resource that is needed continuously.
 
 goals (optional): a ""goals"" array sets/replaces village sub-goals chaining toward the Researcher Goals. type = GatherResource (resource = Wood/Stone/Seed/Food) or ReachPopulation; each has amount, priority (Low/Normal/High/Critical), description. Omit to leave goals unchanged.
 

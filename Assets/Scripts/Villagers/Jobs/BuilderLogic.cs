@@ -86,6 +86,15 @@ public class BuilderLogic : JobLogic
         var data = PickBuildingData(handler);
         if (data != null)
         {
+            // Fail right away instead of walking to the site first, so the LLM gets the feedback sooner
+            if (!CanAffordFirstLevel(data, out string needStatus))
+            {
+                currentStatus = needStatus;
+                handler.villagerMover.StopMoving();
+                ChangeState(AnimationState.Idle, handler);
+                return;
+            }
+
             _targetTile = FindBuildingTile(handler, data);
             if (_targetTile != null)
             {
@@ -143,13 +152,10 @@ public class BuilderLogic : JobLogic
             if (buildingData != null && buildingData.levels.Count > 0)
             {
                 var levelData = buildingData.levels[0];
-                bool hasFood = levelData.foodCost <= 0 || VillageState.Instance.HasResource(ResourceType.Food, levelData.foodCost);
-                if (!VillageState.Instance.HasResource(ResourceType.Wood, levelData.woodCost)
-                    || !VillageState.Instance.HasResource(ResourceType.Stone, levelData.stoneCost)
-                    || !hasFood)
+                // Checked again: resources may have been spent while walking to the site
+                if (!CanAffordFirstLevel(buildingData, out string needStatus))
                 {
-                    string foodPart = levelData.foodCost > 0 ? $", {levelData.foodCost} food" : "";
-                    currentStatus = $"Need {levelData.woodCost} wood, {levelData.stoneCost} stone{foodPart} to start {buildingData.buildingType}";
+                    currentStatus = needStatus;
                     _targetTile = null;
                     ChangeState(AnimationState.Idle, handler);
                     return;
@@ -309,6 +315,23 @@ public class BuilderLogic : JobLogic
 
         LogEvent($"Placed {data.buildingType} foundation at {tile.GridPos}");
         return building;
+    }
+
+    /// <summary>Checks the cost of a new foundation. The status text starts with "Need " so the LLM prompt flags it as a failed build.</summary>
+    private static bool CanAffordFirstLevel(BuildingData data, out string needStatus)
+    {
+        needStatus = null;
+        if (data == null || data.levels.Count == 0 || VillageState.Instance == null) return true;
+        var levelData = data.levels[0];
+        bool hasFood = levelData.foodCost <= 0 || VillageState.Instance.HasResource(ResourceType.Food, levelData.foodCost);
+        if (VillageState.Instance.HasResource(ResourceType.Wood, levelData.woodCost)
+            && VillageState.Instance.HasResource(ResourceType.Stone, levelData.stoneCost)
+            && hasFood)
+            return true;
+
+        string foodPart = levelData.foodCost > 0 ? $", {levelData.foodCost} food" : "";
+        needStatus = $"Need {levelData.woodCost} wood, {levelData.stoneCost} stone{foodPart} to start {data.buildingType}";
+        return false;
     }
 
     private BuildingData PickBuildingData(JobHandler handler)
