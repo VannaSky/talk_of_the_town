@@ -82,7 +82,17 @@ public class BuilderLogic : JobLogic
             }
         }
 
-        // Phase 2: find an empty tile and place a new foundation
+        // Phase 2: find an empty tile and place a new foundation.
+        // Under LLM control a new building needs an explicit type — the round-robin fallback would
+        // silently build something the model never asked for (e.g. a Farm instead of a House).
+        if (string.IsNullOrEmpty(handler.PreferredBuildingType) && LLMController.Instance != null)
+        {
+            currentStatus = "Failed: no buildingType given for a new building";
+            handler.villagerMover.StopMoving();
+            ChangeState(AnimationState.Idle, handler);
+            return;
+        }
+
         var data = PickBuildingData(handler);
         if (data != null)
         {

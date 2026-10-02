@@ -460,6 +460,9 @@ public class LLMController : MonoBehaviour
         return false;
     }
 
+    /// <summary>Same check the fallback and event triggers use, for callers outside the controller (benchmark idle detection).</summary>
+    public bool WouldBatchBeUseful(out string reason) => IsBatchUseful(false, out reason);
+
     private void OnVillageGoalCompleted(VillageGoal goal)
     {
         TriggerDecision($"Goal completed: {goal.description}");
@@ -810,6 +813,8 @@ public class LLMController : MonoBehaviour
                 errorTag = " !! BUILDER HAS NOTHING TO DO: no valid build site found. Reassign to a different job !!";
             else if (d.jobStatus.StartsWith("No ") && d.jobStatus.Contains(" found"))
                 errorTag = " !! NOTHING LEFT TO GATHER: every node of this resource is used up or regrowing. Assign a DIFFERENT job !!";
+            else if (d.jobStatus.Contains("no buildingType"))
+                errorTag = " !! BUILDER GOT NO buildingType: a NEW building needs buildingType (Farm/House/Stockpile) !!";
             else if (d.jobStatus.Contains("Storage full"))
                 errorTag = " !! STORAGE FULL: this resource is at capacity. Build a Stockpile or assign a DIFFERENT job !!";
 
@@ -1194,6 +1199,8 @@ public class LLMController : MonoBehaviour
                 errorTag = " !! BUILDER HAS NOTHING TO DO: no valid build site found. Reassign to a different job !!";
             else if (d.jobStatus.StartsWith("No ") && d.jobStatus.Contains(" found"))
                 errorTag = " !! NOTHING LEFT TO GATHER: every node of this resource is used up or regrowing. Assign a DIFFERENT job !!";
+            else if (d.jobStatus.Contains("no buildingType"))
+                errorTag = " !! BUILDER GOT NO buildingType: a NEW building needs buildingType (Farm/House/Stockpile) !!";
             else if (d.jobStatus.Contains("Storage full"))
                 errorTag = " !! STORAGE FULL: this resource is at capacity. Build a Stockpile or assign a DIFFERENT job !!";
 
@@ -1483,13 +1490,14 @@ public class LLMController : MonoBehaviour
             {
                 foreach (var assignment in raw.assignments)
                 {
+                    bool validTarget = HasValidTarget(jsonText, assignment.villager, assignment.job, assignment.targetX, assignment.targetY);
                     var decision = new JobDecision
                     {
                         jobName = assignment.job ?? "IDLE",
                         buildingType = assignment.buildingType ?? "",
                         reason = assignment.reason ?? "",
                         success = true,
-                        hasTargetArea = assignment.targetX != 0 || assignment.targetY != 0,
+                        hasTargetArea = validTarget,
                         targetX = assignment.targetX,
                         targetY = assignment.targetY,
                         gatherAmount = assignment.gatherAmount,
@@ -1562,6 +1570,31 @@ public class LLMController : MonoBehaviour
         }
 
         return results;
+    }
+
+    /// <summary>
+    /// JsonUtility turns a missing coordinate into 0, so "targetX": 9 without targetY would send the villager
+    /// to (9,0) at the map edge. A target only counts if the model wrote both coordinates and they hit a tile.
+    /// Rejected targets are reported as a recent event, so the model sees what went wrong.
+    /// </summary>
+    private bool HasValidTarget(string json, string villager, string job, int x, int y)
+    {
+        if (x == 0 && y == 0) return false;
+        // Idle / no-change answers ignore the target anyway; no need to report their coordinates
+        if (string.IsNullOrEmpty(job) || job.Equals("IDLE", StringComparison.OrdinalIgnoreCase)
+            || new JobDecision { jobName = job }.IsNoChange) return false;
+
+        var obj = Regex.Match(json, "\\{[^{}]*\"villager\"\\s*:\\s*\"" + Regex.Escape(villager ?? "") + "\"[^{}]*\\}");
+        bool bothWritten = !obj.Success
+            || (Regex.IsMatch(obj.Value, "\"targetX\"\\s*:\\s*-?\\d") && Regex.IsMatch(obj.Value, "\"targetY\"\\s*:\\s*-?\\d"));
+        var grid = VillageState.Instance?.TileGrid;
+        bool onMap = grid == null || grid.TryGet(new Vector2Int(x, y), out _);
+        if (bothWritten && onMap) return true;
+
+        string why = bothWritten ? "not a tile on the map" : "targetX and targetY must both be given";
+        LogWarning($"Ignoring target ({x},{y}) for {villager}: {why}");
+        AddRecentEvent($"{villager}: target ({x},{y}) ignored — {why}");
+        return false;
     }
 
     private void TryParseFlatDictFormat(string json, IReadOnlyList<Villager> villagers, Dictionary<string, JobDecision> results)

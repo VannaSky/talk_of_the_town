@@ -224,8 +224,14 @@ namespace Benchmark
             {
                 _lastIdleDetectionTime = Time.time;
 
+                // The villagers' own triggers already cover idle villagers; only step in if a call would
+                // show the LLM something new (otherwise this doubles the calls for exhausted villagers)
+                if (LLMController.Instance != null && !LLMController.Instance.WouldBatchBeUseful(out string skipReason))
+                {
+                    Debug.Log($"[BenchmarkRunner] All villagers idle, but no call needed ({skipReason})");
+                }
                 // Only pause if a request actually started — otherwise nothing would resume the game
-                if (LLMController.Instance != null)
+                else if (LLMController.Instance != null)
                 {
                     LLMController.Instance.OnBatchDecisionMade += OnDecisionResumesSpeed;
                     if (LLMController.Instance.RequestImmediateBatchDecision("benchmark_all_idle"))
