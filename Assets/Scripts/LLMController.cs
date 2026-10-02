@@ -1634,14 +1634,16 @@ public class LLMController : MonoBehaviour
             {
                 foreach (var assignment in raw.assignments)
                 {
-                    bool validTarget = HasValidTarget(jsonText, assignment.villager, assignment.job, assignment.targetX, assignment.targetY);
+                    // Cloud models ignore the schema enum at times and echo the prompt tag, e.g. "[KEEP]"
+                    string job = assignment.job?.Trim().Trim('[', ']').Trim();
+                    bool validTarget = HasValidTarget(jsonText, assignment.villager, job, assignment.targetX, assignment.targetY);
                     // The schema makes every field required, so models sometimes fill fields that do not apply
                     // (e.g. buildingType "House" on a Lumberjack). Drop those before they reach the job system.
-                    bool isBuilder = string.Equals(assignment.job, "Builder", StringComparison.OrdinalIgnoreCase);
-                    bool isIdle = string.Equals(assignment.job, "IDLE", StringComparison.OrdinalIgnoreCase);
+                    bool isBuilder = string.Equals(job, "Builder", StringComparison.OrdinalIgnoreCase);
+                    bool isIdle = string.Equals(job, "IDLE", StringComparison.OrdinalIgnoreCase);
                     var decision = new JobDecision
                     {
-                        jobName = assignment.job ?? "IDLE",
+                        jobName = job ?? "IDLE",
                         buildingType = isBuilder ? assignment.buildingType ?? "" : "",
                         reason = assignment.reason ?? "",
                         success = true,
