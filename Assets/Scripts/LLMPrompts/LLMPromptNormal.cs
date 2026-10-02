@@ -49,25 +49,29 @@ JOB DESCRIPTIONS:
 === DECISION PROCEDURE ===
 Decide each villager top-down. The FIRST rule that matches wins — do not keep applying later rules to that villager.
 
-1. Energy < 5% → IDLE with restUntilEnergy 80. This applies even if it idles every villager; an exhausted villager physically cannot work, so resting is never a deadlock.
-2. Energy < 30% AND another available villager can cover the top-priority task → IDLE with restUntilEnergy 60.
+1. Energy < 10% (tagged [EXHAUSTED]) → IDLE with restUntilEnergy 80. This applies even if it idles every villager; such a villager stops at 5% within seconds and cannot work, so resting is never a deadlock.
+2. Energy < 20% → IDLE with restUntilEnergy 60, even if nobody else can cover the task: below 20% a villager works at under 2/3 speed and hits the 5% stop within seconds. Energy 20-30% AND another available villager can cover the top-priority task → IDLE with restUntilEnergy 60.
 3. Follow the RESEARCHER GOAL:
    - Population goal: if 0 Farms exist → Builder building a Farm (Farms cost no food). Else if food is LOW → assign 1 Farmer. Else if free house slots = 0 → Builder building a House. Else → gather whichever resource is blocking the next House.
-   - Resource goal: assign villagers only to that resource's nodes; do not gather unrelated things.
+   - Resource goal: assign villagers only to that resource's nodes; do not gather unrelated things. The goal counts the stock ON HAND — do not spend that resource on buildings unless another open researcher goal needs them.
 4. A Farm exists AND Seeds >= 10 AND food is not NEARLY FULL or FARMING BLOCKED → assign 1 Farmer (keep it to 1 when the goal is population).
 5. Any resource tagged [LOW] in the live inventory → assign the matching gatherer, with gatherAmount covering the next planned building(s) plus a buffer (see gatherAmount).
-6. Otherwise → gather the scarcest resource that is NOT tagged [SURPLUS]. Never leave a [NEEDS ASSIGNMENT] villager without a job.
+6. Otherwise → gather the scarcest resource that is NOT tagged [SURPLUS]. If there is no useful work (e.g. the needed resource is regrowing, see TREES line), IDLE is the correct answer — waiting beats building things nobody needs. Every [NEEDS ASSIGNMENT] villager gets an answer: a useful job or IDLE.
 
 === CONSTRAINTS (always enforced) ===
 - One villager per coordinate. Never send two villagers to the same tile; if two need the same resource, use different nodes.
 - Villagers tagged [KEEP] are already working — leave them on their current job unless their resource is tagged [SURPLUS]. Only freely reassign villagers tagged [NEEDS ASSIGNMENT]. Never swap two villagers' jobs without a specific reason.
 - Only start a NEW building that is marked ✓ in AFFORDABLE NOW; for ✗ assign gatherers for the listed shortfall instead.
+- Only build what serves a goal or a real need: Farm for food, House for population, a building-count researcher goal. A Stockpile ONLY when a resource is tagged NEARLY FULL or FULL — spare capacity is useless and costs wood.
 - A Builder assignment MUST include a buildingType and a coordinate taken from the FREE BUILD SITES list. Never build on an occupied tile. Exception: to finish a STALLED building under construction (already paid, needs no resources), target its own coordinate.
 - Villagers tagged [RESTING] or [BUSY] are not assignable — they request a new job by themselves when done.
 - If a previous Builder assignment failed (see error tags), NEVER re-issue the same coordinate. Choose a different FREE BUILD SITE.
 - Use ONLY coordinates that appear in the live context lists.
 
-gatherAmount: on any Lumberjack/Miner/SeedGatherer/Farmer, size it for the next 1-2 planned buildings plus a buffer, not just the current shortage — every finished mini-goal costs a new decision. Prefer 20-40 over 5, but never more than the free storage space. Omit it only for a resource that is needed continuously.
+gatherAmount: on any Lumberjack/Miner/SeedGatherer/Farmer, size it for the next 1-2 planned buildings plus a buffer, not just the current shortage — every finished mini-goal costs a new decision. Prefer 20-40 over 5, but never more than the free storage space. Set it to 0 only for a resource that is needed continuously.
+
+Every assignment contains every field. Use 0 (numbers) or """" (buildingType) where a field does not apply. job ""KEEP"" leaves a villager exactly as it is.
+reason: ONE short sentence, max 20 words. For KEEP just write ""keep"".
 
 goals (optional): include a ""goals"" array to set/replace village sub-goals that chain toward the Researcher Goals. type = GatherResource (resource = Wood/Stone/Seed/Food) or ReachPopulation; each has amount, priority (Low/Normal/High/Critical), and a short description. Omit the array to leave goals unchanged.
 
@@ -78,8 +82,8 @@ Context: Researcher goal = reach population 4. Villagers: Ada [NEEDS ASSIGNMENT]
 Correct response (0 Farms on a population goal → build the Farm FIRST, since a House needs food and food needs a Farm; the other villager clears the seed shortage so farming can begin next):
 {{
     ""assignments"": [
-        {{ ""villager"": ""Ada"", ""job"": ""Builder"", ""buildingType"": ""Farm"", ""targetX"": 12, ""targetY"": 7, ""reason"": ""Population goal needs Houses, Houses need food, food needs a Farm; no Farm exists so build it first"" }},
-        {{ ""villager"": ""Ben"", ""job"": ""SeedGatherer"", ""targetX"": 20, ""targetY"": 15, ""gatherAmount"": 12, ""reason"": ""Seeds are LOW; gather enough so a Farmer can plant as soon as the Farm completes"" }}
+        {{ ""villager"": ""Ada"", ""job"": ""Builder"", ""buildingType"": ""Farm"", ""targetX"": 12, ""targetY"": 7, ""gatherAmount"": 0, ""restUntilEnergy"": 0, ""reason"": ""Population goal needs Houses, Houses need food, food needs a Farm; no Farm exists so build it first"" }},
+        {{ ""villager"": ""Ben"", ""job"": ""SeedGatherer"", ""buildingType"": """", ""targetX"": 20, ""targetY"": 15, ""gatherAmount"": 12, ""restUntilEnergy"": 0, ""reason"": ""Seeds are LOW; gather enough so a Farmer can plant as soon as the Farm completes"" }}
     ]
 }}
 

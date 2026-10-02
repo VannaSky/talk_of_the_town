@@ -82,7 +82,8 @@ namespace Benchmark
                 new() { type = GlobalGoalType.ResourceAmount, targetResource = "Wood", targetAmount = 100 },
                 new() { type = GlobalGoalType.ResourceAmount, targetResource = "Stone", targetAmount = 80 },
                 new() { type = GlobalGoalType.ResourceAmount, targetResource = "Food", targetAmount = 60 },
-                new() { type = GlobalGoalType.BuildingCount, targetResource = "", targetAmount = 3 }
+                // 5 villagers alone need 1 Farm + 3 Houses, so the count must be well above that to mean anything
+                new() { type = GlobalGoalType.BuildingCount, targetResource = "", targetAmount = 10 }
             } }
         };
 

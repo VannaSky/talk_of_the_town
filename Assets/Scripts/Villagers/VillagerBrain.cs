@@ -36,6 +36,8 @@ public class VillagerBrain : MonoBehaviour
     // Status at the time the LLM controller dropped our trigger as "nothing new"; no new trigger until it changes
     private string _suppressedStatus;
     private int _restUntilEnergy; // 0 = no target; >0 = wait until villager reaches this % before requesting
+    // Matches the [EXHAUSTED] threshold in the LLM prompt
+    private const int ExhaustedResumeEnergy = 10;
     private bool _llmAssignedIdle; // LLM explicitly assigned IDLE — don't treat as "needs orders"
     public bool IsResting => _restUntilEnergy > 0;
     public int RestUntilEnergy => _restUntilEnergy;
@@ -175,9 +177,13 @@ public class VillagerBrain : MonoBehaviour
         // Check if villager is exhausted (energy < 5) — force idle
         if (_villager.Energy < 5f && _jobHandler.currentJob != null)
         {
-            LogEvent($"{_villager.villagerName} exhausted (energy {_villager.EnergyPercent}%) — forcing idle to rest");
+            LogEvent($"{_villager.villagerName} exhausted (energy {_villager.EnergyPercent}%) — forcing idle to rest until {ExhaustedResumeEnergy}%");
             _jobHandler.AssignJob(null);
-            currentState = "Exhausted — resting";
+            // Below 10% any job ends at the 5% stop within seconds. Asking the LLM right away only produced
+            // work→stop→ask loops, so the villager first recovers out of the exhausted range. The normal rest
+            // machinery handles it: shown as [RESTING], and reaching the target triggers the next decision.
+            _restUntilEnergy = ExhaustedResumeEnergy;
+            currentState = $"Exhausted — resting until {ExhaustedResumeEnergy}%";
             _idleTime = 0f;
             return false; // Don't request a new decision yet, let them rest
         }

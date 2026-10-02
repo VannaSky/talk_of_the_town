@@ -342,7 +342,20 @@ public class LLMController : MonoBehaviour
     /// a new option; a building dropping to unaffordable is usually the villagers' own spending.
     /// </summary>
     private List<Buildings.BuildingType> GetNewlyAffordable() =>
-        GetAffordableTypes().Where(t => !_lastBatchAffordable.Contains(t)).ToList();
+        GetAffordableTypes()
+            // A Stockpile (10 wood) is affordable almost all the time; waking the LLM for it only invited
+            // building spare Stockpiles. A full store shows up as a stuck "Storage full" gatherer anyway.
+            .Where(t => t != Buildings.BuildingType.Stockpile && !_lastBatchAffordable.Contains(t))
+            .ToList();
+
+    private static int CountAvailableTrees()
+    {
+        int count = 0;
+        foreach (var n in UnityEngine.Object.FindObjectsByType<ResourceNode>(FindObjectsSortMode.None))
+            if (n != null && n.resourceType == ResourceNode.ResourceType.Tree && n.IsMature && n.resourceAmount > 0)
+                count++;
+        return count;
+    }
 
     /// <summary>Missing resources per building type for a new foundation (empty list = affordable now).</summary>
     private List<(Buildings.BuildingType type, List<string> missing)> GetAffordability()
@@ -380,6 +393,7 @@ public class LLMController : MonoBehaviour
     // Snapshot of the village when the last batch was built, to tell whether a fallback would see anything new
     private string _lastBatchSnapshot = "";
     private HashSet<Buildings.BuildingType> _lastBatchAffordable = new();
+    private int _lastBatchAvailableTrees = -1;
 
     // Villager states the last batch prompt showed, so a villager stuck in the same state is not re-sent
     // to the LLM again and again (e.g. a Lumberjack re-assigned while every tree is regrowing)
@@ -447,6 +461,9 @@ public class LLMController : MonoBehaviour
 
         var newlyAffordable = GetNewlyAffordable();
         if (newlyAffordable.Count > 0) { reason = $"now affordable: {string.Join(", ", newlyAffordable)}"; return true; }
+
+        // Trees regrew after the last batch saw none: villagers that were told to wait can work again
+        if (_lastBatchAvailableTrees == 0 && CountAvailableTrees() > 0) { reason = "trees available again"; return true; }
 
         if (BuildDecisionSnapshot() != _lastBatchSnapshot) { reason = "buildings, capacity or goals changed"; return true; }
 
@@ -609,6 +626,7 @@ public class LLMController : MonoBehaviour
         // Taken after the batch so the goals it just set do not count as a change next time
         _lastBatchSnapshot = BuildDecisionSnapshot();
         _lastBatchAffordable = GetAffordableTypes();
+        _lastBatchAvailableTrees = CountAvailableTrees();
         _lastBatchDecisionTime = Time.time;
         if (pauseGameDuringLLM) RestoreGameSpeed();
         _isBatchProcessing = false;
@@ -758,13 +776,13 @@ public class LLMController : MonoBehaviour
             int cap = VillageState.Instance.InventoryCapacity;
             sb.AppendLine("=== VILLAGE INVENTORY ===");
             sb.AppendLine($"Capacity: {cap} (build Stockpile to increase)");
-            sb.AppendLine($"Wood: {wood}/{cap}{(wood >= cap ? " [FULL - gatherers are BLOCKED, build Stockpile!]" : wood > 50 ? " [SURPLUS - no more Lumberjacks needed]" : wood < 10 ? " [LOW - need Lumberjack]" : "")}");
-            sb.AppendLine($"Stone: {stone}/{cap}{(stone >= cap ? " [FULL - gatherers are BLOCKED, build Stockpile!]" : stone > 40 ? " [SURPLUS - no more Miners needed]" : stone < 10 ? " [LOW - need Miner]" : "")}");
+            sb.AppendLine($"Wood: {wood}/{cap}{GatherTag("Wood", wood, cap, 50, "Lumberjack", verbose: true)}");
+            sb.AppendLine($"Stone: {stone}/{cap}{GatherTag("Stone", stone, cap, 40, "Miner", verbose: true)}");
             bool seedsFull = seeds >= cap;
             bool foodFull  = food >= cap;
             sb.AppendLine($"Seeds: {seeds}/{cap}{(seedsFull ? " [FULL - no more SeedGatherers]" : seeds >= 10 ? $" [SUFFICIENT - assign {Mathf.Max(1, seeds / 20)} Farmer(s) to use these seeds!]" : " [LOW - need SeedGatherer]")}");
             bool foodNearFull = food >= cap * 0.8f;
-            sb.AppendLine($"Food: {food}/{cap}{(foodFull ? " [FULL - harvest is wasted until Stockpile is built or food is consumed]" : foodNearFull ? " [NEARLY FULL - do NOT build more Farms, avoid excess Farmers]" : food < 10 ? " [LOW - farming urgently needed!]" : "")}");
+            sb.AppendLine($"Food: {food}/{cap}{FoodGoalTag(food)}{(foodFull ? " [FULL - harvest is wasted until Stockpile is built or food is consumed]" : foodNearFull ? " [NEARLY FULL - do NOT build more Farms, avoid excess Farmers]" : food < 10 ? " [LOW - farming urgently needed!]" : "")}");
             if (foodFull && seedsFull)
                 sb.AppendLine("⚠ FARMING BLOCKED: both Food and Seeds are at capacity — do NOT assign Farmers or SeedGatherers. Build a Stockpile to increase capacity.");
             else if (foodFull)
@@ -795,7 +813,8 @@ public class LLMController : MonoBehaviour
 
             bool isStuck = IsStuckStatus(d.jobStatus);
             string tag = isStuck ? "[NEEDS ASSIGNMENT]" : "[KEEP]";
-            string energyTag = d.energy < 5 ? " [EXHAUSTED — must rest!]" : d.energy < 30 ? $" [TIRED — working at {d.energy}% speed]" : "";
+            // Below 10% a villager hits the 5% hard stop within seconds, so any job is wasted — flag it as exhausted
+            string energyTag = d.energy < 10 ? $" [EXHAUSTED — {d.energy}%, stops at 5%, must rest!]" : d.energy < 30 ? $" [TIRED — working at {d.energy}% speed]" : "";
 
             // Add explicit error feedback when the last assignment failed
             string errorTag = "";
@@ -812,7 +831,7 @@ public class LLMController : MonoBehaviour
             else if (d.jobStatus.Contains("No building tasks"))
                 errorTag = " !! BUILDER HAS NOTHING TO DO: no valid build site found. Reassign to a different job !!";
             else if (d.jobStatus.StartsWith("No ") && d.jobStatus.Contains(" found"))
-                errorTag = " !! NOTHING LEFT TO GATHER: every node of this resource is used up or regrowing. Assign a DIFFERENT job !!";
+                errorTag = " !! NOTHING LEFT TO GATHER: every node of this resource is used up or regrowing. Assign a different USEFUL job, or IDLE to wait until it regrows (see TREES line) — do not build things nobody needs !!";
             else if (d.jobStatus.Contains("no buildingType"))
                 errorTag = " !! BUILDER GOT NO buildingType: a NEW building needs buildingType (Farm/House/Stockpile) !!";
             else if (d.jobStatus.Contains("Storage full"))
@@ -840,8 +859,11 @@ public class LLMController : MonoBehaviour
         if (resourceLocations.treeLocations.Count > 0)
         {
             sb.Append("TREES: ");
-            sb.AppendLine(FormatLocationsWithTaken(SortByNearestVillager(resourceLocations.treeLocations, villagers), takenPositions));
+            sb.Append(FormatLocationsWithTaken(SortByNearestVillager(resourceLocations.treeLocations, villagers), takenPositions));
         }
+        else
+            sb.Append("TREES: none available");
+        sb.AppendLine(RegrowingTreesNote());
 
         if (resourceLocations.stoneLocations.Count > 0)
         {
@@ -1148,10 +1170,10 @@ public class LLMController : MonoBehaviour
 
             int cap = VillageState.Instance.InventoryCapacity;
             sb.AppendLine($"=== RESOURCE CHANGES (capacity: {cap}) ===");
-            sb.AppendLine(FormatDelta("Wood", wood, _lastWood, wood >= cap ? " [FULL - gatherers BLOCKED]" : wood > 50 ? " [SURPLUS]" : wood < 10 ? " [LOW]" : ""));
-            sb.AppendLine(FormatDelta("Stone", stone, _lastStone, stone >= cap ? " [FULL - gatherers BLOCKED]" : stone > 40 ? " [SURPLUS]" : stone < 10 ? " [LOW]" : ""));
+            sb.AppendLine(FormatDelta("Wood", wood, _lastWood, GatherTag("Wood", wood, cap, 50, "Lumberjack", verbose: false)));
+            sb.AppendLine(FormatDelta("Stone", stone, _lastStone, GatherTag("Stone", stone, cap, 40, "Miner", verbose: false)));
             sb.AppendLine(FormatDelta("Seeds", seeds, _lastSeeds, seeds >= cap ? " [FULL]" : seeds >= 10 ? " [SUFFICIENT]" : " [LOW]"));
-            sb.AppendLine(FormatDelta("Food", food, _lastFood, food >= cap ? " [FULL]" : food < 10 ? " [LOW]" : ""));
+            sb.AppendLine(FormatDelta("Food", food, _lastFood, FoodGoalTag(food) + (food >= cap ? " [FULL]" : food >= cap * 0.8f ? " [NEARLY FULL]" : food < 10 ? " [LOW]" : "")));
             sb.AppendLine();
         }
 
@@ -1181,7 +1203,8 @@ public class LLMController : MonoBehaviour
             string previousJob = _lastAssignedJob.TryGetValue(d.name, out var prev) && prev != d.currentJob
                 ? $", was {prev}"
                 : "";
-            string energyTag = d.energy < 5 ? " [EXHAUSTED — must rest!]" : d.energy < 30 ? $" [TIRED — working at {d.energy}% speed, assign IDLE to recover]" : "";
+            // Below 10% a villager hits the 5% hard stop within seconds, so any job is wasted — flag it as exhausted
+            string energyTag = d.energy < 10 ? $" [EXHAUSTED — {d.energy}%, stops at 5%, must rest!]" : d.energy < 30 ? $" [TIRED — working at {d.energy}% speed, assign IDLE to recover]" : "";
 
             // Add explicit error feedback when the last assignment failed
             string errorTag = "";
@@ -1198,7 +1221,7 @@ public class LLMController : MonoBehaviour
             else if (d.jobStatus.Contains("No building tasks"))
                 errorTag = " !! BUILDER HAS NOTHING TO DO: no valid build site found. Reassign to a different job !!";
             else if (d.jobStatus.StartsWith("No ") && d.jobStatus.Contains(" found"))
-                errorTag = " !! NOTHING LEFT TO GATHER: every node of this resource is used up or regrowing. Assign a DIFFERENT job !!";
+                errorTag = " !! NOTHING LEFT TO GATHER: every node of this resource is used up or regrowing. Assign a different USEFUL job, or IDLE to wait until it regrows (see TREES line) — do not build things nobody needs !!";
             else if (d.jobStatus.Contains("no buildingType"))
                 errorTag = " !! BUILDER GOT NO buildingType: a NEW building needs buildingType (Farm/House/Stockpile) !!";
             else if (d.jobStatus.Contains("Storage full"))
@@ -1219,8 +1242,10 @@ public class LLMController : MonoBehaviour
         AppendBuildingSummary(sb, resourceLocations);
 
         sb.AppendLine("=== AVAILABLE RESOURCES ===");
-        if (resourceLocations.treeLocations.Count > 0)
-            sb.AppendLine($"TREES: {FormatLocationsSimple(SortByNearestVillager(resourceLocations.treeLocations, villagers))}");
+        string trees = resourceLocations.treeLocations.Count > 0
+            ? FormatLocationsSimple(SortByNearestVillager(resourceLocations.treeLocations, villagers))
+            : "none available";
+        sb.AppendLine($"TREES: {trees}{RegrowingTreesNote()}");
         if (resourceLocations.stoneLocations.Count > 0)
             sb.AppendLine($"STONE: {FormatLocationsSimple(SortByNearestVillager(resourceLocations.stoneLocations, villagers))}");
         if (resourceLocations.seedLocations.Count > 0)
@@ -1233,6 +1258,59 @@ public class LLMController : MonoBehaviour
             sb.AppendLine($"MATURE CROPS: {FormatLocationsSimple(SortByNearestVillager(resourceLocations.cropLocations, villagers))}");
 
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// " | 14 regrowing, next ready in ~45s" — lets the model weigh waiting for wood against other work
+    /// instead of only seeing an empty TREES list. Seconds are game seconds, like the energy rates.
+    /// </summary>
+    private static string RegrowingTreesNote()
+    {
+        int count = 0;
+        float next = float.MaxValue;
+        foreach (var n in UnityEngine.Object.FindObjectsByType<ResourceNode>(FindObjectsSortMode.None))
+        {
+            if (n == null || n.resourceType != ResourceNode.ResourceType.Tree || !n.canRegrow || n.IsMature || n.isMineShaft) continue;
+            count++;
+            // Seedling still has to pass the Growing stage, each stage takes growthTime
+            float remaining = n.growthStage == ResourceNode.GrowthStage.Seedling
+                ? 2f * n.growthTime - n.currentGrowthTimer
+                : n.growthTime - n.currentGrowthTimer;
+            next = Mathf.Min(next, remaining);
+        }
+        return count > 0 ? $" | {count} regrowing, next ready in ~{Mathf.CeilToInt(next)}s" : "";
+    }
+
+    /// <summary>Open researcher "Gather X" goal for this resource (enum name, e.g. "Wood"), or null.</summary>
+    private static GlobalGoal OpenResourceGoal(string resource)
+    {
+        if (GlobalGoals.Instance == null) return null;
+        foreach (var g in GlobalGoals.Instance.Goals)
+            if (g.type == GlobalGoalType.ResourceAmount && !g.isCompleted && g.targetResource.ToString() == resource)
+                return g;
+        return null;
+    }
+
+    /// <summary>
+    /// Inventory tag for a gathered resource. An open researcher goal for it wins over [SURPLUS]: the goal counts
+    /// the stock on hand, so "no more gatherers needed" and spending it on spare buildings work against it.
+    /// </summary>
+    private static string GatherTag(string resource, int amount, int cap, int surplusAt, string gatherer, bool verbose)
+    {
+        if (amount >= cap) return verbose ? " [FULL - gatherers are BLOCKED, build Stockpile!]" : " [FULL - gatherers BLOCKED]";
+        var goal = OpenResourceGoal(resource);
+        if (goal != null)
+            return $" [RESEARCHER GOAL {amount}/{goal.targetAmount} - keep {gatherer}s on it; spending it on buildings undoes progress]";
+        if (amount >= cap * 0.8f) return " [NEARLY FULL - a Stockpile is useful now]";
+        if (amount > surplusAt) return verbose ? $" [SURPLUS - no more {gatherer}s needed]" : " [SURPLUS]";
+        if (amount < 10) return verbose ? $" [LOW - need {gatherer}]" : " [LOW]";
+        return "";
+    }
+
+    private static string FoodGoalTag(int food)
+    {
+        var goal = OpenResourceGoal("Food");
+        return goal != null ? $" [RESEARCHER GOAL {food}/{goal.targetAmount} - keep farming]" : "";
     }
 
     private string FormatDelta(string label, int current, int last, string suffix)
@@ -1255,6 +1333,70 @@ public class LLMController : MonoBehaviour
     #endregion
 
     #region Batch Decision Making
+
+    /// <summary>
+    /// JSON schema for the batch answer, passed as Ollama's "format". Every field of an assignment is
+    /// required (0 / "" mean "none"), names are restricted to the live villagers, jobs and building types,
+    /// and there is exactly one assignment per villager. Matches RawBatchDecision.
+    /// </summary>
+    private static Dictionary<string, object> BuildBatchResponseSchema(IReadOnlyList<Villager> villagers, List<string> availableJobs)
+    {
+        var names = villagers.Where(v => v != null).Select(v => v.villagerName).ToList();
+        // KEEP = leave the villager as it is (models echo the prompt tag; handled as no change)
+        var jobs = availableJobs.Concat(new[] { "IDLE", "KEEP" }).Distinct().ToList();
+        var buildings = Resources.LoadAll<BuildingData>("").Select(b => b.buildingType.ToString())
+            .Distinct().Append("").ToList();
+
+        var assignment = new Dictionary<string, object>
+        {
+            ["type"] = "object",
+            ["properties"] = new Dictionary<string, object>
+            {
+                ["villager"] = new Dictionary<string, object> { ["type"] = "string", ["enum"] = names },
+                ["job"] = new Dictionary<string, object> { ["type"] = "string", ["enum"] = jobs },
+                ["buildingType"] = new Dictionary<string, object> { ["type"] = "string", ["enum"] = buildings },
+                ["targetX"] = new Dictionary<string, object> { ["type"] = "integer", ["minimum"] = 0 },
+                ["targetY"] = new Dictionary<string, object> { ["type"] = "integer", ["minimum"] = 0 },
+                ["gatherAmount"] = new Dictionary<string, object> { ["type"] = "integer", ["minimum"] = 0 },
+                ["restUntilEnergy"] = new Dictionary<string, object> { ["type"] = "integer", ["minimum"] = 0, ["maximum"] = 100 },
+                // Hard cap: answers with paragraph-long reasons (12k chars for 4 villagers) took 30-45 s
+                ["reason"] = new Dictionary<string, object> { ["type"] = "string", ["maxLength"] = 200 }
+            },
+            ["required"] = new[] { "villager", "job", "buildingType", "targetX", "targetY", "gatherAmount", "restUntilEnergy", "reason" }
+        };
+
+        var goal = new Dictionary<string, object>
+        {
+            ["type"] = "object",
+            ["properties"] = new Dictionary<string, object>
+            {
+                ["type"] = new Dictionary<string, object> { ["type"] = "string", ["enum"] = new[] { "GatherResource", "ReachPopulation" } },
+                ["resource"] = new Dictionary<string, object> { ["type"] = "string", ["enum"] = new[] { "Wood", "Stone", "Seed", "Food", "" } },
+                ["amount"] = new Dictionary<string, object> { ["type"] = "integer" },
+                ["priority"] = new Dictionary<string, object> { ["type"] = "string", ["enum"] = new[] { "Low", "Normal", "High", "Critical" } },
+                ["description"] = new Dictionary<string, object> { ["type"] = "string" }
+            },
+            ["required"] = new[] { "type", "resource", "amount", "priority", "description" }
+        };
+
+        return new Dictionary<string, object>
+        {
+            ["type"] = "object",
+            ["properties"] = new Dictionary<string, object>
+            {
+                ["assignments"] = new Dictionary<string, object>
+                {
+                    ["type"] = "array",
+                    ["items"] = assignment,
+                    ["minItems"] = names.Count,
+                    ["maxItems"] = names.Count
+                },
+                ["goals"] = new Dictionary<string, object> { ["type"] = "array", ["items"] = goal }
+            },
+            // goals stays optional: an omitted or empty list leaves the village goals unchanged
+            ["required"] = new[] { "assignments" }
+        };
+    }
 
     public async Task<Dictionary<string, JobDecision>> RequestBatchJobDecisions(
         IReadOnlyList<Villager> villagers,
@@ -1310,7 +1452,9 @@ public class LLMController : MonoBehaviour
                 _ => null // ModelDefault — let the model decide
             };
 
-            object formatParam = forceJsonFormat ? (object)"json" : null;
+            // A JSON schema instead of plain "json": Ollama then constrains decoding, so every assignment
+            // has all fields and only valid villager / job / building names (same for every model)
+            object formatParam = forceJsonFormat ? BuildBatchResponseSchema(villagers, availableJobs) : null;
 
             // Build runtime options (num_predict, etc.)
             Dictionary<string, object> runtimeOptions = null;
@@ -1491,17 +1635,21 @@ public class LLMController : MonoBehaviour
                 foreach (var assignment in raw.assignments)
                 {
                     bool validTarget = HasValidTarget(jsonText, assignment.villager, assignment.job, assignment.targetX, assignment.targetY);
+                    // The schema makes every field required, so models sometimes fill fields that do not apply
+                    // (e.g. buildingType "House" on a Lumberjack). Drop those before they reach the job system.
+                    bool isBuilder = string.Equals(assignment.job, "Builder", StringComparison.OrdinalIgnoreCase);
+                    bool isIdle = string.Equals(assignment.job, "IDLE", StringComparison.OrdinalIgnoreCase);
                     var decision = new JobDecision
                     {
                         jobName = assignment.job ?? "IDLE",
-                        buildingType = assignment.buildingType ?? "",
+                        buildingType = isBuilder ? assignment.buildingType ?? "" : "",
                         reason = assignment.reason ?? "",
                         success = true,
                         hasTargetArea = validTarget,
                         targetX = assignment.targetX,
                         targetY = assignment.targetY,
-                        gatherAmount = assignment.gatherAmount,
-                        restUntilEnergy = assignment.restUntilEnergy
+                        gatherAmount = isBuilder || isIdle ? 0 : assignment.gatherAmount,
+                        restUntilEnergy = isIdle ? assignment.restUntilEnergy : 0
                     };
 
                     results[assignment.villager] = decision;

@@ -28,7 +28,7 @@ public static class LLMPromptCaveman
 
         string jsonExample = @"{""assignments"":[{""villager"":""<NAME>"",""job"":""<JOB>"",""buildingType"":""<TYPE>"",""targetX"":<X>,""targetY"":<Y>,""gatherAmount"":<N>,""restUntilEnergy"":<N>,""reason"":""<why>""}],""goals"":[{""type"":""GatherResource"",""resource"":""Wood"",""amount"":80,""priority"":""High"",""description"":""wood""}]}";
 
-        return $@"Assign job to ALL {villagerCount} villagers. Goal=finish RESEARCHER GOALS fast. Fast>tidy. No idle waste.
+        return $@"Assign job to ALL {villagerCount} villagers. Goal=finish RESEARCHER GOALS fast. Fast>tidy. Useful work or IDLE, no busywork.
 JOBS: {jobList}, IDLE
 
 JOBS REF:
@@ -40,30 +40,32 @@ SeedGatherer: node->seeds
 IDLE: rest. energy0-100 -{drain}/s work -{walk}/s walk +{recover}/s idle. <30%slow <5%stop. full~{recoverySecs}s. set restUntilEnergy to auto-resume
 
 DECISION (each villager top-down, FIRST match wins, stop):
-1. energy<5% ->IDLE restUntilEnergy80. ok even if all idle (cant work=not deadlock)
-2. energy<30% AND someone else covers top task ->IDLE restUntilEnergy60
+1. energy<10% [EXHAUSTED] ->IDLE restUntilEnergy80. ok even if all idle (stops at 5%=cant work=not deadlock)
+2. energy<20% ->IDLE restUntilEnergy60 even if nobody covers (<2/3 speed, stops @5% in secs). energy20-30% AND someone else covers top task ->IDLE restUntilEnergy60
 3. RESEARCHER GOAL:
    pop goal: 0 Farms->Builder Farm(no food cost). elif food LOW->1 Farmer. elif free house slots=0->Builder House. else->gather House bottleneck
-   resource goal: only that resource's nodes
+   resource goal: only that resource's nodes. goal counts stock ON HAND -> dont spend it on buildings unless another open goal needs them
 4. Farm exists AND seeds>=10 AND food not NEARLY FULL/BLOCKED ->1 Farmer(max1 on pop goal)
 5. any [LOW] resource ->matching gatherer, gatherAmount=next 1-2 buildings+buffer
-6. else->gather scarcest non-[SURPLUS]. never leave [NEEDS ASSIGNMENT] unassigned
+6. else->gather scarcest non-[SURPLUS]. no useful work (eg resource regrowing, see TREES) ->IDLE is correct, waiting > useless building. every [NEEDS ASSIGNMENT] gets useful job or IDLE
 
 CONSTRAINTS:
 - 1 villager/coord. never 2 same tile. same resource->diff nodes
 - [KEEP]=stay unless resource [SURPLUS]. only reassign [NEEDS ASSIGNMENT]. no job swaps w/o reason
 - NEW building only if ✓ in AFFORDABLE NOW, else gather shortfall
+- build only for goal/real need: Farm=food, House=pop, building-count goal. Stockpile ONLY if resource NEARLY FULL/FULL (spare capacity useless, costs wood)
 - Builder needs buildingType + FREE BUILD SITE coord. never on occupied tile. STALLED building (paid) -> target its own coord to finish
 - [RESTING]/[BUSY] -> not assignable, they ask by themselves
 - only coords from live context lists
 
-gatherAmount: next 1-2 buildings+buffer, 20-40 > 5 (each done goal = new call). max=free storage. omit=needed nonstop.
+gatherAmount: next 1-2 buildings+buffer, 20-40 > 5 (each done goal = new call). max=free storage. 0=needed nonstop.
+all fields always. n/a -> 0 or """". job KEEP = leave as is.
 goals(opt): ""goals"" replaces existing. type=GatherResource(Wood/Stone/Seed/Food)/ReachPopulation, amount, priority Low/Normal/High/Critical, description.
-reason=how job advances researcher goal (or village need).
+reason=how job advances researcher goal (or village need). ONE short sentence, max 20 words. KEEP -> ""keep"".
 
 EXAMPLE: goal=pop4. Ada[NEEDS ASSIGNMENT] Ben[NEEDS ASSIGNMENT]. Wood30 Stone12 Seeds8[LOW] Food0[LOW]. Farms0. free slots0.
 correct(0 farms+pop goal->Farm FIRST: house needs food needs farm; other clears seeds for next-turn planting):
-{{""assignments"":[{{""villager"":""Ada"",""job"":""Builder"",""buildingType"":""Farm"",""targetX"":12,""targetY"":7,""reason"":""pop->house->food->farm; none exists build first""}},{{""villager"":""Ben"",""job"":""SeedGatherer"",""targetX"":20,""targetY"":15,""gatherAmount"":12,""reason"":""seeds LOW; stock for farmer after farm done""}}]}}
+{{""assignments"":[{{""villager"":""Ada"",""job"":""Builder"",""buildingType"":""Farm"",""targetX"":12,""targetY"":7,""gatherAmount"":0,""restUntilEnergy"":0,""reason"":""pop->house->food->farm; none exists build first""}},{{""villager"":""Ben"",""job"":""SeedGatherer"",""buildingType"":"""",""targetX"":20,""targetY"":15,""gatherAmount"":12,""restUntilEnergy"":0,""reason"":""seeds LOW; stock for farmer after farm done""}}]}}
 
 JSON ONLY, all {villagerCount} villagers:
 {jsonExample}";
