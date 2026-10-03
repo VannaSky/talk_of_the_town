@@ -51,7 +51,7 @@ DECISION (each villager top-down, FIRST match wins, stop):
 
 CONSTRAINTS:
 - 1 villager/coord. never 2 same tile. same resource->diff nodes
-- [KEEP]=stay unless resource [SURPLUS]. only reassign [NEEDS ASSIGNMENT]. no job swaps w/o reason
+- [KEEP]=stay unless resource [SURPLUS]/[FULL]. only reassign [NEEDS ASSIGNMENT]. no job swaps w/o reason
 - NEW building only if ✓ in AFFORDABLE NOW, else gather shortfall
 - build only for goal/real need: Farm=food, House=pop, building-count goal. Stockpile ONLY if resource NEARLY FULL/FULL (spare capacity useless, costs wood)
 - Builder needs buildingType + FREE BUILD SITE coord. never on occupied tile. STALLED building (paid) -> target its own coord to finish

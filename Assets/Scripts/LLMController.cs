@@ -1632,10 +1632,23 @@ public class LLMController : MonoBehaviour
 
             if (raw.assignments != null && raw.assignments.Count > 0)
             {
+                var validJobs = GetAvailableJobNames();
                 foreach (var assignment in raw.assignments)
                 {
                     // Cloud models ignore the schema enum at times and echo the prompt tag, e.g. "[KEEP]"
                     string job = assignment.job?.Trim().Trim('[', ']').Trim();
+
+                    // An unknown job name (e.g. "Keeper") would make the villager drop its job. Count it as
+                    // a format error for the benchmark, but leave the villager as it is.
+                    if (!string.IsNullOrEmpty(job) && !IsKnownJobName(job, validJobs))
+                    {
+                        _sessionStats.invalidJobs++;
+                        LogWarning($"Unknown job '{job}' for {assignment.villager} — treated as KEEP");
+                        AddRecentEvent($"{assignment.villager}: job '{job}' does not exist — kept current job");
+                        results[assignment.villager] = JobDecision.Keep($"invalid job '{job}' treated as KEEP: {assignment.reason}");
+                        continue;
+                    }
+
                     bool validTarget = HasValidTarget(jsonText, assignment.villager, job, assignment.targetX, assignment.targetY);
                     // The schema makes every field required, so models sometimes fill fields that do not apply
                     // (e.g. buildingType "House" on a Lumberjack). Drop those before they reach the job system.
@@ -1720,6 +1733,13 @@ public class LLMController : MonoBehaviour
         }
 
         return results;
+    }
+
+    private static bool IsKnownJobName(string job, List<string> validJobs)
+    {
+        if (job.Equals("IDLE", StringComparison.OrdinalIgnoreCase)
+            || new JobDecision { jobName = job }.IsNoChange) return true;
+        return validJobs.Any(j => j.Equals(job, StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>
@@ -2408,6 +2428,7 @@ public class LLMSessionStats
     public int totalDecisions;
     public int skippedFallbacks; // fallback intervals that found nothing new and made no call
     public int skippedTriggers;  // event triggers dropped because nobody could act or the batch already covered them
+    public int invalidJobs;      // assignments with a job name that does not exist (treated as KEEP)
 
     // Session timing
     public float sessionStartRealtime;

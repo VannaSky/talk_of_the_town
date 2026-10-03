@@ -61,7 +61,7 @@ Decide each villager top-down. The FIRST rule that matches wins — do not keep 
 
 === CONSTRAINTS (always enforced) ===
 - One villager per coordinate. Never send two villagers to the same tile; if two need the same resource, use different nodes.
-- Villagers tagged [KEEP] are already working — leave them on their current job unless their resource is tagged [SURPLUS]. Only freely reassign villagers tagged [NEEDS ASSIGNMENT]. Never swap two villagers' jobs without a specific reason.
+- Villagers tagged [KEEP] are already working — leave them on their current job unless their resource is tagged [SURPLUS] or [FULL]. Only freely reassign villagers tagged [NEEDS ASSIGNMENT]. Never swap two villagers' jobs without a specific reason.
 - Only start a NEW building that is marked ✓ in AFFORDABLE NOW; for ✗ assign gatherers for the listed shortfall instead.
 - Only build what serves a goal or a real need: Farm for food, House for population, a building-count researcher goal. A Stockpile ONLY when a resource is tagged NEARLY FULL or FULL — spare capacity is useless and costs wood.
 - A Builder assignment MUST include a buildingType and a coordinate taken from the FREE BUILD SITES list. Never build on an occupied tile. Exception: to finish a STALLED building under construction (already paid, needs no resources), target its own coordinate.

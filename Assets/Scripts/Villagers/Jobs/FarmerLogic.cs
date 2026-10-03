@@ -107,7 +107,12 @@ public class FarmerLogic : JobLogic
 
         int fieldCap = VillageState.Instance?.FieldCapacity ?? 0;
         int planted = fieldCap > 0 ? CountPlantedCrops() : 0;
-        if (fieldCap > 0 && planted >= fieldCap)
+        if (fieldCap > 0 && planted >= fieldCap && VillageState.Instance != null
+            && VillageState.Instance.Food >= VillageState.Instance.InventoryCapacity)
+            // Food is full, so tending adds nothing: flag it like a gatherer at full storage so the model gets asked.
+            // No counts in the text: the status must read the same after every harvest cycle, or each cycle triggers a call.
+            currentStatus = "Storage full (food) — fields keep growing, but harvesting adds no food";
+        else if (fieldCap > 0 && planted >= fieldCap)
             // Not stuck: every field is growing and ExecuteIdle re-checks for mature crops each second.
             // Worded without "Waiting"/"No " so neither the brain nor the prompt flag it as needing a job.
             currentStatus = $"Tending fields ({planted}/{fieldCap} growing) — harvests automatically when mature";

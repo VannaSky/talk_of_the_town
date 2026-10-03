@@ -24,10 +24,10 @@ namespace Benchmark
         // Thinking as low as each model allows: gpt-oss cannot turn it off (Low is its minimum), gemma has none.
         private static ModelConfig[] DefaultModels() => new ModelConfig[]
         {
-            new() { modelName = "gpt-oss:20b-cloud", thinkMode = ThinkMode.Low, promptStyle = PromptStyle.Lean, forceJsonFormat = true, contextSize = 16384 },
-            new() { modelName = "nemotron-3-super:cloud", thinkMode = ThinkMode.Off,promptStyle = PromptStyle.Lean, forceJsonFormat = true, contextSize = 16384 },
-            new() { modelName = "gemma3:12b", thinkMode = ThinkMode.ModelDefault, promptStyle = PromptStyle.Lean, forceJsonFormat = true, contextSize = 16384 },
-            new() { modelName = "qwen3.5:9b", thinkMode = ThinkMode.Off, promptStyle = PromptStyle.Lean, forceJsonFormat = true, contextSize = 16384 }
+            new() { modelName = "gpt-oss:20b-cloud", thinkMode = ThinkMode.Low, promptStyle = PromptStyle.Normal, forceJsonFormat = true, contextSize = 16384 },
+            new() { modelName = "nemotron-3-super:cloud", thinkMode = ThinkMode.Off, promptStyle = PromptStyle.Normal, forceJsonFormat = true, contextSize = 16384 },
+            new() { modelName = "gemma3:12b", thinkMode = ThinkMode.ModelDefault, promptStyle = PromptStyle.Normal, forceJsonFormat = true, contextSize = 16384 },
+            new() { modelName = "qwen3.5:9b", thinkMode = ThinkMode.Off, promptStyle = PromptStyle.Normal, forceJsonFormat = true, contextSize = 16384 }
         };
 
         [Tooltip("Map filenames (.twcmap) in persistentDataPath")]
