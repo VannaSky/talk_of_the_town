@@ -5,7 +5,9 @@ using System;
 
 using UnityEngine;
 using UnityEngine.Rendering;
+#if UNITY_EDITOR
 using UnityEditor;
+#endif
 
 using TWC.editor;
 using TWC.Utilities;

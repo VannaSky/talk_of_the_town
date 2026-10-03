@@ -136,7 +136,8 @@ namespace Benchmark.Loggers
         {
             try
             {
-                string gitDir = Path.Combine(Application.dataPath, "..", ".git");
+                string gitDir = FindGitDir();
+                if (gitDir == null) return "unknown";
                 string head = File.ReadAllText(Path.Combine(gitDir, "HEAD")).Trim();
                 if (!head.StartsWith("ref: ")) return head; // detached HEAD
 
@@ -154,6 +155,22 @@ namespace Benchmark.Loggers
             }
             catch (Exception) { /* fall through */ }
             return "unknown";
+        }
+
+        /// <summary>
+        /// In the Editor dataPath is &lt;repo&gt;/Assets; in a player build it is &lt;build&gt;/&lt;name&gt;_Data.
+        /// Walking up finds the repo as long as the build folder lies inside it (e.g. &lt;repo&gt;/Build).
+        /// </summary>
+        private static string FindGitDir()
+        {
+            var dir = new DirectoryInfo(Application.dataPath);
+            while (dir != null)
+            {
+                string candidate = Path.Combine(dir.FullName, ".git");
+                if (Directory.Exists(candidate)) return candidate;
+                dir = dir.Parent;
+            }
+            return null;
         }
     }
 }
