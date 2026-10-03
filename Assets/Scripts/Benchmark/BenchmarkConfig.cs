@@ -153,7 +153,8 @@ namespace Benchmark
     [Serializable]
     public class LLMDecisionLogEntry
     {
-        public long simTick;
+        public long simTick;             // tick when the answer arrived
+        public long requestStartTick;    // tick when the call was sent; equal to simTick when the game paused correctly
         public string triggerReason;
         public string contextType; // "full" or "delta"
         public InputStateSnapshot inputState;
@@ -177,6 +178,7 @@ namespace Benchmark
     public class BatchDecisionLog
     {
         public long simTick;
+        public long requestStartTick;
         public string triggerReason;
         public string contextType; // "full" or "delta"
         public InputStateSnapshot inputState;

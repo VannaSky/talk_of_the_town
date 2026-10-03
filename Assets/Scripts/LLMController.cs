@@ -1461,6 +1461,8 @@ public class LLMController : MonoBehaviour
         };
 
         var startTime = DateTime.Now;
+        // Logged next to the end tick: equal values prove the game was paused for the whole call
+        long requestStartTick = SimTickTracker.CurrentTick;
 
         try
         {
@@ -1615,6 +1617,7 @@ public class LLMController : MonoBehaviour
             OnBatchDecisionLogged.Invoke(new BatchDecisionLog
             {
                 simTick = SimTickTracker.CurrentTick,
+                requestStartTick = requestStartTick,
                 triggerReason = _currentTriggerReason,
                 contextType = fullSnapshot ? "full" : "delta",
                 inputState = inputState,

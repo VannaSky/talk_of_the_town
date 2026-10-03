@@ -27,6 +27,7 @@ namespace Benchmark.Loggers
             var entry = new LLMDecisionLogEntry
             {
                 simTick = log.simTick,
+                requestStartTick = log.requestStartTick,
                 triggerReason = log.triggerReason,
                 contextType = log.contextType,
                 inputState = log.inputState,
