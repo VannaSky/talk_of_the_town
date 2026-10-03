@@ -107,6 +107,19 @@ namespace Benchmark
         [Tooltip("Automatically start the benchmark when entering play mode")]
         [SerializeField] private bool autoStart = false;
 
+        [Header("Performance (GPU load)")]
+        [Tooltip("Frame cap while the benchmark runs. Each frame is a sim step of gameSpeed / fps game seconds, so keep it " +
+                 "well above gameSpeed / Time.maximumDeltaTime or the sim slows down. 0 = uncapped.")]
+        [SerializeField] private int benchmarkTargetFps = 200;
+
+        [Tooltip("Render only every Nth frame (Update, physics and NavMesh still run every frame). " +
+                 "Saves GPU, which local models need for inference. Press V to toggle full rendering.")]
+        [SerializeField] private int renderEveryNthFrame = 8;
+
+        public int BenchmarkTargetFps => benchmarkTargetFps;
+        public int RenderEveryNthFrame => renderEveryNthFrame;
+        private bool _fullRendering;
+
         public static BenchmarkRunner Instance { get; private set; }
 
         private BenchmarkManifest _manifest;
@@ -182,6 +195,13 @@ namespace Benchmark
                 Debug.Log("[BenchmarkRunner] ESC pressed — quitting application");
                 Application.Quit();
                 return;
+            }
+
+            // V toggles full rendering to watch the village; the sim is unaffected either way
+            if (Input.GetKeyDown(KeyCode.V) && (_isRunning || _waitingForSceneReload))
+            {
+                _fullRendering = !_fullRendering;
+                ApplyPerformanceSettings();
             }
 
             if (!_isRunning || _currentRun == null) return;
@@ -329,8 +349,24 @@ namespace Benchmark
             if (_isRunning || _waitingForSceneReload) return; // Prevent double-start
             if (!LoadOrGenerateManifest()) return;
 
+            ApplyPerformanceSettings();
+
             // Reload the scene so the first run starts from the same clean state as all later runs
             ReloadSceneForNextRun();
+        }
+
+        /// <summary>
+        /// Uncapped, the build renders 500+ FPS and keeps the GPU at ~90% for nothing. A frame cap keeps the sim
+        /// steps even; rendering every Nth frame frees the GPU for local models. vSync must be off for the cap.
+        /// </summary>
+        private void ApplyPerformanceSettings()
+        {
+            QualitySettings.vSyncCount = 0;
+            Application.targetFrameRate = benchmarkTargetFps > 0 ? benchmarkTargetFps : -1;
+            UnityEngine.Rendering.OnDemandRendering.renderFrameInterval =
+                _fullRendering ? 1 : Mathf.Max(1, renderEveryNthFrame);
+            Debug.Log($"[BenchmarkRunner] Performance: targetFps={Application.targetFrameRate}, " +
+                      $"renderFrameInterval={UnityEngine.Rendering.OnDemandRendering.renderFrameInterval}");
         }
 
         private void ReloadSceneForNextRun()

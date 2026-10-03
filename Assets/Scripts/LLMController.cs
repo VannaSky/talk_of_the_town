@@ -1652,8 +1652,11 @@ public class LLMController : MonoBehaviour
                 return results;
             }
 
-            // JsonUtility can't handle null — remove null-valued fields entirely so defaults apply
-            string jsonText = Regex.Replace(match.Value, @"""[^""]+"":\s*null\s*,?\s*", "");
+            // JsonUtility can't handle null — remove null-valued fields entirely so defaults apply.
+            // Removing a null LAST member ("goals": null before "}") leaves the comma before it ("...],}"), and the
+            // whole (valid) answer then failed to parse — so drop trailing commas afterwards.
+            string jsonText = Regex.Replace(match.Value, @"""[^""]+""\s*:\s*null\s*,?\s*", "");
+            jsonText = Regex.Replace(jsonText, @",(\s*[}\]])", "$1");
 
             var raw = JsonUtility.FromJson<RawBatchDecision>(jsonText);
 

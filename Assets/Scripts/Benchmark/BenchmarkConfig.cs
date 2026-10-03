@@ -258,6 +258,8 @@ namespace Benchmark
         public int systemMemoryMB;
         public string graphicsDevice;
         public float maximumDeltaTime;
+        public int targetFrameRate;          // -1 = uncapped
+        public int renderFrameInterval;      // 1 = every frame rendered (value at run end; V toggles it)
         public float avgFps;                 // frames / real seconds over the whole run (incl. LLM pauses)
         public float llmWaitSeconds;         // real seconds spent waiting for LLM answers
         public float llmWaitShare;           // llmWaitSeconds / elapsed real time
