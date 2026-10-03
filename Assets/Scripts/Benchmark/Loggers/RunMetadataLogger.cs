@@ -222,6 +222,7 @@ namespace Benchmark.Loggers
                 maximumDeltaTime = Time.maximumDeltaTime,
                 targetFrameRate = Application.targetFrameRate,
                 renderFrameInterval = UnityEngine.Rendering.OnDemandRendering.renderFrameInterval,
+                worldHidden = Camera.main != null && Camera.main.cullingMask == 0,
                 avgFps = real > 0f ? (Time.frameCount - _startFrame) / real : 0f,
                 llmWaitSeconds = llmWait,
                 llmWaitShare = real > 0f ? llmWait / real : 0f,

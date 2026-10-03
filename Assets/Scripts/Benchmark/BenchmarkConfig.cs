@@ -260,6 +260,7 @@ namespace Benchmark
         public float maximumDeltaTime;
         public int targetFrameRate;          // -1 = uncapped
         public int renderFrameInterval;      // 1 = every frame rendered (value at run end; V toggles it)
+        public bool worldHidden;             // cameras drew nothing (culling mask 0) at run end
         public float avgFps;                 // frames / real seconds over the whole run (incl. LLM pauses)
         public float llmWaitSeconds;         // real seconds spent waiting for LLM answers
         public float llmWaitShare;           // llmWaitSeconds / elapsed real time

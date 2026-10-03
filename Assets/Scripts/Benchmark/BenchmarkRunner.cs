@@ -113,12 +113,21 @@ namespace Benchmark
         [SerializeField] private int benchmarkTargetFps = 200;
 
         [Tooltip("Render only every Nth frame (Update, physics and NavMesh still run every frame). " +
-                 "Saves GPU, which local models need for inference. Press V to toggle full rendering.")]
+                 "Saves GPU, which local models need for inference. Press B to toggle rendering every frame.")]
         [SerializeField] private int renderEveryNthFrame = 8;
+
+        [Tooltip("Cameras draw nothing (culling mask 0) while the benchmark runs; only the overlay UI stays visible. " +
+                 "Safe for the sim: all Animators use Always Animate and no gameplay uses animation events. " +
+                 "Press V to show the world (still at the reduced render rate).")]
+        [SerializeField] private bool hideWorldWhileRunning = true;
 
         public int BenchmarkTargetFps => benchmarkTargetFps;
         public int RenderEveryNthFrame => renderEveryNthFrame;
-        private bool _fullRendering;
+        /// <summary>True while V has made the world visible.</summary>
+        public bool WorldShown => _worldShown;
+        private bool _worldShown;   // V
+        private bool _fullRendering; // B: render every frame
+        private readonly Dictionary<Camera, int> _savedCullingMasks = new();
 
         public static BenchmarkRunner Instance { get; private set; }
 
@@ -197,11 +206,20 @@ namespace Benchmark
                 return;
             }
 
-            // V toggles full rendering to watch the village; the sim is unaffected either way
-            if (Input.GetKeyDown(KeyCode.V) && (_isRunning || _waitingForSceneReload))
+            // V shows / hides the world, B toggles rendering every frame (F belongs to FreeFlyCamera);
+            // the sim is unaffected either way
+            if (_isRunning || _waitingForSceneReload)
             {
-                _fullRendering = !_fullRendering;
-                ApplyPerformanceSettings();
+                if (Input.GetKeyDown(KeyCode.V))
+                {
+                    _worldShown = !_worldShown;
+                    ApplyPerformanceSettings();
+                }
+                else if (Input.GetKeyDown(KeyCode.B))
+                {
+                    _fullRendering = !_fullRendering;
+                    ApplyPerformanceSettings();
+                }
             }
 
             if (!_isRunning || _currentRun == null) return;
@@ -365,8 +383,39 @@ namespace Benchmark
             Application.targetFrameRate = benchmarkTargetFps > 0 ? benchmarkTargetFps : -1;
             UnityEngine.Rendering.OnDemandRendering.renderFrameInterval =
                 _fullRendering ? 1 : Mathf.Max(1, renderEveryNthFrame);
+            ApplyCameraVisibility();
             Debug.Log($"[BenchmarkRunner] Performance: targetFps={Application.targetFrameRate}, " +
-                      $"renderFrameInterval={UnityEngine.Rendering.OnDemandRendering.renderFrameInterval}");
+                      $"renderFrameInterval={UnityEngine.Rendering.OnDemandRendering.renderFrameInterval}, " +
+                      $"worldHidden={hideWorldWhileRunning && !_worldShown}");
+        }
+
+        /// <summary>
+        /// Culling mask 0 instead of disabling the camera: Camera.main stays valid (name tags cache it), the camera
+        /// just draws no objects. Called again after every scene reload, because each run gets a fresh camera.
+        /// </summary>
+        private void ApplyCameraVisibility()
+        {
+            bool hide = hideWorldWhileRunning && !_worldShown;
+
+            // Cameras of the previous scene are destroyed on reload
+            var dead = new List<Camera>();
+            foreach (var cam in _savedCullingMasks.Keys)
+                if (cam == null) dead.Add(cam);
+            foreach (var cam in dead) _savedCullingMasks.Remove(cam);
+
+            foreach (var cam in Camera.allCameras)
+            {
+                if (hide)
+                {
+                    if (!_savedCullingMasks.ContainsKey(cam))
+                        _savedCullingMasks[cam] = cam.cullingMask;
+                    cam.cullingMask = 0;
+                }
+                else if (_savedCullingMasks.TryGetValue(cam, out int mask))
+                {
+                    cam.cullingMask = mask;
+                }
+            }
         }
 
         private void ReloadSceneForNextRun()
@@ -721,6 +770,8 @@ namespace Benchmark
             // Set benchmark speed after first LLM decision
             if (LLMController.Instance != null)
                 LLMController.Instance.OnBatchDecisionMade += OnFirstDecisionSetSpeed;
+
+            ApplyCameraVisibility(); // the reloaded scene brought a fresh camera
 
             _isRunning = true;
             _runStartRealTime = Time.realtimeSinceStartup;

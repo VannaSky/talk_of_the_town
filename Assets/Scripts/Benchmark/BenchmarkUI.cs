@@ -74,7 +74,8 @@ namespace Benchmark
                 long cutoff = runner.CurrentRun.cutoffTicks;
                 float pct = cutoff > 0 ? (tick * 100f / cutoff) : 0f;
                 bool paused = Time.timeScale == 0f;
-                progressText.text = $"Tick: {tick} / {cutoff} ({pct:F0}%){(paused ? " [PAUSED]" : "")}";
+                string view = runner.WorldShown ? "  |  V = hide world" : "  |  V = show world";
+                progressText.text = $"Tick: {tick} / {cutoff} ({pct:F0}%){(paused ? " [PAUSED]" : "")}{view}";
             }
             else if (progressText != null)
             {
