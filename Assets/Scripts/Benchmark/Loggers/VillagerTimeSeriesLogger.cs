@@ -13,7 +13,10 @@ namespace Benchmark.Loggers
     /// </summary>
     public class VillagerTimeSeriesLogger
     {
-        private const string Header = "sim_tick,villager_id,villager_name,pos_x,pos_y,grid_x,grid_y,job,energy_pct,status";
+        // status = animation state (walking/working/idle); job_status = the job's own text ("Storage full (Wood)",
+        // "Need 25 wood…"); brain_state = resting_to_N / llm_idle / waiting_for_llm. New columns go at the end
+        // so analysis scripts that index the old columns keep working.
+        private const string Header = "sim_tick,villager_id,villager_name,pos_x,pos_y,grid_x,grid_y,job,energy_pct,status,job_status,brain_state";
 
         private readonly string _filePath;
         private readonly int _flushThreshold;
@@ -57,6 +60,9 @@ namespace Benchmark.Loggers
 
                 string jobName = "Idle";
                 string status = "idle";
+                string jobStatus = "";
+                var brain = v.GetComponent<VillagerBrain>();
+                string brainState = brain != null ? brain.BrainStateTag : "";
 
                 if (jh != null && jh.currentJob != null)
                 {
@@ -64,6 +70,7 @@ namespace Benchmark.Loggers
                     var logic = jh.ActiveJobLogic;
                     if (logic != null)
                     {
+                        jobStatus = logic.GetCurrentStatus() ?? "";
                         var state = logic.GetCurrentState();
                         status = state switch
                         {
@@ -76,15 +83,16 @@ namespace Benchmark.Loggers
 
                 // Use InvariantCulture to avoid comma-as-decimal-separator on German locale
                 string row = string.Format(CultureInfo.InvariantCulture,
-                    "{0},{1},{2},{3:F1},{4:F1},{5},{6},{7},{8},{9}",
+                    "{0},{1},{2},{3:F1},{4:F1},{5},{6},{7},{8},{9},{10},{11}",
                     tick, v.VillagerId, CsvEscape(v.villagerName),
                     pos.x, pos.z, gridPos.x, gridPos.y,
-                    CsvEscape(jobName), v.EnergyPercent, status);
+                    CsvEscape(jobName), v.EnergyPercent, status,
+                    CsvEscape(jobStatus), CsvEscape(brainState));
 
                 rows.Add(row);
 
-                // Hash uses job + grid position + energy (not tick) to detect actual changes
-                hashBuilder.Append($"{v.VillagerId}:{jobName}:{gridPos.x},{gridPos.y}:{v.EnergyPercent}:{status}|");
+                // Hash uses job + grid position + energy + statuses (not tick) to detect actual changes
+                hashBuilder.Append($"{v.VillagerId}:{jobName}:{gridPos.x},{gridPos.y}:{v.EnergyPercent}:{status}:{jobStatus}:{brainState}|");
             }
 
             string currentHash = hashBuilder.ToString();

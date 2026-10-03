@@ -27,6 +27,7 @@ public class GameSpeedController : MonoBehaviour
     private bool _updatingSlider;
     private bool _isPaused;
     private float _preManualPauseTimeScale;
+    private float _shownTimeScale = -1f;
 
     void Start()
     {
@@ -64,6 +65,13 @@ public class GameSpeedController : MonoBehaviour
 
     void Update()
     {
+        // Show the real time scale: the LLM pause sets Time.timeScale directly, without OnGameSpeedChanged
+        if (!Mathf.Approximately(Time.timeScale, _shownTimeScale))
+        {
+            _shownTimeScale = Time.timeScale;
+            UpdateLabel(_shownTimeScale);
+        }
+
         if (VillageState.Instance == null) return;
 
         if (Input.GetKeyDown(KeyCode.Alpha1))
@@ -128,12 +136,11 @@ public class GameSpeedController : MonoBehaviour
             _updatingSlider = false;
         }
 
-        UpdateLabel(newSpeed);
     }
 
     private void UpdateLabel(float speed)
     {
         if (speedLabel != null)
-            speedLabel.text = $"{speed:F1}x";
+            speedLabel.text = speed <= 0f ? "Paused" : $"{speed:0.#}x";
     }
 }

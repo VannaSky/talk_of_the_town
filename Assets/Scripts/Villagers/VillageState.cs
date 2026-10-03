@@ -115,9 +115,11 @@ public class VillageState : MonoBehaviour
     
     #region Game Speed
 
+    /// <summary>0 pauses the game. Before, 0 was clamped to MinGameSpeed, so the benchmark's "pause while
+    /// waiting for the LLM" ran the game at 1x and gave slow models extra game time.</summary>
     public void SetGameSpeed(float speed)
     {
-        gameSpeed = Mathf.Clamp(speed, MinGameSpeed, MaxGameSpeed);
+        gameSpeed = speed <= 0f ? 0f : Mathf.Clamp(speed, MinGameSpeed, MaxGameSpeed);
         ApplyGameSpeed();
         OnGameSpeedChanged?.Invoke(gameSpeed);
     }
@@ -125,7 +127,9 @@ public class VillageState : MonoBehaviour
     private void ApplyGameSpeed()
     {
         Time.timeScale = gameSpeed;
-        Time.fixedDeltaTime = 0.02f * gameSpeed;
+        // fixedDeltaTime must stay > 0; while paused no physics step runs anyway
+        if (gameSpeed > 0f)
+            Time.fixedDeltaTime = 0.02f * gameSpeed;
         LogInfo($"[VillageState] Game speed: {gameSpeed}x");
     }
 

@@ -74,6 +74,17 @@ namespace Benchmark.Loggers
             LogEvent("all_goals_completed", "{}");
         }
 
+        public void OnDecisionApplied(Villager villager, JobDecision decision, string outcome, string statusBefore)
+        {
+            if (villager == null || decision == null) return;
+            string target = decision.hasTargetArea ? $"[{decision.targetX},{decision.targetY}]" : "null";
+            LogEvent("assignment_outcome",
+                $"{{\"villager\":\"{EscapeJson(villager.villagerName)}\",\"job\":\"{EscapeJson(decision.jobName)}\"," +
+                $"\"buildingType\":\"{EscapeJson(decision.buildingType)}\",\"target\":{target}," +
+                $"\"gatherAmount\":{decision.gatherAmount},\"restUntilEnergy\":{decision.restUntilEnergy}," +
+                $"\"outcome\":\"{outcome}\",\"energy\":{villager.EnergyPercent},\"statusBefore\":\"{EscapeJson(statusBefore)}\"}}");
+        }
+
         public void OnVillagerUnstuck(VillagerMover mover, Vector3 from, Vector3 to, bool usedFallback)
         {
             if (mover == null) return;

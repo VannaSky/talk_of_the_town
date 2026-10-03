@@ -228,6 +228,40 @@ namespace Benchmark
         public float fallbackIntervalSeconds;  // game seconds before a fallback call
     }
 
+    /// <summary>Model as reported by Ollama at run start. Cloud models can change behind the same name — the digest shows it.</summary>
+    [Serializable]
+    public class ModelInfo
+    {
+        public string ollamaVersion;
+        public bool foundInModelList;
+        public string name;
+        public string digest;
+        public string modifiedAt;
+        public long sizeBytes;
+        public string family;
+        public string parameterSize;
+        public string quantizationLevel;
+    }
+
+    /// <summary>Where and how fast the run was simulated, to show that all runs had the same conditions.</summary>
+    [Serializable]
+    public class RunEnvironment
+    {
+        public bool isEditor;
+        public string platform;
+        public string machineName;
+        public string operatingSystem;
+        public string processorType;
+        public int processorCount;
+        public int systemMemoryMB;
+        public string graphicsDevice;
+        public float maximumDeltaTime;
+        public float avgFps;                 // frames / real seconds over the whole run (incl. LLM pauses)
+        public float llmWaitSeconds;         // real seconds spent waiting for LLM answers
+        public float llmWaitShare;           // llmWaitSeconds / elapsed real time
+        public float simSpeedWhileRunning;   // game seconds / real seconds the game was NOT waiting for the LLM
+    }
+
     [Serializable]
     public class RunMetadata
     {
@@ -257,5 +291,7 @@ namespace Benchmark
         public MapStatistics mapStats;
         public LLMSettings llmSettings;
         public LLMSessionStats sessionStats;
+        public ModelInfo modelInfo;
+        public RunEnvironment environment;
     }
 }

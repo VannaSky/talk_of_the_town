@@ -15,11 +15,13 @@ namespace Benchmark.Loggers
         private readonly string _outputDir;
         private readonly RunMetadata _metadata;
         private readonly float _startRealTime;
+        private readonly int _startFrame;
 
         public RunMetadataLogger(string outputDir, BenchmarkRunConfig config)
         {
             _outputDir = outputDir;
             _startRealTime = Time.realtimeSinceStartup;
+            _startFrame = Time.frameCount;
 
             _metadata = new RunMetadata
             {
@@ -40,7 +42,47 @@ namespace Benchmark.Loggers
                 cutoffTicks = config.cutoffTicks,
                 startTime = DateTime.Now.ToString("o")
             };
+
+            CaptureModelInfo(config.modelName);
         }
+
+        /// <summary>
+        /// Asks Ollama for the model digest and server version. Runs in the background; the run start does not
+        /// wait for it, the result only has to be there when the metadata is written at the end.
+        /// </summary>
+        private async void CaptureModelInfo(string modelName)
+        {
+            var info = new ModelInfo { name = modelName };
+            _metadata.modelInfo = info;
+            try
+            {
+                using (var http = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(10) })
+                {
+                    string json = await http.GetStringAsync("http://localhost:11434/api/version");
+                    info.ollamaVersion = JsonUtility.FromJson<OllamaVersion>(json)?.version;
+                }
+
+                var models = await ollama.Ollama.List();
+                var m = models?.FirstOrDefault(x => x.name == modelName)
+                        ?? models?.FirstOrDefault(x => x.name == modelName + ":latest");
+                if (m == null) return;
+
+                info.foundInModelList = true;
+                info.digest = m.digest;
+                info.modifiedAt = m.modified_at.ToString("o");
+                info.sizeBytes = m.size;
+                info.family = m.details?.family;
+                info.parameterSize = m.details?.parameter_size;
+                info.quantizationLevel = m.details?.quantization_level;
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[RunMetadataLogger] Could not read model info for {modelName}: {e.Message}");
+            }
+        }
+
+        [Serializable]
+        private class OllamaVersion { public string version; }
 
         /// <summary>
         /// Scans the loaded map to collect tile and resource statistics.
@@ -108,6 +150,7 @@ namespace Benchmark.Loggers
             _metadata.elapsedGameTimeSeconds = _metadata.finalTick * SimTickTracker.TickQuantum;
             _metadata.elapsedRealTimeSeconds = Time.realtimeSinceStartup - _startRealTime;
             _metadata.sessionStats = sessionStats;
+            _metadata.environment = CaptureEnvironment(sessionStats);
 
             // Capture LLM settings at finalization (LLMController is guaranteed ready by now)
             var llm = LLMController.Instance;
@@ -161,6 +204,29 @@ namespace Benchmark.Loggers
         /// In the Editor dataPath is &lt;repo&gt;/Assets; in a player build it is &lt;build&gt;/&lt;name&gt;_Data.
         /// Walking up finds the repo as long as the build folder lies inside it (e.g. &lt;repo&gt;/Build).
         /// </summary>
+        private RunEnvironment CaptureEnvironment(LLMSessionStats stats)
+        {
+            float real = _metadata.elapsedRealTimeSeconds;
+            float llmWait = stats != null ? (float)stats.totalResponseTime : 0f;
+            float running = real - llmWait;
+            return new RunEnvironment
+            {
+                isEditor = Application.isEditor,
+                platform = Application.platform.ToString(),
+                machineName = SystemInfo.deviceName,
+                operatingSystem = SystemInfo.operatingSystem,
+                processorType = SystemInfo.processorType,
+                processorCount = SystemInfo.processorCount,
+                systemMemoryMB = SystemInfo.systemMemorySize,
+                graphicsDevice = SystemInfo.graphicsDeviceName,
+                maximumDeltaTime = Time.maximumDeltaTime,
+                avgFps = real > 0f ? (Time.frameCount - _startFrame) / real : 0f,
+                llmWaitSeconds = llmWait,
+                llmWaitShare = real > 0f ? llmWait / real : 0f,
+                simSpeedWhileRunning = running > 1f ? _metadata.elapsedGameTimeSeconds / running : 0f
+            };
+        }
+
         private static string FindGitDir()
         {
             var dir = new DirectoryInfo(Application.dataPath);

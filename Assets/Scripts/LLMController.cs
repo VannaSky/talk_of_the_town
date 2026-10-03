@@ -1643,6 +1643,7 @@ public class LLMController : MonoBehaviour
             if (!match.Success)
             {
                 LogWarning("No JSON found in batch response");
+                _sessionStats.parseFailures++;
                 foreach (var v in villagers)
                     if (v != null) results[v.villagerName] = JobDecision.Idle("No JSON");
                 return results;
@@ -1656,8 +1657,16 @@ public class LLMController : MonoBehaviour
             if (raw.assignments != null && raw.assignments.Count > 0)
             {
                 var validJobs = GetAvailableJobNames();
+                var villagerNames = new HashSet<string>(villagers.Where(v => v != null).Select(v => v.villagerName));
                 foreach (var assignment in raw.assignments)
                 {
+                    if (assignment.villager == null || !villagerNames.Contains(assignment.villager))
+                        _sessionStats.unknownVillagers++;
+                    if (assignment.villager != null && results.ContainsKey(assignment.villager))
+                        _sessionStats.duplicateAssignments++;
+                    if (assignment.job != null && assignment.job.Contains("["))
+                        _sessionStats.bracketedJobs++;
+
                     // Cloud models ignore the schema enum at times and echo the prompt tag, e.g. "[KEEP]"
                     string job = assignment.job?.Trim().Trim('[', ']').Trim();
 
@@ -1677,6 +1686,9 @@ public class LLMController : MonoBehaviour
                     // (e.g. buildingType "House" on a Lumberjack). Drop those before they reach the job system.
                     bool isBuilder = string.Equals(job, "Builder", StringComparison.OrdinalIgnoreCase);
                     bool isIdle = string.Equals(job, "IDLE", StringComparison.OrdinalIgnoreCase);
+                    if (!isBuilder && !string.IsNullOrEmpty(assignment.buildingType)) _sessionStats.strippedBuildingTypes++;
+                    if (!isIdle && assignment.restUntilEnergy > 0) _sessionStats.strippedRestTargets++;
+                    if ((isBuilder || isIdle) && assignment.gatherAmount > 0) _sessionStats.strippedGatherAmounts++;
                     var decision = new JobDecision
                     {
                         jobName = job ?? "IDLE",
@@ -1697,6 +1709,7 @@ public class LLMController : MonoBehaviour
             else
             {
                 // Fallback: small models sometimes return a flat dict { "VillagerName": { "job": "X", "location": "(x,y)" } }
+                _sessionStats.flatDictFallbacks++;
                 TryParseFlatDictFormat(match.Value, villagers, results);
             }
 
@@ -1706,6 +1719,7 @@ public class LLMController : MonoBehaviour
                 {
                     // Keep the current job: an omitted [KEEP] villager would otherwise be stopped
                     results[v.villagerName] = JobDecision.Keep("Not in response");
+                    _sessionStats.missingVillagers++;
                     LogWarning($"Villager {v.villagerName} not in batch response");
                 }
             }
@@ -1745,12 +1759,15 @@ public class LLMController : MonoBehaviour
                 }
 
                 VillageGoals.Instance.SetGoalsFromLLM(parsedGoals);
+                _sessionStats.llmGoalSets++;
+                _sessionStats.llmGoalsParsed += parsedGoals.Count;
             }
 
         }
         catch (Exception e)
         {
             LogWarning($"Batch parse error: {e.Message}");
+            _sessionStats.parseFailures++;
             foreach (var v in villagers)
                 if (v != null) results[v.villagerName] = JobDecision.Idle($"Parse error: {e.Message}");
         }
@@ -1784,6 +1801,7 @@ public class LLMController : MonoBehaviour
         bool onMap = grid == null || grid.TryGet(new Vector2Int(x, y), out _);
         if (bothWritten && onMap) return true;
 
+        _sessionStats.invalidTargets++;
         string why = bothWritten ? "not a tile on the map" : "targetX and targetY must both be given";
         LogWarning($"Ignoring target ({x},{y}) for {villager}: {why}");
         AddRecentEvent($"{villager}: target ({x},{y}) ignored — {why}");
@@ -2027,6 +2045,12 @@ public class LLMController : MonoBehaviour
         _sessionStats.totalThinkingChars += metrics.thinking?.Length ?? 0;
         _sessionStats.totalResponseTime += metrics.responseTime;
         _sessionStats.totalDecisions += metrics.decisionsCount;
+
+        _sessionStats.maxPromptTokens = Mathf.Max(_sessionStats.maxPromptTokens, metrics.promptEvalCount);
+        if (contextSize > 0 && metrics.promptEvalCount >= contextSize * 0.9f)
+            _sessionStats.callsNearContextLimit++;
+        if (metrics.doneReason == "length")
+            _sessionStats.truncatedResponses++;
 
         if (metrics.responseTime > _sessionStats.maxResponseTime)
             _sessionStats.maxResponseTime = metrics.responseTime;
@@ -2452,6 +2476,25 @@ public class LLMSessionStats
     public int skippedFallbacks; // fallback intervals that found nothing new and made no call
     public int skippedTriggers;  // event triggers dropped because nobody could act or the batch already covered them
     public int invalidJobs;      // assignments with a job name that does not exist (treated as KEEP)
+
+    // Format / instruction-following errors, all fixed up by the parser (benchmark: how clean is the model's output)
+    public int invalidTargets;         // coordinates dropped: only one of targetX/targetY, or not a tile on the map
+    public int strippedBuildingTypes;  // buildingType on a non-Builder assignment
+    public int strippedRestTargets;    // restUntilEnergy on a non-IDLE assignment
+    public int strippedGatherAmounts;  // gatherAmount on a Builder / IDLE assignment
+    public int bracketedJobs;          // job echoed with brackets from the prompt tags, e.g. "[KEEP]"
+    public int missingVillagers;       // villager left out of the answer (treated as KEEP)
+    public int unknownVillagers;       // assignment for a name that is not a villager
+    public int duplicateAssignments;   // second assignment for the same villager in one answer (later one wins)
+    public int parseFailures;          // no JSON or a JSON error: every villager fell back to IDLE
+    public int flatDictFallbacks;      // answer had no "assignments" list and was read as { "Name": {...} }
+    public int llmGoalSets;            // answers that (re)set the village goals
+    public int llmGoalsParsed;         // village goals accepted from those answers
+
+    // Context usage: Ollama silently truncates prompts above num_ctx
+    public int maxPromptTokens;
+    public int callsNearContextLimit;  // prompt >= 90% of contextSize
+    public int truncatedResponses;     // doneReason "length" (hit num_predict)
 
     // Session timing
     public float sessionStartRealtime;

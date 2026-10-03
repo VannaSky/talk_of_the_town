@@ -43,6 +43,22 @@ public class VillagerBrain : MonoBehaviour
     public int RestUntilEnergy => _restUntilEnergy;
     public bool IsLLMAssignedIdle => _llmAssignedIdle;
 
+    /// <summary>Brain-level state for the benchmark time series (the job status alone does not show resting or waiting).</summary>
+    public string BrainStateTag => _restUntilEnergy > 0 ? $"resting_to_{_restUntilEnergy}"
+        : _llmAssignedIdle ? "llm_idle"
+        : _waitingForBatch ? "waiting_for_llm"
+        : "";
+
+    /// <summary>
+    /// Raised for every LLM decision this brain receives: (villager, decision, outcome, job status before).
+    /// Outcomes: keep, ignored_busy_builder, ignored_resting, rest, rest_target_met, idle, fallback_idle,
+    /// assigned, reissued, unknown_job. Lets the benchmark separate what the model wanted from what happened.
+    /// </summary>
+    public static event System.Action<Villager, JobDecision, string, string> OnDecisionApplied;
+
+    private void ReportOutcome(JobDecision decision, string outcome, string statusBefore) =>
+        OnDecisionApplied?.Invoke(_villager, decision, outcome, statusBefore);
+
     // Mini-goal tracking
     private int _gatherGoalAmount;
     private int _personalGathered;
@@ -286,22 +302,24 @@ public class VillagerBrain : MonoBehaviour
     {
         if (decision == null) return;
         _suppressedStatus = null;
+        string activeStatus = _jobHandler.ActiveJobLogic?.GetCurrentStatus() ?? "";
 
         if (decision.IsNoChange)
         {
             LogInfo($"{_villager.villagerName} keeps current state ({decision.jobName}: {decision.reason})");
             _waitingForBatch = false;
+            ReportOutcome(decision, "keep", activeStatus);
             return;
         }
 
         // Reject reassignment if this villager is a builder actively constructing
-        string activeStatus = _jobHandler.ActiveJobLogic?.GetCurrentStatus() ?? "";
         if (_jobHandler.currentJob != null
             && _jobHandler.currentJob.JobName == "Builder"
             && activeStatus.StartsWith("Building "))
         {
             LogInfo($"{_villager.villagerName} ignoring LLM reassignment — currently building ({activeStatus})");
             _waitingForBatch = false;
+            ReportOutcome(decision, "ignored_busy_builder", activeStatus);
             return;
         }
 
@@ -311,6 +329,7 @@ public class VillagerBrain : MonoBehaviour
         {
             LogInfo($"{_villager.villagerName} ignoring LLM decision ({decision.jobName}) — resting until {_restUntilEnergy}% (at {_villager.EnergyPercent}%)");
             _waitingForBatch = false;
+            ReportOutcome(decision, "ignored_resting", activeStatus);
             return;
         }
 
@@ -340,18 +359,22 @@ public class VillagerBrain : MonoBehaviour
                     _llmAssignedIdle = true;
                     currentState = "Idle (energy already sufficient)";
                     LogEvent($"{_villager.villagerName} rest target {target}% already met (at {_villager.EnergyPercent}%) — treating as idle");
+                    ReportOutcome(decision, "rest_target_met", activeStatus);
                 }
                 else
                 {
                     _restUntilEnergy = target;
                     currentState = $"Resting until {_restUntilEnergy}% energy";
                     LogEvent($"{_villager.villagerName} rest target set: {_restUntilEnergy}%");
+                    ReportOutcome(decision, "rest", activeStatus);
                 }
             }
             else
             {
                 _llmAssignedIdle = true;
                 currentState = "Idle";
+                // success=false means the parser fell back to IDLE (no JSON / parse error), not a model choice
+                ReportOutcome(decision, decision.success ? "idle" : "fallback_idle", activeStatus);
             }
             return;
         }
@@ -395,12 +418,14 @@ public class VillagerBrain : MonoBehaviour
             }
 
             currentState = $"{matchedJob.JobName}";
+            ReportOutcome(decision, jobChanged || targetChanged || buildingTypeChanged ? "assigned" : "reissued", activeStatus);
         }
         else
         {
             LogWarning($"Unknown job: {decision.jobName}");
             _jobHandler.AssignJob(null);
             currentState = "Unknown job";
+            ReportOutcome(decision, "unknown_job", activeStatus);
         }
     }
 
