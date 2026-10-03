@@ -780,9 +780,9 @@ public class LLMController : MonoBehaviour
             sb.AppendLine($"Stone: {stone}/{cap}{GatherTag("Stone", stone, cap, 40, "Miner", verbose: true)}");
             bool seedsFull = seeds >= cap;
             bool foodFull  = food >= cap;
-            sb.AppendLine($"Seeds: {seeds}/{cap}{(seedsFull ? " [FULL - no more SeedGatherers]" : seeds >= 10 ? $" [SUFFICIENT - assign {Mathf.Max(1, seeds / 20)} Farmer(s) to use these seeds!]" : " [LOW - need SeedGatherer]")}");
+            sb.AppendLine($"Seeds: {seeds}/{cap}{(seedsFull ? " [FULL - no more SeedGatherers]" : seeds >= 10 ? SufficientSeedsTag(seeds) : " [LOW - need SeedGatherer]")}");
             bool foodNearFull = food >= cap * 0.8f;
-            sb.AppendLine($"Food: {food}/{cap}{FoodGoalTag(food)}{(foodFull ? " [FULL - harvest is wasted until Stockpile is built or food is consumed]" : foodNearFull ? " [NEARLY FULL - do NOT build more Farms, avoid excess Farmers]" : food < 10 ? " [LOW - farming urgently needed!]" : "")}");
+            sb.AppendLine($"Food: {food}/{cap}{FoodGoalTag(food)}{(foodFull ? " [FULL - harvest is wasted until Stockpile is built or food is consumed]" : foodNearFull ? " [NEARLY FULL - do NOT build more Farms, avoid excess Farmers]" : IsFoodSurplus(food) ? " [SURPLUS - no more Farmers needed]" : food < 10 ? " [LOW - farming urgently needed!]" : "")}");
             if (foodFull && seedsFull)
                 sb.AppendLine("⚠ FARMING BLOCKED: both Food and Seeds are at capacity — do NOT assign Farmers or SeedGatherers. Build a Stockpile to increase capacity.");
             else if (foodFull)
@@ -1173,7 +1173,7 @@ public class LLMController : MonoBehaviour
             sb.AppendLine(FormatDelta("Wood", wood, _lastWood, GatherTag("Wood", wood, cap, 50, "Lumberjack", verbose: false)));
             sb.AppendLine(FormatDelta("Stone", stone, _lastStone, GatherTag("Stone", stone, cap, 40, "Miner", verbose: false)));
             sb.AppendLine(FormatDelta("Seeds", seeds, _lastSeeds, seeds >= cap ? " [FULL]" : seeds >= 10 ? " [SUFFICIENT]" : " [LOW]"));
-            sb.AppendLine(FormatDelta("Food", food, _lastFood, FoodGoalTag(food) + (food >= cap ? " [FULL]" : food >= cap * 0.8f ? " [NEARLY FULL]" : food < 10 ? " [LOW]" : "")));
+            sb.AppendLine(FormatDelta("Food", food, _lastFood, FoodGoalTag(food) + (food >= cap ? " [FULL]" : food >= cap * 0.8f ? " [NEARLY FULL]" : IsFoodSurplus(food) ? " [SURPLUS]" : food < 10 ? " [LOW]" : "")));
             sb.AppendLine();
         }
 
@@ -1311,6 +1311,29 @@ public class LLMController : MonoBehaviour
     {
         var goal = OpenResourceGoal("Food");
         return goal != null ? $" [RESEARCHER GOAL {food}/{goal.targetAmount} - keep farming]" : "";
+    }
+
+    /// <summary>
+    /// Same idea as the wood/stone [SURPLUS] tag. Without it, food had no tag between its goal and [FULL],
+    /// so [KEEP] farmers stayed on the farm until storage was full (seen on the large map).
+    /// </summary>
+    private static bool IsFoodSurplus(int food) => food > FoodSurplusAt && OpenResourceGoal("Food") == null;
+
+    private const int FoodSurplusAt = 40; // 4 Houses at 10 food each
+
+    /// <summary>
+    /// Farmer hint for the seed line. Capped by the free fields: once every field is planted, a second
+    /// Farmer only waits for the same crops.
+    /// </summary>
+    private string SufficientSeedsTag(int seeds)
+    {
+        int fieldCap = VillageState.Instance?.FieldCapacity ?? 0;
+        int freeFields = fieldCap - CountAllCrops();
+        if (fieldCap > 0 && freeFields <= 0)
+            return " [SUFFICIENT - all fields planted, 1 Farmer is enough]";
+        int farmers = Mathf.Max(1, seeds / 20);
+        if (fieldCap > 0) farmers = Mathf.Min(farmers, freeFields);
+        return $" [SUFFICIENT - assign {farmers} Farmer(s) to use these seeds!]";
     }
 
     private string FormatDelta(string label, int current, int last, string suffix)

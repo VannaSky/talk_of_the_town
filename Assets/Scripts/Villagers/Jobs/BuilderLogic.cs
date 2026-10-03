@@ -137,7 +137,9 @@ public class BuilderLogic : JobLogic
         {
             if (_targetTile == null) { ChangeState(AnimationState.FindingTarget, handler); return; }
             tileTransform = _targetTile.transform;
-            destination = _targetTile.transform.position;
+            // Stand outside the tile, like in the Building phase: the tile origin is a corner of the footprint,
+            // and a builder who reaches it ends up inside the carved NavMeshObstacle of the new foundation
+            destination = GetBuildSpot(handler, tileTransform);
             currentStatus = "Moving to place building foundation";
         }
 

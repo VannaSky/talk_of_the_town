@@ -72,6 +72,7 @@ namespace Benchmark
             Buildings.Building.OnBuildingCompleted += _worldEventLogger.OnBuildingCompleted;
             Environment.Resources.ResourceNode.OnNodeExhausted += _worldEventLogger.OnNodeExhausted;
             Environment.Resources.ResourceNode.OnNodeRegrown += _worldEventLogger.OnNodeRegrown;
+            VillagerMover.OnUnstuck += _worldEventLogger.OnVillagerUnstuck;
 
             if (GlobalGoals.Instance != null)
             {
@@ -158,6 +159,7 @@ namespace Benchmark
             Buildings.Building.OnBuildingCompleted -= _worldEventLogger.OnBuildingCompleted;
             Environment.Resources.ResourceNode.OnNodeExhausted -= _worldEventLogger.OnNodeExhausted;
             Environment.Resources.ResourceNode.OnNodeRegrown -= _worldEventLogger.OnNodeRegrown;
+            VillagerMover.OnUnstuck -= _worldEventLogger.OnVillagerUnstuck;
 
             if (GlobalGoals.Instance != null)
             {

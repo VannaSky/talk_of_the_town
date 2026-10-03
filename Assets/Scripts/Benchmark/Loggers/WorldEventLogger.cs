@@ -74,6 +74,16 @@ namespace Benchmark.Loggers
             LogEvent("all_goals_completed", "{}");
         }
 
+        public void OnVillagerUnstuck(VillagerMover mover, Vector3 from, Vector3 to, bool usedFallback)
+        {
+            if (mover == null) return;
+            var villager = mover.GetComponent<Villager>();
+            string name = villager != null ? villager.villagerName : mover.name;
+            string F(float v) => v.ToString("F1", CultureInfo.InvariantCulture);
+            LogEvent("villager_unstuck",
+                $"{{\"villager\":\"{EscapeJson(name)}\",\"fromX\":{F(from.x)},\"fromZ\":{F(from.z)},\"toX\":{F(to.x)},\"toZ\":{F(to.z)},\"fallback\":{(usedFallback ? "true" : "false")}}}");
+        }
+
         // ── Internal ────────────────────────────────────────────────────
 
         private void LogEvent(string eventType, string detailsJson)
