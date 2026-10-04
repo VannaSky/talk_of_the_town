@@ -103,6 +103,24 @@ namespace Benchmark
         [Tooltip("Override cutoff for test runs (short for quick validation)")]
         [SerializeField] private long testCutoffTicks = 500;
 
+        [Tooltip("Repetitions of the single test configuration (rep1..N), e.g. for a small ablation")]
+        [SerializeField] private int testRepetitions = 1;
+
+        [Header("Stagnation abort")]
+        [Tooltip("Abort a run as 'stagnation' when the only open researcher goal is a resource goal and, since it became the " +
+                 "last one, foundations placed have spent this many times its target amount of that resource. 0 = off. " +
+                 "1.75 = 175 wood for Wood 100: successful matrix runs spent at most 130 there, the failed gemma runs 375-435.")]
+        [SerializeField] private float stagnationSpendFactor = 1.75f;
+
+        [Tooltip("Also apply the stagnation abort to the full matrix (the 2026-10 matrix ran without it). Test mode always uses it.")]
+        [SerializeField] private bool stagnationAbortInMatrix = false;
+
+        // Stagnation tracker: the single open resource goal, and how much of its resource buildings consumed since then
+        private GlobalGoal _stagnationGoal;
+        private int _stagnationSpent;
+        private int _stagnationBuildings;
+        private long _stagnationSinceTick;
+
         [Header("Auto Start")]
         [Tooltip("Automatically start the benchmark when entering play mode")]
         [SerializeField] private bool autoStart = false;
@@ -165,6 +183,7 @@ namespace Benchmark
         void Start()
         {
             SceneManager.sceneLoaded += OnSceneLoaded;
+            Buildings.Building.OnBuildingPlaced += OnBuildingPlacedForStagnation;
 
             if (autoStart)
                 StartBenchmark();
@@ -173,6 +192,7 @@ namespace Benchmark
         void OnDestroy()
         {
             SceneManager.sceneLoaded -= OnSceneLoaded;
+            Buildings.Building.OnBuildingPlaced -= OnBuildingPlacedForStagnation;
         }
 
         private void OnSceneLoaded(Scene scene, LoadSceneMode mode)
@@ -229,6 +249,14 @@ namespace Benchmark
             {
                 Debug.Log($"[BenchmarkRunner] Cutoff reached at tick {SimTickTracker.CurrentTick}");
                 CompleteCurrentRun("cutoff");
+                return;
+            }
+
+            if (stagnationSpendFactor > 0f && (testMode || stagnationAbortInMatrix) && IsStagnating(out string stagnationDetail))
+            {
+                Debug.Log($"[BenchmarkRunner] Stagnation abort at tick {SimTickTracker.CurrentTick}: {stagnationDetail}");
+                BenchmarkLogger.Instance?.LogWorldEvent("stagnation_abort", stagnationDetail);
+                CompleteCurrentRun("stagnation");
                 return;
             }
 
@@ -534,7 +562,12 @@ namespace Benchmark
         {
             var sb = new StringBuilder();
             foreach (var m in models)
-                sb.Append($"{m.modelName}|{m.thinkMode}|{m.promptStyle}|{m.forceJsonFormat}|{m.maxOutputTokens}|{m.contextSize};");
+            {
+                sb.Append($"{m.modelName}|{m.thinkMode}|{m.promptStyle}|{m.forceJsonFormat}|{m.maxOutputTokens}|{m.contextSize}");
+                // Only non-default hints enter the hash, so the 2026-10 matrix manifest (all Advisory) stays valid
+                if (m.promptHints != PromptHints.Advisory) sb.Append($"|{m.promptHints}");
+                sb.Append(';');
+            }
             foreach (var p in goalPresets)
             {
                 sb.Append(p.label).Append(':');
@@ -574,22 +607,26 @@ namespace Benchmark
                 int mapIdx = Mathf.Clamp(testMapIndex, 0, mapFiles.Length - 1);
                 var preset = testGoalPresetIndex < goalPresets.Length ? goalPresets[testGoalPresetIndex] : goalPresets[0];
 
-                manifest.runs.Add(new BenchmarkRunConfig
+                for (int rep = 1; rep <= Mathf.Max(1, testRepetitions); rep++)
                 {
-                    runId = $"test_{SanitizeModelName(mc.modelName)}_{preset.label}_{mapSizeLabels[mapIdx]}_rep1",
-                    modelName = mc.modelName,
-                    thinkMode = mc.thinkMode.ToString(),
-                    promptStyle = mc.promptStyle.ToString(),
-                    forceJsonFormat = mc.forceJsonFormat,
-                    maxOutputTokens = mc.maxOutputTokens,
-                    contextSize = mc.contextSize,
-                    mapFile = mapFiles[mapIdx],
-                    mapSize = mapSizeLabels[mapIdx],
-                    goals = new List<GoalConfig>(preset.goals),
-                    repetition = 1,
-                    cutoffTicks = testCutoffTicks,
-                    gameSpeed = benchmarkGameSpeed
-                });
+                    manifest.runs.Add(new BenchmarkRunConfig
+                    {
+                        runId = $"test_{SanitizeModelName(mc.modelName)}_{preset.label}_{mapSizeLabels[mapIdx]}{HintsSuffix(mc)}_rep{rep}",
+                        modelName = mc.modelName,
+                        thinkMode = mc.thinkMode.ToString(),
+                        promptStyle = mc.promptStyle.ToString(),
+                        promptHints = mc.promptHints.ToString(),
+                        forceJsonFormat = mc.forceJsonFormat,
+                        maxOutputTokens = mc.maxOutputTokens,
+                        contextSize = mc.contextSize,
+                        mapFile = mapFiles[mapIdx],
+                        mapSize = mapSizeLabels[mapIdx],
+                        goals = new List<GoalConfig>(preset.goals),
+                        repetition = rep,
+                        cutoffTicks = testCutoffTicks,
+                        gameSpeed = benchmarkGameSpeed
+                    });
+                }
 
                 return manifest;
             }
@@ -607,10 +644,11 @@ namespace Benchmark
                             string sanitizedModel = SanitizeModelName(mc.modelName);
                             manifest.runs.Add(new BenchmarkRunConfig
                             {
-                                runId = $"{sanitizedModel}_{preset.label}_{mapSizeLabels[mapIdx]}_rep{rep}",
+                                runId = $"{sanitizedModel}_{preset.label}_{mapSizeLabels[mapIdx]}{HintsSuffix(mc)}_rep{rep}",
                                 modelName = mc.modelName,
                                 thinkMode = mc.thinkMode.ToString(),
                                 promptStyle = mc.promptStyle.ToString(),
+                                promptHints = mc.promptHints.ToString(),
                                 forceJsonFormat = mc.forceJsonFormat,
                                 maxOutputTokens = mc.maxOutputTokens,
                                 contextSize = mc.contextSize,
@@ -628,6 +666,77 @@ namespace Benchmark
 
             return manifest;
         }
+
+        /// <summary>
+        /// True when exactly one researcher goal is open, it is a resource goal, and buildings have consumed
+        /// stagnationSpendFactor × its target of that resource since it became the last open goal: the model keeps
+        /// building with exactly what it should be collecting. The spending is counted in OnBuildingPlacedForStagnation.
+        /// detailJson describes the case for world_events.jsonl.
+        /// </summary>
+        private bool IsStagnating(out string detailJson)
+        {
+            detailJson = null;
+            if (GlobalGoals.Instance == null || VillageState.Instance == null) return false;
+
+            GlobalGoal open = null;
+            int openCount = 0;
+            foreach (var g in GlobalGoals.Instance.Goals)
+            {
+                if (g.isCompleted) continue;
+                openCount++;
+                open = g;
+            }
+
+            if (openCount != 1 || open.type != GlobalGoalType.ResourceAmount)
+            {
+                _stagnationGoal = null;
+                return false;
+            }
+
+            if (_stagnationGoal != open)
+            {
+                // The goal just became the last open one: count spending from here
+                _stagnationGoal = open;
+                _stagnationSpent = 0;
+                _stagnationBuildings = 0;
+                _stagnationSinceTick = SimTickTracker.CurrentTick;
+                return false;
+            }
+
+            if (_stagnationSpent < stagnationSpendFactor * open.targetAmount) return false;
+
+            int amount = VillageState.Instance.GetResource(open.targetResource);
+            // Only the float needs the invariant culture (German locale would write "1,75" and break the JSON)
+            string factor = stagnationSpendFactor.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            detailJson = $"{{\"resource\":\"{open.targetResource}\",\"target\":{open.targetAmount},\"current\":{amount}," +
+                         $"\"spentOnBuildings\":{_stagnationSpent},\"buildingsPlaced\":{_stagnationBuildings}," +
+                         $"\"lastOpenSinceTick\":{_stagnationSinceTick},\"spendFactor\":{factor}}}";
+            return true;
+        }
+
+        /// <summary>Adds the first-level cost of a new foundation in the tracked goal resource (costs are paid at placement).</summary>
+        private void OnBuildingPlacedForStagnation(Buildings.Building building)
+        {
+            if (_stagnationGoal == null || building == null || building.buildingData == null) return;
+            var levels = building.buildingData.levels;
+            if (levels == null || levels.Count == 0) return;
+
+            var cost = levels[0];
+            int spent = _stagnationGoal.targetResource switch
+            {
+                ResourceType.Wood => cost.woodCost,
+                ResourceType.Stone => cost.stoneCost,
+                ResourceType.Food => cost.foodCost,
+                _ => 0
+            };
+            if (spent <= 0) return;
+            _stagnationSpent += spent;
+            _stagnationBuildings++;
+        }
+
+        /// <summary>Advisory runs keep the original folder names; Factual runs get "_factual" so they never overwrite them.</summary>
+        private static string HintsSuffix(ModelConfig mc) =>
+            mc.promptHints == PromptHints.Advisory ? "" : "_" + mc.promptHints.ToString().ToLowerInvariant();
 
         // ── Run lifecycle ───────────────────────────────────────────────
 
@@ -709,6 +818,9 @@ namespace Benchmark
                 GlobalSettings.Instance.LLMModel = _currentRun.modelName;
                 if (Enum.TryParse<PromptStyle>(_currentRun.promptStyle, out var ps))
                     GlobalSettings.Instance.PromptStyle = ps;
+                // Set explicitly every run (empty in old manifests = Advisory), never inherit from the scene
+                GlobalSettings.Instance.PromptHints = Enum.TryParse<PromptHints>(_currentRun.promptHints, out var ph)
+                    ? ph : PromptHints.Advisory;
             }
 
             // The controller picks its model once during async init — wait for it, then set the run
@@ -772,6 +884,7 @@ namespace Benchmark
                 LLMController.Instance.OnBatchDecisionMade += OnFirstDecisionSetSpeed;
 
             ApplyCameraVisibility(); // the reloaded scene brought a fresh camera
+            _stagnationGoal = null;  // the scene reload created new goal objects
 
             _isRunning = true;
             _runStartRealTime = Time.realtimeSinceStartup;

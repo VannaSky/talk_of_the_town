@@ -29,6 +29,7 @@ namespace Benchmark.Loggers
                 modelName = config.modelName,
                 thinkMode = config.thinkMode,
                 promptStyle = config.promptStyle,
+                promptHints = string.IsNullOrEmpty(config.promptHints) ? PromptHints.Advisory.ToString() : config.promptHints,
                 forceJsonFormat = config.forceJsonFormat,
                 maxOutputTokens = config.maxOutputTokens,
                 contextSize = config.contextSize,
@@ -165,7 +166,8 @@ namespace Benchmark.Loggers
                     contextSize = llm.ContextSize,
                     decisionDebounceSeconds = llm.DecisionDebounceDelay,
                     fallbackIntervalSeconds = llm.BatchDecisionInterval,
-                    promptStyle = GlobalSettings.Instance != null ? GlobalSettings.Instance.PromptStyle.ToString() : "Normal"
+                    promptStyle = GlobalSettings.Instance != null ? GlobalSettings.Instance.PromptStyle.ToString() : "Normal",
+                    promptHints = GlobalSettings.Instance != null ? GlobalSettings.Instance.PromptHints.ToString() : "Advisory"
                 };
             }
 

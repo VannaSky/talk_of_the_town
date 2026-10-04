@@ -74,6 +74,10 @@ namespace Benchmark.Loggers
             LogEvent("all_goals_completed", "{}");
         }
 
+        /// <summary>For events raised by the runner itself (e.g. stagnation_abort). detailsJson must be a JSON object.</summary>
+        public void LogCustom(string eventType, string detailsJson) =>
+            LogEvent(eventType, string.IsNullOrEmpty(detailsJson) ? "{}" : detailsJson);
+
         public void OnDecisionApplied(Villager villager, JobDecision decision, string outcome, string statusBefore)
         {
             if (villager == null || decision == null) return;

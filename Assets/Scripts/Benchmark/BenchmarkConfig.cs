@@ -24,6 +24,9 @@ namespace Benchmark
         public string modelName;
         public ThinkMode thinkMode = ThinkMode.ModelDefault;
         public PromptStyle promptStyle = PromptStyle.Normal;
+        [Tooltip("Advisory = original state hints (matrix 2026-10). Factual = same facts without build advice (ablation). " +
+                 "Factual runs get a '_factual' suffix in their folder name.")]
+        public PromptHints promptHints = PromptHints.Advisory;
         public bool forceJsonFormat = false;
         [Tooltip("0 = Ollama default. Reasoning models need 2048+ to leave room for thinking + output.")]
         public int maxOutputTokens = 0;
@@ -76,6 +79,7 @@ namespace Benchmark
         public string modelName;
         public string thinkMode;     // ThinkMode to apply for this model
         public string promptStyle;   // PromptStyle to apply for this run
+        public string promptHints;   // PromptHints to apply for this run (empty in old manifests = Advisory)
         public bool forceJsonFormat; // Force JSON structured output via Ollama
         public int maxOutputTokens;  // num_predict for this model
         public int contextSize;      // num_ctx override (0 = model default)
@@ -226,6 +230,7 @@ namespace Benchmark
         public string thinkMode;
         public int contextSize;
         public string promptStyle;
+        public string promptHints;             // as actually active in GlobalSettings at run end
         public float decisionDebounceSeconds;  // game seconds collect window before a call
         public float fallbackIntervalSeconds;  // game seconds before a fallback call
     }
@@ -275,6 +280,7 @@ namespace Benchmark
         public string actualModel;       // model the LLMController actually used
         public string thinkMode;
         public string promptStyle;
+        public string promptHints;       // Advisory (matrix) or Factual (ablation)
         public bool forceJsonFormat;
         public int maxOutputTokens;
         public int contextSize;

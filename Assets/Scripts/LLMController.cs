@@ -775,18 +775,24 @@ public class LLMController : MonoBehaviour
 
             int cap = VillageState.Instance.InventoryCapacity;
             sb.AppendLine("=== VILLAGE INVENTORY ===");
-            sb.AppendLine($"Capacity: {cap} (build Stockpile to increase)");
+            sb.AppendLine(GlobalSettings.FactualHints ? $"Capacity: {cap}" : $"Capacity: {cap} (build Stockpile to increase)");
             sb.AppendLine($"Wood: {wood}/{cap}{GatherTag("Wood", wood, cap, 50, "Lumberjack", verbose: true)}");
             sb.AppendLine($"Stone: {stone}/{cap}{GatherTag("Stone", stone, cap, 40, "Miner", verbose: true)}");
             bool seedsFull = seeds >= cap;
             bool foodFull  = food >= cap;
             sb.AppendLine($"Seeds: {seeds}/{cap}{(seedsFull ? " [FULL - no more SeedGatherers]" : seeds >= 10 ? SufficientSeedsTag(seeds) : " [LOW - need SeedGatherer]")}");
             bool foodNearFull = food >= cap * 0.8f;
-            sb.AppendLine($"Food: {food}/{cap}{FoodGoalTag(food)}{(foodFull ? " [FULL - harvest is wasted until Stockpile is built or food is consumed]" : foodNearFull ? " [NEARLY FULL - do NOT build more Farms, avoid excess Farmers]" : IsFoodSurplus(food) ? " [SURPLUS - no more Farmers needed]" : food < 10 ? " [LOW - farming urgently needed!]" : "")}");
+            bool factual = GlobalSettings.FactualHints;
+            string foodFullTag = factual ? " [FULL - harvested food is lost]" : " [FULL - harvest is wasted until Stockpile is built or food is consumed]";
+            sb.AppendLine($"Food: {food}/{cap}{FoodGoalTag(food)}{(foodFull ? foodFullTag : foodNearFull ? " [NEARLY FULL - do NOT build more Farms, avoid excess Farmers]" : IsFoodSurplus(food) ? " [SURPLUS - no more Farmers needed]" : food < 10 ? " [LOW - farming urgently needed!]" : "")}");
             if (foodFull && seedsFull)
-                sb.AppendLine("⚠ FARMING BLOCKED: both Food and Seeds are at capacity — do NOT assign Farmers or SeedGatherers. Build a Stockpile to increase capacity.");
+                sb.AppendLine(factual
+                    ? "⚠ FARMING BLOCKED: both Food and Seeds are at capacity — do NOT assign Farmers or SeedGatherers."
+                    : "⚠ FARMING BLOCKED: both Food and Seeds are at capacity — do NOT assign Farmers or SeedGatherers. Build a Stockpile to increase capacity.");
             else if (foodFull)
-                sb.AppendLine("⚠ Food storage full: farmers can still plant (seeds are consumed) but harvested food will overflow. Build a Stockpile soon.");
+                sb.AppendLine(factual
+                    ? "⚠ Food storage full: farmers can still plant (seeds are consumed) but harvested food will overflow."
+                    : "⚠ Food storage full: farmers can still plant (seeds are consumed) but harvested food will overflow. Build a Stockpile soon.");
             sb.AppendLine();
         }
 
@@ -835,7 +841,9 @@ public class LLMController : MonoBehaviour
             else if (d.jobStatus.Contains("no buildingType"))
                 errorTag = " !! BUILDER GOT NO buildingType: a NEW building needs buildingType (Farm/House/Stockpile) !!";
             else if (d.jobStatus.Contains("Storage full"))
-                errorTag = " !! STORAGE FULL: this resource is at capacity. Build a Stockpile or assign a DIFFERENT job !!";
+                errorTag = GlobalSettings.FactualHints
+                    ? " !! STORAGE FULL: this resource is at capacity, gathering more of it is wasted !!"
+                    : " !! STORAGE FULL: this resource is at capacity. Build a Stockpile or assign a DIFFERENT job !!";
 
             sb.AppendLine($"- {d.name} {tag}: at ({d.x},{d.y}), Job={d.currentJob}, Status=\"{d.jobStatus}\", Energy={d.energy}%{energyTag}{errorTag}");
         }
@@ -920,7 +928,9 @@ public class LLMController : MonoBehaviour
             sb.AppendLine($"Population: {pop}/{popCap}");
             sb.AppendLine($"Completed houses: {completedHouses} | Free slots: {freeSlots}");
             sb.AppendLine("Villagers spawn automatically when a house finishes.");
-            if (freeSlots >= 2)
+            // Factual: the slot count above already says it; the Advisory lines pushed Houses even with the pop goal done
+            if (GlobalSettings.FactualHints) { }
+            else if (freeSlots >= 2)
                 sb.AppendLine($"[{freeSlots} free slots already — consider building Stockpile or Farm instead of more Houses]");
             else if (freeSlots == 0)
                 sb.AppendLine("No free slots — build a House to grow population.");
@@ -1225,7 +1235,9 @@ public class LLMController : MonoBehaviour
             else if (d.jobStatus.Contains("no buildingType"))
                 errorTag = " !! BUILDER GOT NO buildingType: a NEW building needs buildingType (Farm/House/Stockpile) !!";
             else if (d.jobStatus.Contains("Storage full"))
-                errorTag = " !! STORAGE FULL: this resource is at capacity. Build a Stockpile or assign a DIFFERENT job !!";
+                errorTag = GlobalSettings.FactualHints
+                    ? " !! STORAGE FULL: this resource is at capacity, gathering more of it is wasted !!"
+                    : " !! STORAGE FULL: this resource is at capacity. Build a Stockpile or assign a DIFFERENT job !!";
 
             sb.AppendLine($"- {d.name} {tag}: {d.currentJob} at ({d.x},{d.y}){previousJob}, Status=\"{d.jobStatus}\", Energy={d.energy}%{energyTag}{errorTag}");
         }
@@ -1297,11 +1309,12 @@ public class LLMController : MonoBehaviour
     /// </summary>
     private static string GatherTag(string resource, int amount, int cap, int surplusAt, string gatherer, bool verbose)
     {
-        if (amount >= cap) return verbose ? " [FULL - gatherers are BLOCKED, build Stockpile!]" : " [FULL - gatherers BLOCKED]";
+        bool factual = GlobalSettings.FactualHints;
+        if (amount >= cap) return verbose && !factual ? " [FULL - gatherers are BLOCKED, build Stockpile!]" : " [FULL - gatherers BLOCKED]";
         var goal = OpenResourceGoal(resource);
         if (goal != null)
             return $" [RESEARCHER GOAL {amount}/{goal.targetAmount} - keep {gatherer}s on it; spending it on buildings undoes progress]";
-        if (amount >= cap * 0.8f) return " [NEARLY FULL - a Stockpile is useful now]";
+        if (amount >= cap * 0.8f) return factual ? " [NEARLY FULL]" : " [NEARLY FULL - a Stockpile is useful now]";
         if (amount > surplusAt) return verbose ? $" [SURPLUS - no more {gatherer}s needed]" : " [SURPLUS]";
         if (amount < 10) return verbose ? $" [LOW - need {gatherer}]" : " [LOW]";
         return "";

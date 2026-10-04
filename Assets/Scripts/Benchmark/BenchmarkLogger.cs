@@ -143,6 +143,12 @@ namespace Benchmark
             }
         }
 
+        /// <summary>Writes an event raised outside the subscribed sources (e.g. the runner's stagnation_abort).</summary>
+        public void LogWorldEvent(string eventType, string detailsJson)
+        {
+            if (_isLogging) _worldEventLogger?.LogCustom(eventType, detailsJson);
+        }
+
         /// <summary>
         /// Finalizes the current run: flushes all buffers, writes metadata, unsubscribes from events.
         /// </summary>

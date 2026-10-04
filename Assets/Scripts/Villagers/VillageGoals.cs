@@ -156,7 +156,9 @@ public class VillageGoals : MonoBehaviour
     public string GetGoalsForPrompt()
     {
         if (activeGoals.Count == 0)
-            return "No specific goals set. Focus on balanced resource gathering and village growth.";
+            return GlobalSettings.FactualHints
+                ? "No specific goals set."
+                : "No specific goals set. Focus on balanced resource gathering and village growth.";
         
         var sb = new System.Text.StringBuilder();
         sb.AppendLine("ACTIVE VILLAGE GOALS (prioritize these!):");
